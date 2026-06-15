@@ -17,8 +17,6 @@
   --color-success: #2f6f54;
   --color-success-bg: #f0faf5;
   --color-success-border: #b9dfcb;
-  --color-toast-bg: #1f2933;
-  --color-toast-text: #ffffff;
   color: var(--color-text);
   background: var(--color-bg);
   font-family:
@@ -47,8 +45,6 @@
   --color-success: #9bd4b4;
   --color-success-bg: #17251d;
   --color-success-border: #365644;
-  --color-toast-bg: #f4f4f5;
-  --color-toast-text: #111113;
   color-scheme: dark;
 }
 
@@ -56,10 +52,17 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   background: var(--color-bg);
+  overflow: hidden;
 }
 
 button,
@@ -117,9 +120,10 @@ h2 {
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .topbar {
@@ -167,6 +171,7 @@ h2 {
   gap: 12px;
   padding: 12px;
   min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -174,6 +179,7 @@ h2 {
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  min-height: 0;
 }
 
 .panel {
@@ -241,6 +247,11 @@ h2 {
   overflow: auto;
 }
 
+.table-list {
+  flex: 1;
+  min-height: 0;
+}
+
 .source-row {
   justify-content: flex-start;
   width: 100%;
@@ -264,6 +275,7 @@ h2 {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .panel-header {
@@ -388,7 +400,7 @@ h2 {
 }
 
 .item-row {
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
 }
 
 .clickable-row {
@@ -448,6 +460,22 @@ h2 {
   border-radius: 3px;
   background: var(--color-icon-bg);
   color: var(--color-primary);
+}
+
+.item-cover {
+  width: 36px;
+  height: 48px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: var(--color-panel-muted);
+}
+
+.item-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .item-main {
@@ -513,10 +541,37 @@ progress {
   bottom: 16px;
   max-width: min(360px, calc(100vw - 32px));
   padding: 10px 12px;
-  background: var(--color-toast-bg);
-  color: var(--color-toast-text);
-  border: 0;
-  justify-content: flex-start;
+  border: 1px solid;
+  border-radius: 3px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 10px 24px rgba(17, 24, 22, 0.16);
+}
+
+.toast span {
+  min-width: 0;
+}
+
+.toast button {
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  background: transparent;
+}
+
+.success-toast {
+  color: var(--color-success);
+  border-color: var(--color-success-border);
+  background: var(--color-success-bg);
+}
+
+.error-toast {
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-bg);
 }
 
 .modal-backdrop {
@@ -556,14 +611,25 @@ progress {
 }
 
 @media (max-width: 760px) {
+  body {
+    overflow: auto;
+  }
+
   .topbar {
     align-items: flex-start;
     flex-direction: column;
   }
 
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
   .layout {
     grid-template-columns: 1fr;
     align-content: start;
+    overflow: visible;
   }
 
   .sidebar {
@@ -572,6 +638,15 @@ progress {
 
   .search-bar {
     grid-template-columns: minmax(0, 1fr) auto auto auto;
+  }
+
+  .browse-panel,
+  .table-list {
+    overflow: visible;
+  }
+
+  .table-list {
+    flex: none;
   }
 
   .pagination-bar {

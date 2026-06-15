@@ -30,6 +30,7 @@ class BrowseItem(BaseModel):
     title: str
     url: str | None = None
     path: str | None = None
+    image_url: str | None = None
     author: str | None = None
     summary: str | None = None
     published: str | None = None

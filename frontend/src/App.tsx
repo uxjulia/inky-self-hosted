@@ -8,6 +8,7 @@ import {
   Plus,
   RefreshCw,
   Rss,
+  Save,
   Search,
   Send,
   Server,
@@ -28,6 +29,7 @@ type RemoteSourceType = "opds" | "webdav" | "feed";
 type SourceType = "local" | RemoteSourceType;
 type Theme = "light" | "dark";
 type SortMode = "source" | "title_asc" | "title_desc";
+type ToastState = { message: string; tone: "success" | "error" };
 
 type Source = {
   id: number;
@@ -42,6 +44,7 @@ type BrowseItem = {
   title: string;
   url?: string | null;
   path?: string | null;
+  image_url?: string | null;
   author?: string | null;
   summary?: string | null;
   published?: string | null;
@@ -112,8 +115,9 @@ export default function App() {
   const [device, setDevice] = useState<"x4" | "x3">("x4");
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [searching, setSearching] = useState(false);
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState<ToastState | null>(null);
   const [error, setError] = useState("");
   const [deviceError, setDeviceError] = useState("");
   const [deviceStatus, setDeviceStatus] = useState("");
@@ -151,7 +155,7 @@ export default function App() {
   const sortLabel = sortLabelForMode(sortMode);
 
   useEffect(() => {
-    refreshAll();
+    refreshAll(false);
     const interval = window.setInterval(() => {
       loadJobs();
       loadLibrary();
@@ -177,6 +181,13 @@ export default function App() {
     window.localStorage.setItem(themeStorageKey, theme);
   }, [theme]);
 
+  useEffect(() => {
+    if (!error) return;
+    if (window.matchMedia("(max-width: 760px)").matches) {
+      showToast(readableError(error), "error");
+    }
+  }, [error]);
+
   const sourceIcon = useMemo(() => {
     if (selectedSource?.type === "local") return <Folder size={16} />;
     if (selectedSource?.type === "webdav") return <Server size={16} />;
@@ -184,8 +195,32 @@ export default function App() {
     return <BookOpen size={16} />;
   }, [selectedSource]);
 
-  async function refreshAll() {
-    await runAction(() => Promise.all([loadSources(), loadLibrary(), loadJobs()]));
+  async function refreshAll(showFeedback = true) {
+    setRefreshing(true);
+    try {
+      const refreshed = await runAction(async () => {
+        await Promise.all([loadSources(), loadLibrary(), loadJobs()]);
+
+        if (selectedSourceId && selectedSourceId !== localSourceId) {
+          if (trimmedSearchQuery) {
+            const params = new URLSearchParams({ q: trimmedSearchQuery });
+            const currentTarget = browseStack[browseStack.length - 1];
+            if (currentTarget) params.set("target", currentTarget);
+            setSearchResult(await api<BrowseResult>(`/api/sources/${selectedSourceId}/search?${params.toString()}`));
+          } else {
+            const target = activeBrowseResult?.base_url || browseStack[browseStack.length - 1];
+            const query = target ? `?target=${encodeURIComponent(target)}` : "";
+            setBrowseResult(await api<BrowseResult>(`/api/sources/${selectedSourceId}/browse${query}`));
+          }
+        }
+      });
+
+      if (showFeedback && refreshed !== undefined) {
+        showToast("Refreshed");
+      }
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   async function loadSources() {
@@ -313,6 +348,10 @@ export default function App() {
     setSortMenuOpen(false);
   }
 
+  function showToast(message: string, tone: ToastState["tone"] = "success") {
+    setToast({ message, tone });
+  }
+
   async function openResultPage(target: string | null | undefined, direction: "next" | "previous") {
     if (!target || !selectedSourceId || isLocalSource) return;
     await runAction(async () => {
@@ -334,7 +373,7 @@ export default function App() {
       await runAction(async () => {
         const imported = await importBrowseItem(item);
         if (!imported) return;
-        setToast("Downloaded");
+        showToast("Downloaded");
         await loadLibrary();
       });
     } finally {
@@ -358,7 +397,7 @@ export default function App() {
             optimize_first: true
           })
         });
-        setToast("Send queued");
+        showToast("Send queued");
         await Promise.all([loadLibrary(), loadJobs()]);
       });
     } finally {
@@ -399,7 +438,7 @@ export default function App() {
       const formData = new FormData();
       formData.append("file", file);
       await api("/api/library/upload", { method: "POST", body: formData, rawBody: true });
-      setToast("Uploaded");
+      showToast("Uploaded");
       await loadLibrary();
     });
   }
@@ -409,7 +448,7 @@ export default function App() {
     if (!confirmed) return;
     await runAction(async () => {
       await api(`/api/library/${item.id}`, { method: "DELETE" });
-      setToast("Removed");
+      showToast("Removed");
       await Promise.all([loadLibrary(), loadJobs()]);
     });
   }
@@ -425,6 +464,7 @@ export default function App() {
           optimize_first: true
         })
       });
+      showToast("Send queued");
       await loadJobs();
     });
   }
@@ -480,7 +520,7 @@ export default function App() {
           <span className="brand-logo" aria-hidden="true" />
           <div>
             <h1>Inky</h1>
-            <span>OPDS, WebDAV, feeds, optimizer, device send</span>
+            <span>A CrossInk Companion App</span>
           </div>
         </div>
         <div className="topbar-actions">
@@ -492,9 +532,9 @@ export default function App() {
           >
             {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
-          <button className="icon-text" type="button" onClick={refreshAll} title="Refresh">
-            <RefreshCw size={15} />
-            Refresh
+          <button className="icon-text" type="button" onClick={() => refreshAll()} title="Refresh" disabled={refreshing}>
+            <RefreshCw className={refreshing ? "spin" : ""} size={15} />
+            {refreshing ? "Refreshing" : "Refresh"}
           </button>
         </div>
       </header>
@@ -670,7 +710,14 @@ export default function App() {
             </form>
           )}
           <div className="table-list">
-            {error && <div className="empty-state error-state">{readableError(error)}</div>}
+            {error && (
+              <div className="empty-state status-state error-state">
+                <span>{readableError(error)}</span>
+                <button type="button" onClick={() => setError("")} title="Dismiss error" aria-label="Dismiss error">
+                  <X size={16} />
+                </button>
+              </div>
+            )}
             {!error && isLocalSource && displayedLibrary.length === 0 && (
               <div className="empty-state">
                 {trimmedSearchQuery ? `No results found for "${trimmedSearchQuery}".` : "No local EPUBs yet."}
@@ -721,7 +768,9 @@ export default function App() {
                   role={opensBrowseTarget ? "button" : undefined}
                   tabIndex={opensBrowseTarget ? 0 : undefined}
                 >
-                  <div className="item-icon">{iconForItem(item)}</div>
+                  <div className={item.image_url ? "item-cover" : "item-icon"}>
+                    {item.image_url ? <img src={item.image_url} alt="" loading="lazy" /> : iconForItem(item)}
+                  </div>
                   <div className="item-main">
                     <strong>{item.title}</strong>
                     <span>
@@ -730,13 +779,13 @@ export default function App() {
                   </div>
                   {(item.type === "book" || item.type === "article" || item.type === "file") && (
                     <div className="row-actions">
-                      <button type="button" onClick={() => importItem(item)} title="Download to Local Library" disabled={busy}>
-                        <ArrowDownToLine size={16} />
+                      <button type="button" onClick={() => importItem(item)} title="Save to Local Library" disabled={busy}>
+                        <Save size={16} />
                       </button>
                       <button
                         type="button"
                         onClick={() => sendBrowseItem(item)}
-                        title={`Download, Optimize for ${deviceLabel} & Send`}
+                        title={`Optimize for ${deviceLabel} & Send`}
                         disabled={busy}
                       >
                         <Send size={16} />
@@ -832,9 +881,12 @@ export default function App() {
       )}
 
       {toast && (
-        <button className="toast" type="button" onClick={() => setToast("")}>
-          {toast}
-        </button>
+        <div className={`toast ${toast.tone === "error" ? "error-toast" : "success-toast"}`} role={toast.tone === "error" ? "alert" : "status"}>
+          <span>{toast.message}</span>
+          <button type="button" onClick={() => setToast(null)} title="Close" aria-label="Close notification">
+            <X size={16} />
+          </button>
+        </div>
       )}
     </main>
   );

@@ -105,6 +105,7 @@ def _parse_opds(xml_text: str, source: Source, url: str) -> BrowseResult:
 
         best_book: tuple[str, str | None] | None = None
         best_nav: str | None = None
+        image_url: str | None = None
         for link in _children(entry, "link"):
             href = link.attrib.get("href")
             if not href:
@@ -114,6 +115,8 @@ def _parse_opds(xml_text: str, source: Source, url: str) -> BrowseResult:
             media_type = link.attrib.get("type", "")
             rel_lower = rel.lower()
             media_type_lower = media_type.lower()
+            if _is_image_link(rel_lower, media_type_lower) and not image_url:
+                image_url = href
             is_book = (
                 "acquisition" in rel_lower
                 or "application/epub+zip" in media_type_lower
@@ -126,10 +129,17 @@ def _parse_opds(xml_text: str, source: Source, url: str) -> BrowseResult:
 
         if best_book:
             items.append(
-                BrowseItem(type="book", title=entry_title, author=author_text, url=best_book[0], media_type=best_book[1])
+                BrowseItem(
+                    type="book",
+                    title=entry_title,
+                    author=author_text,
+                    url=best_book[0],
+                    image_url=image_url,
+                    media_type=best_book[1],
+                )
             )
         elif best_nav:
-            items.append(BrowseItem(type="navigation", title=entry_title, url=best_nav))
+            items.append(BrowseItem(type="navigation", title=entry_title, url=best_nav, image_url=image_url))
 
     message = None if items else "No OPDS entries were found in this catalog response."
     return BrowseResult(
@@ -159,6 +169,7 @@ async def browse_feed(source: Source, target: str | None = None) -> BrowseResult
                 type="article",
                 title=entry.get("title") or display_title_from_url(entry_url),
                 url=entry_url,
+                image_url=_feed_entry_image_url(entry),
                 author=entry.get("author"),
                 summary=entry.get("summary"),
                 published=entry.get("published"),
@@ -279,6 +290,14 @@ def _is_navigation_link(rel: str, media_type: str) -> bool:
     )
 
 
+def _is_image_link(rel: str, media_type: str) -> bool:
+    return (
+        media_type.startswith("image/")
+        or "opds-spec.org/image" in rel
+        or rel in {"cover", "thumbnail", "http://opds-spec.org/image", "http://opds-spec.org/image/thumbnail"}
+    )
+
+
 def _opds_search_link(root: ET.Element, base_url: str) -> tuple[str, str] | None:
     for link in _children(root, "link"):
         rel = link.attrib.get("rel", "").lower()
@@ -336,6 +355,20 @@ def _matches_item(item: BrowseItem, query: str) -> bool:
     needle = query.casefold()
     values = [item.title, item.author, item.summary, item.published, item.path, item.url, item.media_type]
     return any(needle in value.casefold() for value in values if value)
+
+
+def _feed_entry_image_url(entry) -> str | None:
+    for collection_name in ("media_thumbnail", "media_content", "links", "enclosures"):
+        for candidate in entry.get(collection_name, []) or []:
+            url = candidate.get("url") or candidate.get("href")
+            media_type = (candidate.get("type") or candidate.get("medium") or "").lower()
+            if url and (media_type.startswith("image/") or media_type == "image" or collection_name == "media_thumbnail"):
+                return url
+
+    image = entry.get("image")
+    if isinstance(image, dict):
+        return image.get("href") or image.get("url")
+    return None
 
 
 def _href_path(value: str) -> str:
