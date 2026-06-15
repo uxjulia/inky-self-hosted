@@ -2,6 +2,8 @@
   "name": "inky",
   "version": "0.1.0",
   "private": true,
+  "description": "Desktop and self-hosted companion app for CrossInk devices.",
+  "main": "electron/main.cjs",
   "scripts": {
     "postinstall": "npm run setup",
     "setup": "npm run setup:web && npm run setup:api",
@@ -10,6 +12,57 @@
     "dev": "node scripts/dev.mjs",
     "dev:api": "mkdir -p backend/storage && cd backend && INKY_DATABASE_URL=${INKY_DATABASE_URL:-sqlite:///./storage/inky.db} INKY_DATA_DIR=${INKY_DATA_DIR:-./storage} .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
     "dev:web": "npm run dev --prefix frontend",
-    "build": "npm run build --prefix frontend && backend/.venv/bin/python -m compileall backend/app"
+    "build": "npm run build --prefix frontend && backend/.venv/bin/python -m compileall backend/app",
+    "desktop:backend": "node scripts/build-backend-desktop.mjs",
+    "desktop:dev": "node scripts/desktop-dev.mjs",
+    "desktop:dist": "npm run desktop:backend && npm run build && electron-builder",
+    "desktop:pack": "npm run desktop:backend && npm run build && electron-builder --dir"
+  },
+  "build": {
+    "appId": "app.inky.reader",
+    "productName": "Inky",
+    "files": [
+      "electron/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "backend/desktop-dist",
+        "to": "backend-bin"
+      },
+      {
+        "from": "frontend/dist",
+        "to": "frontend/dist"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    }
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3",
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.3",
+    "wait-on": "^9.0.10"
   }
 }

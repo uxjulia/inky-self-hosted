@@ -21,6 +21,7 @@ from .library import (
     import_url,
     import_webdav_file,
     probe_device,
+    register_desktop_library_folder,
     sync_mounted_library,
 )
 from .models import Job, LibraryItem, Source
@@ -32,6 +33,7 @@ from .schemas import (
     ImportUrlRequest,
     JobRead,
     LibraryItemRead,
+    LocalFolderImportRequest,
     OptimizeRequest,
     SourceCreate,
     SourceReorder,
@@ -198,6 +200,14 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
         return copy_uploaded_file(db, temp_path, file.filename or "upload.epub")
     finally:
         temp_path.unlink(missing_ok=True)
+
+
+@app.post("/api/library/folders", response_model=list[LibraryItemRead])
+def add_library_folder(payload: LocalFolderImportRequest, db: Session = Depends(get_db)) -> list[LibraryItem]:
+    try:
+        return register_desktop_library_folder(db, Path(payload.path))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/library/{item_id}/cover")

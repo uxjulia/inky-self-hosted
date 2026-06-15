@@ -72,6 +72,34 @@ backend Python virtualenv at `backend/.venv`. The API runs on
 If Docker Compose is running, stop it first with `docker compose down` so the
 local API can use port `8000`.
 
+## Desktop App
+
+Run the desktop app in development:
+
+```bash
+npm run desktop:dev
+```
+
+This starts the Vite frontend, opens Electron, and launches the FastAPI backend
+on a local loopback port. Desktop storage lives in the operating system app data
+folder, separate from `backend/storage`.
+
+Build an unpacked desktop app for local testing:
+
+```bash
+npm run desktop:pack
+```
+
+Build distributable installers/packages:
+
+```bash
+npm run desktop:dist
+```
+
+The desktop package includes the React build and a PyInstaller-built FastAPI
+backend executable. Build releases on each target OS/architecture so compiled
+Python dependencies match that platform.
+
 ## Device Send Flow
 
 1. On the reader, open **File Transfer**.

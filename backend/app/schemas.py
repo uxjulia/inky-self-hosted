@@ -86,6 +86,10 @@ class WebDavImportRequest(BaseModel):
     cover_url: str | None = None
 
 
+class LocalFolderImportRequest(BaseModel):
+    path: str = Field(min_length=1)
+
+
 class LibraryItemRead(BaseModel):
     id: int
     source_id: int | None

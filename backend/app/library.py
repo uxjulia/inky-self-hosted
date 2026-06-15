@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import posixpath
 import zipfile
+import json
 from dataclasses import dataclass
 from xml.etree import ElementTree as ET
 from pathlib import Path
@@ -18,6 +19,7 @@ from .utils import display_title_from_url, extension_from_url, join_remote, norm
 
 
 MOUNTED_LIBRARY_SOURCE_PREFIX = "mounted-library://"
+DESKTOP_LIBRARY_SOURCE_PREFIX = "desktop-folder://"
 LOCAL_LIBRARY_EXTENSIONS = {".epub", ".txt", ".xtc", ".xtch"}
 EPUB_EXTENSION = ".epub"
 CONTAINER_NS = {"container": "urn:oasis:names:tc:opendocument:xmlns:container"}
@@ -123,18 +125,55 @@ def copy_uploaded_file(db: Session, source_path: Path, filename: str) -> Library
 
 
 def sync_mounted_library(db: Session) -> None:
-    mounted_dir = get_settings().mounted_library_dir
-    if not mounted_dir.exists() or not mounted_dir.is_dir():
-        return
-
-    mounted_dir = mounted_dir.resolve()
     current_source_urls: set[str] = set()
-    for file_path in sorted(mounted_dir.rglob("*")):
+    mounted_dir = get_settings().mounted_library_dir
+    if mounted_dir.exists() and mounted_dir.is_dir():
+        _sync_library_root(db, mounted_dir.resolve(), MOUNTED_LIBRARY_SOURCE_PREFIX, current_source_urls, include_root_in_source_url=False)
+
+    for folder in _registered_desktop_library_folders():
+        if folder.exists() and folder.is_dir():
+            _sync_library_root(db, folder.resolve(), DESKTOP_LIBRARY_SOURCE_PREFIX, current_source_urls, include_root_in_source_url=True)
+
+    folder_items = db.query(LibraryItem).filter(
+        LibraryItem.source_url.like(f"{MOUNTED_LIBRARY_SOURCE_PREFIX}%")
+        | LibraryItem.source_url.like(f"{DESKTOP_LIBRARY_SOURCE_PREFIX}%")
+    ).all()
+    for item in folder_items:
+        if item.source_url not in current_source_urls:
+            db.query(Job).filter(Job.item_id == item.id).update({Job.item_id: None})
+            db.delete(item)
+    db.commit()
+
+
+def register_desktop_library_folder(db: Session, folder_path: Path) -> list[LibraryItem]:
+    folder = folder_path.expanduser().resolve()
+    if not folder.exists() or not folder.is_dir():
+        raise ValueError("folder not found")
+
+    folders = _registered_desktop_library_folders()
+    if folder not in folders:
+        folders.append(folder)
+        _save_desktop_library_folders(folders)
+
+    sync_mounted_library(db)
+    return db.query(LibraryItem).order_by(LibraryItem.updated_at.desc()).all()
+
+
+def _sync_library_root(
+    db: Session,
+    root: Path,
+    source_prefix: str,
+    current_source_urls: set[str],
+    *,
+    include_root_in_source_url: bool,
+) -> None:
+    for file_path in sorted(root.rglob("*")):
         if not file_path.is_file() or file_path.suffix.lower() not in LOCAL_LIBRARY_EXTENSIONS:
             continue
+
         resolved_path = file_path.resolve()
-        relative_path = resolved_path.relative_to(mounted_dir).as_posix()
-        source_url = f"{MOUNTED_LIBRARY_SOURCE_PREFIX}{relative_path}"
+        relative_path = resolved_path.relative_to(root).as_posix()
+        source_url = f"{source_prefix}{resolved_path.as_posix() if include_root_in_source_url else relative_path}"
         current_source_urls.add(source_url)
         metadata = _epub_metadata(file_path) if _is_epub(file_path) else EpubMetadata()
         title = metadata.title or file_path.stem
@@ -156,13 +195,6 @@ def sync_mounted_library(db: Session) -> None:
         db.flush()
         if metadata.cover_path:
             item.cover_url = _library_cover_url(item.id)
-
-    mounted_items = db.query(LibraryItem).filter(LibraryItem.source_url.like(f"{MOUNTED_LIBRARY_SOURCE_PREFIX}%")).all()
-    for item in mounted_items:
-        if item.source_url not in current_source_urls:
-            db.query(Job).filter(Job.item_id == item.id).update({Job.item_id: None})
-            db.delete(item)
-    db.commit()
 
 
 def get_library_item_cover(item: LibraryItem) -> tuple[bytes, str]:
@@ -290,8 +322,36 @@ def _is_readable_library_path(path: Path) -> bool:
     roots = [settings.data_dir.resolve()]
     if settings.mounted_library_dir.exists():
         roots.append(settings.mounted_library_dir.resolve())
+    roots.extend(_registered_desktop_library_folders())
     resolved = path.resolve()
     return any(resolved.is_relative_to(root) for root in roots)
+
+
+def _desktop_library_folders_path() -> Path:
+    return get_settings().data_dir / "library-folders.json"
+
+
+def _registered_desktop_library_folders() -> list[Path]:
+    registry_path = _desktop_library_folders_path()
+    try:
+        data = json.loads(registry_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, list):
+        return []
+
+    folders: list[Path] = []
+    for value in data:
+        if isinstance(value, str):
+            folders.append(Path(value).expanduser().resolve())
+    return folders
+
+
+def _save_desktop_library_folders(folders: list[Path]) -> None:
+    registry_path = _desktop_library_folders_path()
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    unique_folders = sorted({folder.expanduser().resolve().as_posix() for folder in folders})
+    registry_path.write_text(json.dumps(unique_folders, indent=2))
 
 
 def delete_library_item(db: Session, item: LibraryItem) -> None:
