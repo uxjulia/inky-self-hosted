@@ -9,6 +9,8 @@ import {
   FolderPlus,
   Home,
   Library,
+  LogIn,
+  LogOut,
   MoreVertical,
   Moon,
   Pencil,
@@ -41,6 +43,7 @@ declare global {
 const API = window.inkyDesktop?.apiBaseUrl || import.meta.env.VITE_API_BASE_URL || "";
 const themeStorageKey = "inky-theme";
 const localSourceIndexStorageKey = "inky-local-source-index";
+const authStorageKey = "inky-basic-auth";
 const localSourceId = -1;
 
 type AppView = "app" | "help";
@@ -121,6 +124,12 @@ const browsePageSize = 25;
 
 export default function App() {
   const [view, setView] = useState<AppView>(() => getInitialView());
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authEnabled, setAuthEnabled] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<number | null>(null);
   const [browseResult, setBrowseResult] = useState<BrowseResult | null>(null);
@@ -189,12 +198,18 @@ export default function App() {
   const sortLabel = sortLabelForMode(activeSortMode);
 
   useEffect(() => {
+    checkAuth();
+  }, []);
+
+  useEffect(() => {
+    if (!authChecked || !isAuthenticated) return;
+
     refreshAll(false);
     const interval = window.setInterval(() => {
       loadLibrary();
     }, 2500);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [authChecked, isAuthenticated]);
 
   useEffect(() => {
     const updateViewFromHash = () => setView(getInitialView());
@@ -261,6 +276,57 @@ export default function App() {
     if (selectedSource?.type === "feed") return <Rss size={16} />;
     return <BookOpen size={16} />;
   }, [selectedSource]);
+
+  async function checkAuth() {
+    try {
+      const status = await publicApi<{ enabled: boolean }>("/api/auth/status");
+      setAuthEnabled(status.enabled);
+      if (!status.enabled) {
+        setIsAuthenticated(true);
+        return;
+      }
+
+      if (!window.sessionStorage.getItem(authStorageKey)) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      try {
+        await api("/api/auth/login");
+        setIsAuthenticated(true);
+      } catch {
+        window.sessionStorage.removeItem(authStorageKey);
+        setIsAuthenticated(false);
+      }
+    } finally {
+      setAuthChecked(true);
+    }
+  }
+
+  async function login(event: FormEvent) {
+    event.preventDefault();
+    setLoginError("");
+    const token = window.btoa(`${loginUsername}:${loginPassword}`);
+    window.sessionStorage.setItem(authStorageKey, `Basic ${token}`);
+    try {
+      await api("/api/auth/login");
+      setIsAuthenticated(true);
+      setLoginPassword("");
+    } catch {
+      window.sessionStorage.removeItem(authStorageKey);
+      setIsAuthenticated(false);
+      setLoginError("Invalid username or password.");
+    }
+  }
+
+  function logout() {
+    window.sessionStorage.removeItem(authStorageKey);
+    setIsAuthenticated(false);
+    setSources([]);
+    setLibrary([]);
+    setJobs([]);
+    setSelectedSourceId(null);
+  }
 
   async function refreshAll(showFeedback = true) {
     setRefreshing(true);
@@ -745,6 +811,43 @@ export default function App() {
     setView("app");
   }
 
+  if (!authChecked) {
+    return (
+      <main className="app-shell auth-shell">
+        <section className="auth-card">
+          <span className="brand-logo" aria-hidden="true" />
+          <h1>Inky</h1>
+          <p>Starting up...</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (authEnabled && !isAuthenticated) {
+    return (
+      <main className="app-shell auth-shell">
+        <form className="auth-card" onSubmit={login}>
+          <span className="brand-logo" aria-hidden="true" />
+          <h1>Inky</h1>
+          <p>Sign in to access your self-hosted library.</p>
+          {loginError && <div className="auth-error">{loginError}</div>}
+          <input value={loginUsername} onChange={(event) => setLoginUsername(event.target.value)} placeholder="Username" autoComplete="username" />
+          <input
+            value={loginPassword}
+            onChange={(event) => setLoginPassword(event.target.value)}
+            placeholder="Password"
+            type="password"
+            autoComplete="current-password"
+          />
+          <button className="primary" type="submit" disabled={!loginUsername || !loginPassword}>
+            <LogIn size={16} />
+            Sign in
+          </button>
+        </form>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -779,6 +882,11 @@ export default function App() {
             <button className="icon-text" type="button" onClick={() => refreshAll()} title="Refresh" disabled={refreshing}>
               <RefreshCw className={refreshing ? "spin" : ""} size={15} />
               {refreshing ? "Refreshing" : "Refresh"}
+            </button>
+          )}
+          {authEnabled && (
+            <button type="button" onClick={logout} title="Sign out" aria-label="Sign out">
+              <LogOut size={16} />
             </button>
           )}
         </div>
@@ -1426,7 +1534,12 @@ function formatBytes(size: number) {
 async function api<T = unknown>(path: string, init: RequestInit & { rawBody?: boolean } = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (!init.rawBody) headers.set("Content-Type", "application/json");
+  const authHeader = window.sessionStorage.getItem(authStorageKey);
+  if (authHeader) headers.set("Authorization", authHeader);
   const response = await fetch(`${API}${path}`, { ...init, headers });
+  if (response.status === 401) {
+    window.sessionStorage.removeItem(authStorageKey);
+  }
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || response.statusText);
@@ -1436,4 +1549,13 @@ async function api<T = unknown>(path: string, init: RequestInit & { rawBody?: bo
     return response.json();
   }
   return undefined as T;
+}
+
+async function publicApi<T = unknown>(path: string): Promise<T> {
+  const response = await fetch(`${API}${path}`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || response.statusText);
+  }
+  return response.json();
 }

@@ -9,7 +9,8 @@ import httpx
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .config import ensure_data_dirs
+from .auth import require_basic_auth
+from .config import ensure_data_dirs, get_settings
 from .connectors import browse_source, search_source
 from .db import get_db, init_db
 from .jobs import create_job, run_optimize_job, run_send_job
@@ -43,7 +44,7 @@ from .schemas import (
 )
 
 
-app = FastAPI(title="Inky API", version="0.1.0")
+app = FastAPI(title="Inky API", version="0.1.0", dependencies=[Depends(require_basic_auth)])
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -61,6 +62,16 @@ def startup() -> None:
 
 @app.get("/api/health")
 def health() -> dict:
+    return {"ok": True}
+
+
+@app.get("/api/auth/status")
+def auth_status() -> dict:
+    return {"enabled": get_settings().auth_enabled}
+
+
+@app.get("/api/auth/login")
+def auth_login() -> dict:
     return {"ok": True}
 
 

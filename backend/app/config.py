@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     data_dir: Path = Path("/data")
     mounted_library_dir: Path = Path("/library")
     http_timeout_seconds: float = 30.0
+    auth_username: str = ""
+    auth_password: str = ""
+    auth_realm: str = "Inky"
 
     model_config = SettingsConfigDict(env_prefix="INKY_", env_file=(".env", "../.env"), extra="ignore")
 
@@ -30,6 +33,10 @@ class Settings(BaseSettings):
     @property
     def imports_dir(self) -> Path:
         return self.data_dir / "imports"
+
+    @property
+    def auth_enabled(self) -> bool:
+        return bool(self.auth_username and self.auth_password)
 
 
 @lru_cache

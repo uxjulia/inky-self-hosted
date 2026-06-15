@@ -18,6 +18,21 @@ Open:
 http://localhost:3000
 ```
 
+### Basic Auth
+
+For a self-hosted install, set both auth variables in `.env` before starting
+Compose:
+
+```bash
+INKY_AUTH_USERNAME=your-user
+INKY_AUTH_PASSWORD=choose-a-long-password
+```
+
+When both values are set, the API requires HTTP Basic Auth and the web app shows
+a sign-in screen. Leave either value blank to disable authentication. Basic Auth
+protects against casual access on a trusted private network; use HTTPS or a VPN
+if you expose Inky outside your LAN.
+
 The in-app guide is available at:
 
 ```text
