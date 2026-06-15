@@ -34,10 +34,10 @@
   --color-muted: #a1a1aa;
   --color-border: #303136;
   --color-border-strong: #44464d;
-  --color-primary: #e5e7eb;
+  --color-primary: #7e95b9;
   --color-on-primary: #111113;
-  --color-primary-strong: #ffffff;
-  --color-primary-soft: #2a2b30;
+  --color-primary-strong: #d7d7d7;
+  --color-primary-soft: #2b3856;
   --color-icon-bg: #26272c;
   --color-danger: #ffb9b2;
   --color-danger-bg: #351c1c;
@@ -172,7 +172,7 @@ h2 {
 .layout {
   flex: 1;
   display: grid;
-  grid-template-columns: 300px minmax(360px, 1fr);
+  grid-template-columns: 400px minmax(460px, 1fr);
   gap: 12px;
   padding: 12px;
   min-height: 0;
@@ -719,6 +719,28 @@ progress {
 
   .source-drag-icon {
     display: none;
+  }
+
+  .source-menu {
+    width: 180px;
+    padding: 6px;
+  }
+
+  .source-menu button {
+    min-height: 44px;
+    padding: 0 12px;
+    font-size: 15px;
+  }
+
+  .sort-menu {
+    width: 180px;
+    padding: 6px;
+  }
+
+  .sort-menu button {
+    min-height: 44px;
+    padding: 0 12px;
+    font-size: 15px;
   }
 
   .search-bar {

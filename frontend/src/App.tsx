@@ -114,6 +114,7 @@ export default function App() {
   const [browseStack, setBrowseStack] = useState<(string | null)[]>([null]);
   const [library, setLibrary] = useState<LibraryItem[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [form, setForm] = useState<SourceForm>(emptySourceForm);
   const [deviceUrl, setDeviceUrl] = useState("crosspoint.local");
   const [destinationPath, setDestinationPath] = useState("/");
@@ -166,11 +167,25 @@ export default function App() {
   useEffect(() => {
     refreshAll(false);
     const interval = window.setInterval(() => {
-      loadJobs();
       loadLibrary();
     }, 2500);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!activeJobId) return;
+
+    const pollJob = async () => {
+      const job = await loadVisibleJob(activeJobId);
+      if (job && (job.status === "succeeded" || job.status === "failed")) {
+        setActiveJobId(null);
+        await loadLibrary();
+      }
+    };
+
+    const interval = window.setInterval(pollJob, 1500);
+    return () => window.clearInterval(interval);
+  }, [activeJobId]);
 
   useEffect(() => {
     clearSearch();
@@ -208,7 +223,7 @@ export default function App() {
     setRefreshing(true);
     try {
       const refreshed = await runAction(async () => {
-        await Promise.all([loadSources(), loadLibrary(), loadJobs()]);
+        await Promise.all([loadSources(), loadLibrary(), activeJobId ? loadVisibleJob(activeJobId) : Promise.resolve()]);
 
         if (selectedSourceId && selectedSourceId !== localSourceId) {
           if (trimmedSearchQuery) {
@@ -242,8 +257,15 @@ export default function App() {
     setLibrary(await api<LibraryItem[]>("/api/library"));
   }
 
-  async function loadJobs() {
-    setJobs(await api<Job[]>("/api/jobs"));
+  async function loadVisibleJob(jobId: string) {
+    const job = await api<Job>(`/api/jobs/${jobId}`);
+    setJobs([job]);
+    return job;
+  }
+
+  function trackJob(job: Job) {
+    setJobs([job]);
+    setActiveJobId(job.id);
   }
 
   async function browse(sourceId: number, target: string | null) {
@@ -485,7 +507,7 @@ export default function App() {
       await runAction(async () => {
         const imported = await importBrowseItem(item);
         if (!imported) return;
-        await api(`/api/library/${imported.id}/send`, {
+        const job = await api<Job>(`/api/library/${imported.id}/send`, {
           method: "POST",
           body: JSON.stringify({
             ...defaultOptimizePayload(),
@@ -494,8 +516,9 @@ export default function App() {
             optimize_first: true
           })
         });
+        trackJob(job);
         showToast("Send queued");
-        await Promise.all([loadLibrary(), loadJobs()]);
+        await loadLibrary();
       });
     } finally {
       setBusy(false);
@@ -546,13 +569,13 @@ export default function App() {
     await runAction(async () => {
       await api(`/api/library/${item.id}`, { method: "DELETE" });
       showToast("Removed");
-      await Promise.all([loadLibrary(), loadJobs()]);
+      await loadLibrary();
     });
   }
 
   async function sendToDevice(item: LibraryItem) {
     await runAction(async () => {
-      await api(`/api/library/${item.id}/send`, {
+      const job = await api<Job>(`/api/library/${item.id}/send`, {
         method: "POST",
         body: JSON.stringify({
           ...defaultOptimizePayload(),
@@ -561,8 +584,8 @@ export default function App() {
           optimize_first: true
         })
       });
+      trackJob(job);
       showToast("Send queued");
-      await loadJobs();
     });
   }
 
@@ -646,13 +669,13 @@ export default function App() {
               </div>
               <button type="button" onClick={probeDevice} title="Test Connection" disabled={testingDevice}>
                 {testingDevice ? <RefreshCw className="spin" size={15} /> : <Wifi size={15} />}
-                {testingDevice ? "Testing" : "Test Connection"}
+                {testingDevice ? "Searching" : "Test Connection"}
               </button>
             </div>
             {deviceError && (
               <div className="empty-state status-state error-state">
                 <span>{readableError(deviceError)}</span>
-                <button type="button" onClick={() => setDeviceError("")} title="Dismiss device error" aria-label="Dismiss device error">
+                <button className="border-0" type="button" onClick={() => setDeviceError("")} title="Dismiss device error" aria-label="Dismiss device error">
                   <X size={16} />
                 </button>
               </div>
@@ -698,8 +721,8 @@ export default function App() {
               </div>
             </label>
             {jobs.length > 0 && (
-              <pre className="job-log" aria-label="Recent device jobs">
-                <code>{jobs.slice(0, 8).map(formatJobLog).join("\n")}</code>
+              <pre className="job-log" aria-label="Latest device job">
+                <code>{jobs.map(formatJobLog).join("\n")}</code>
               </pre>
             )}
           </section>
