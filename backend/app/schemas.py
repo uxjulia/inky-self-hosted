@@ -44,6 +44,8 @@ class BrowseResult(BaseModel):
     title: str
     items: list[BrowseItem]
     message: str | None = None
+    next_url: str | None = None
+    previous_url: str | None = None
 
 
 class ImportUrlRequest(BaseModel):

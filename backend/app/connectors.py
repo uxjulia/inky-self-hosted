@@ -132,7 +132,16 @@ def _parse_opds(xml_text: str, source: Source, url: str) -> BrowseResult:
             items.append(BrowseItem(type="navigation", title=entry_title, url=best_nav))
 
     message = None if items else "No OPDS entries were found in this catalog response."
-    return BrowseResult(source_id=source.id, source_type=source.type, base_url=url, title=title, items=items, message=message)
+    return BrowseResult(
+        source_id=source.id,
+        source_type=source.type,
+        base_url=url,
+        title=title,
+        items=items,
+        message=message,
+        next_url=_feed_link(root, url, "next"),
+        previous_url=_feed_link(root, url, "previous") or _feed_link(root, url, "prev"),
+    )
 
 
 async def browse_feed(source: Source, target: str | None = None) -> BrowseResult:
@@ -141,7 +150,7 @@ async def browse_feed(source: Source, target: str | None = None) -> BrowseResult
     parsed = feedparser.parse(text)
     title = parsed.feed.get("title") or source.name
     items = []
-    for entry in parsed.entries[:100]:
+    for entry in parsed.entries:
         entry_url = entry.get("link")
         if not entry_url:
             continue
@@ -279,6 +288,17 @@ def _opds_search_link(root: ET.Element, base_url: str) -> tuple[str, str] | None
         if not href:
             continue
         return urljoin(base_url, href), link.attrib.get("type", "").lower()
+    return None
+
+
+def _feed_link(root: ET.Element, base_url: str, rel_name: str) -> str | None:
+    for link in _children(root, "link"):
+        rel_values = link.attrib.get("rel", "").lower().split()
+        if rel_name not in rel_values:
+            continue
+        href = link.attrib.get("href")
+        if href:
+            return urljoin(base_url, href)
     return None
 
 

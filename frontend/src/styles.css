@@ -1,20 +1,20 @@
 :root {
-  --color-bg: #f4f7f6;
+  --color-bg: #f8f8f8;
   --color-panel: #ffffff;
   --color-panel-muted: #f7faf9;
   --color-text: #1f2933;
   --color-muted: #66756f;
   --color-border: #d9e2df;
   --color-border-strong: #ccd6d4;
-  --color-primary: #1f6f5b;
+  --color-primary: #4f5f78;
   --color-on-primary: #ffffff;
-  --color-primary-strong: #195a48;
-  --color-primary-soft: #e8f3ee;
-  --color-icon-bg: #edf4f1;
+  --color-primary-strong: #344158;
+  --color-primary-soft: #edf1f7;
+  --color-icon-bg: #eef2f7;
   --color-danger: #8a2c2c;
   --color-danger-bg: #fff6f5;
   --color-danger-border: #f0c5c5;
-  --color-success: #1f6f5b;
+  --color-success: #2f6f54;
   --color-success-bg: #f0faf5;
   --color-success-border: #b9dfcb;
   --color-toast-bg: #1f2933;
@@ -29,26 +29,26 @@
 }
 
 :root[data-theme="dark"] {
-  --color-bg: #111816;
-  --color-panel: #18211f;
-  --color-panel-muted: #141d1a;
-  --color-text: #edf5f2;
-  --color-muted: #9bb0a8;
-  --color-border: #2a3834;
-  --color-border-strong: #3a4b46;
-  --color-primary: #5bc49f;
-  --color-on-primary: #101816;
-  --color-primary-strong: #c7f5df;
-  --color-primary-soft: #20372f;
-  --color-icon-bg: #22352f;
+  --color-bg: #0f1011;
+  --color-panel: #18191b;
+  --color-panel-muted: #222326;
+  --color-text: #f4f4f5;
+  --color-muted: #a1a1aa;
+  --color-border: #303136;
+  --color-border-strong: #44464d;
+  --color-primary: #e5e7eb;
+  --color-on-primary: #111113;
+  --color-primary-strong: #ffffff;
+  --color-primary-soft: #2a2b30;
+  --color-icon-bg: #26272c;
   --color-danger: #ffb9b2;
   --color-danger-bg: #351c1c;
   --color-danger-border: #6b3430;
-  --color-success: #8ee6bd;
-  --color-success-bg: #183226;
-  --color-success-border: #32634c;
-  --color-toast-bg: #edf5f2;
-  --color-toast-text: #111816;
+  --color-success: #9bd4b4;
+  --color-success-bg: #17251d;
+  --color-success-border: #365644;
+  --color-toast-bg: #f4f4f5;
+  --color-toast-text: #111113;
   color-scheme: dark;
 }
 
@@ -63,7 +63,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: 15px;
 }
 
@@ -89,7 +90,8 @@ button:disabled {
   animation: spin 0.9s linear infinite;
 }
 
-input {
+input,
+select {
   width: 100%;
   border: 1px solid var(--color-border-strong);
   border-radius: 3px;
@@ -289,7 +291,7 @@ h2 {
 
 .search-bar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   gap: 6px;
   margin-bottom: 10px;
 }
@@ -306,15 +308,71 @@ h2 {
 
 .row-actions button,
 .toolbar button,
-.file-button {
+.file-button,
+.sort-button {
   width: 36px;
   min-width: 36px;
   padding: 0;
 }
 
+.sort-button.active {
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary);
+  color: var(--color-primary-strong);
+}
+
+.sort-menu-wrap {
+  position: relative;
+}
+
+.sort-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 5;
+  width: 150px;
+  padding: 4px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 3px;
+  background: var(--color-panel);
+  box-shadow: 0 10px 24px rgba(17, 24, 22, 0.16);
+}
+
+.sort-menu button {
+  width: 100%;
+  justify-content: flex-start;
+  border-color: transparent;
+  padding: 0 8px;
+}
+
+.sort-menu button.active {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
 .toolbar button:first-child {
   width: auto;
   min-width: 58px;
+  padding: 0 10px;
+}
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pagination-actions button {
   padding: 0 10px;
 }
 
@@ -331,6 +389,21 @@ h2 {
 
 .item-row {
   grid-template-columns: 28px minmax(0, 1fr) auto;
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row:hover,
+.clickable-row:focus-visible {
+  border-color: var(--color-border-strong);
+  background: var(--color-panel-muted);
+}
+
+.clickable-row:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .empty-state {
@@ -498,10 +571,16 @@ progress {
   }
 
   .search-bar {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
   }
 
-  .search-bar button[type="submit"] {
-    grid-column: 1 / -1;
+  .pagination-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pagination-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
   }
 }

@@ -1,5 +1,6 @@
 import {
   ArrowDownToLine,
+  ArrowUpDown,
   BookOpen,
   Folder,
   Library,
@@ -10,7 +11,7 @@ import {
   Search,
   Send,
   Server,
-  Settings2,
+  TabletSmartphone,
   Sun,
   Trash2,
   Wifi,
@@ -26,6 +27,7 @@ const localSourceId = -1;
 type RemoteSourceType = "opds" | "webdav" | "feed";
 type SourceType = "local" | RemoteSourceType;
 type Theme = "light" | "dark";
+type SortMode = "source" | "title_asc" | "title_desc";
 
 type Source = {
   id: number;
@@ -54,6 +56,8 @@ type BrowseResult = {
   title: string;
   items: BrowseItem[];
   message?: string | null;
+  next_url?: string | null;
+  previous_url?: string | null;
 };
 
 type LibraryItem = {
@@ -87,6 +91,7 @@ type SourceForm = {
 
 const emptySourceForm: SourceForm = { type: "opds", name: "", url: "", username: "", password: "" };
 const localSource: Source = { id: localSourceId, type: "local", name: "Local Library", url: "local://library" };
+const browsePageSize = 25;
 
 export default function App() {
   const [sources, setSources] = useState<Source[]>([]);
@@ -94,6 +99,10 @@ export default function App() {
   const [browseResult, setBrowseResult] = useState<BrowseResult | null>(null);
   const [searchResult, setSearchResult] = useState<BrowseResult | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [browsePage, setBrowsePage] = useState(1);
+  const [remotePage, setRemotePage] = useState(1);
+  const [sortMode, setSortMode] = useState<SortMode>("source");
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [browseStack, setBrowseStack] = useState<(string | null)[]>([null]);
   const [library, setLibrary] = useState<LibraryItem[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -123,6 +132,23 @@ export default function App() {
       [item.title, item.author, item.source_url, item.original_path].some((value) => value?.toLocaleLowerCase().includes(needle))
     );
   }, [library, trimmedSearchQuery]);
+  const remoteItems = activeBrowseResult?.items || [];
+  const sortedLibrary = useMemo(() => sortLibraryItems(displayedLibrary, sortMode), [displayedLibrary, sortMode]);
+  const sortedRemoteItems = useMemo(() => sortBrowseItems(remoteItems, sortMode), [remoteItems, sortMode]);
+  const displayedItems = isLocalSource ? sortedLibrary : sortedRemoteItems;
+  const totalPages = Math.max(1, Math.ceil(displayedItems.length / browsePageSize));
+  const clampedBrowsePage = Math.min(browsePage, totalPages);
+  const paginatedLibrary = sortedLibrary.slice((clampedBrowsePage - 1) * browsePageSize, clampedBrowsePage * browsePageSize);
+  const paginatedRemoteItems = sortedRemoteItems.slice((clampedBrowsePage - 1) * browsePageSize, clampedBrowsePage * browsePageSize);
+  const hasRemotePagination = !isLocalSource && Boolean(activeBrowseResult?.previous_url || activeBrowseResult?.next_url);
+  const showPagination =
+    displayedItems.length > browsePageSize || hasRemotePagination;
+  const paginationLabel = hasRemotePagination
+    ? totalPages > 1
+      ? `Catalog Page ${remotePage} · results page ${clampedBrowsePage} of ${totalPages}`
+      : `Catalog Page ${remotePage}`
+    : `Page ${clampedBrowsePage} of ${totalPages}`;
+  const sortLabel = sortLabelForMode(sortMode);
 
   useEffect(() => {
     refreshAll();
@@ -152,7 +178,7 @@ export default function App() {
   }, [theme]);
 
   const sourceIcon = useMemo(() => {
-    if (selectedSource?.type === "local") return <Library size={16} />;
+    if (selectedSource?.type === "local") return <Folder size={16} />;
     if (selectedSource?.type === "webdav") return <Server size={16} />;
     if (selectedSource?.type === "feed") return <Rss size={16} />;
     return <BookOpen size={16} />;
@@ -184,6 +210,8 @@ export default function App() {
     const query = target ? `?target=${encodeURIComponent(target)}` : "";
     await runAction(async () => {
       setBrowseResult(await api<BrowseResult>(`/api/sources/${sourceId}/browse${query}`));
+      setBrowsePage(1);
+      setRemotePage(1);
     });
   }
 
@@ -240,7 +268,15 @@ export default function App() {
 
   async function searchSelectedSource(event: FormEvent) {
     event.preventDefault();
-    if (!trimmedSearchQuery || !selectedSourceId || isLocalSource) return;
+    if (!trimmedSearchQuery) {
+      clearSearch();
+      return;
+    }
+    if (isLocalSource) {
+      setBrowsePage(1);
+      return;
+    }
+    if (!selectedSourceId) return;
 
     const params = new URLSearchParams({ q: trimmedSearchQuery });
     const currentTarget = browseStack[browseStack.length - 1];
@@ -250,6 +286,8 @@ export default function App() {
     try {
       await runAction(async () => {
         setSearchResult(await api<BrowseResult>(`/api/sources/${selectedSourceId}/search?${params.toString()}`));
+        setBrowsePage(1);
+        setRemotePage(1);
       });
     } finally {
       setSearching(false);
@@ -258,12 +296,35 @@ export default function App() {
 
   function updateSearchQuery(value: string) {
     setSearchQuery(value);
+    setBrowsePage(1);
     if (!value.trim()) setSearchResult(null);
   }
 
   function clearSearch() {
     setSearchQuery("");
     setSearchResult(null);
+    setBrowsePage(1);
+    setRemotePage(1);
+  }
+
+  function updateSortMode(value: SortMode) {
+    setSortMode(value);
+    setBrowsePage(1);
+    setSortMenuOpen(false);
+  }
+
+  async function openResultPage(target: string | null | undefined, direction: "next" | "previous") {
+    if (!target || !selectedSourceId || isLocalSource) return;
+    await runAction(async () => {
+      const result = await api<BrowseResult>(`/api/sources/${selectedSourceId}/browse?target=${encodeURIComponent(target)}`);
+      if (searchResult) {
+        setSearchResult(result);
+      } else {
+        setBrowseResult(result);
+      }
+      setBrowsePage(1);
+      setRemotePage((page) => (direction === "next" ? page + 1 : Math.max(1, page - 1)));
+    });
   }
 
   async function importItem(item: BrowseItem) {
@@ -443,7 +504,7 @@ export default function App() {
           <section className="panel device-panel">
             <div className="panel-header">
               <div className="heading-line">
-                <Settings2 size={16} />
+                <TabletSmartphone size={16} />
                 <h2>Device</h2>
               </div>
               <button type="button" onClick={probeDevice} title="Test Connection" disabled={testingDevice}>
@@ -508,7 +569,10 @@ export default function App() {
 
           <section className="panel source-panel">
             <div className="panel-header">
+              <div className="heading-line">
+              <Library size={16} />
               <h2>Sources</h2>
+              </div>
               <button
                 type="button"
                 onClick={() => setSourceModalOpen(true)}
@@ -576,6 +640,33 @@ export default function App() {
                 {searching ? <RefreshCw className="spin" size={15} /> : <Search size={15} />}
                 Search
               </button>
+              <div className="sort-menu-wrap">
+                <button
+                  type="button"
+                  className={`sort-button ${sortMode === "source" ? "" : "active"}`}
+                  onClick={() => setSortMenuOpen((open) => !open)}
+                  title={`Sort: ${sortLabel}`}
+                  aria-label={`Sort: ${sortLabel}`}
+                  aria-expanded={sortMenuOpen}
+                >
+                  <ArrowUpDown size={16} />
+                </button>
+                {sortMenuOpen && (
+                  <div className="sort-menu" role="menu">
+                    {(["source", "title_asc", "title_desc"] as SortMode[]).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        className={sortMode === mode ? "active" : ""}
+                        onClick={() => updateSortMode(mode)}
+                        role="menuitem"
+                      >
+                        {sortLabelForMode(mode)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </form>
           )}
           <div className="table-list">
@@ -587,7 +678,7 @@ export default function App() {
             )}
             {!error &&
               isLocalSource &&
-              displayedLibrary.map((item) => (
+              paginatedLibrary.map((item) => (
                 <div className="item-row" key={item.id}>
                   <div className="item-icon">
                     <BookOpen size={16} />
@@ -610,23 +701,35 @@ export default function App() {
             {!error && !isLocalSource && selectedSource && !browseResult && (
               <div className="empty-state">Select refresh to browse this source.</div>
             )}
-            {!isLocalSource && activeBrowseResult?.items.map((item, index) => (
-              <div className="item-row" key={`${item.type}-${item.url || item.path}-${index}`}>
-                <div className="item-icon">{iconForItem(item)}</div>
-                <div className="item-main">
-                  <strong>{item.title}</strong>
-                  <span>
-                    {[item.author, item.published, item.size ? formatBytes(item.size) : null].filter(Boolean).join(" · ")}
-                  </span>
-                </div>
-                <div className="row-actions">
-                  {(item.type === "navigation" || item.type === "directory") && (
-                    <button type="button" onClick={() => openBrowseItem(item)} title="Open">
-                      <Folder size={16} />
-                    </button>
-                  )}
+            {!isLocalSource && paginatedRemoteItems.map((item, index) => {
+              const opensBrowseTarget = item.type === "navigation" || item.type === "directory";
+              return (
+                <div
+                  className={`item-row ${opensBrowseTarget ? "clickable-row" : ""}`}
+                  key={`${item.type}-${item.url || item.path}-${index}`}
+                  onClick={opensBrowseTarget ? () => openBrowseItem(item) : undefined}
+                  onKeyDown={
+                    opensBrowseTarget
+                      ? (event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            openBrowseItem(item);
+                          }
+                        }
+                      : undefined
+                  }
+                  role={opensBrowseTarget ? "button" : undefined}
+                  tabIndex={opensBrowseTarget ? 0 : undefined}
+                >
+                  <div className="item-icon">{iconForItem(item)}</div>
+                  <div className="item-main">
+                    <strong>{item.title}</strong>
+                    <span>
+                      {[item.author, item.published, item.size ? formatBytes(item.size) : null].filter(Boolean).join(" · ")}
+                    </span>
+                  </div>
                   {(item.type === "book" || item.type === "article" || item.type === "file") && (
-                    <>
+                    <div className="row-actions">
                       <button type="button" onClick={() => importItem(item)} title="Download to Local Library" disabled={busy}>
                         <ArrowDownToLine size={16} />
                       </button>
@@ -638,12 +741,43 @@ export default function App() {
                       >
                         <Send size={16} />
                       </button>
-                    </>
+                    </div>
                   )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
+          {showPagination && (
+            <div className="pagination-bar">
+              <span>
+                {paginationLabel}
+              </span>
+              <div className="pagination-actions">
+                <button
+                  type="button"
+                  onClick={() =>
+                    clampedBrowsePage > 1
+                      ? setBrowsePage((page) => Math.max(1, page - 1))
+                      : openResultPage(activeBrowseResult?.previous_url, "previous")
+                  }
+                  disabled={clampedBrowsePage <= 1 && !activeBrowseResult?.previous_url}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    clampedBrowsePage < totalPages
+                      ? setBrowsePage((page) => Math.min(totalPages, page + 1))
+                      : openResultPage(activeBrowseResult?.next_url, "next")
+                  }
+                  disabled={clampedBrowsePage >= totalPages && !activeBrowseResult?.next_url}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
       </section>
@@ -742,6 +876,27 @@ function iconForItem(item: BrowseItem) {
   if (item.type === "article") return <Rss size={16} />;
   if (item.type === "directory" || item.type === "navigation") return <Folder size={16} />;
   return <BookOpen size={16} />;
+}
+
+function sortBrowseItems(items: BrowseItem[], sortMode: SortMode) {
+  if (sortMode === "source") return items;
+  return [...items].sort((left, right) => compareTitles(left.title, right.title, sortMode));
+}
+
+function sortLibraryItems(items: LibraryItem[], sortMode: SortMode) {
+  if (sortMode === "source") return items;
+  return [...items].sort((left, right) => compareTitles(left.title, right.title, sortMode));
+}
+
+function compareTitles(left: string, right: string, sortMode: SortMode) {
+  const result = left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+  return sortMode === "title_desc" ? -result : result;
+}
+
+function sortLabelForMode(sortMode: SortMode) {
+  if (sortMode === "title_asc") return "Title A-Z";
+  if (sortMode === "title_desc") return "Title Z-A";
+  return "Source order";
 }
 
 function formatBytes(size: number) {
