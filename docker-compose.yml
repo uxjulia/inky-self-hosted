@@ -6,8 +6,10 @@ services:
     environment:
       INKY_DATABASE_URL: ${INKY_DATABASE_URL:-sqlite:////data/inky.db}
       INKY_DATA_DIR: ${INKY_DATA_DIR:-/data}
+      INKY_MOUNTED_LIBRARY_DIR: /library
     volumes:
       - inky-data:/data
+      - ${INKY_LOCAL_LIBRARY_PATH:-./library}:/library:ro
     ports:
       - "8000:8000"
 
@@ -22,4 +24,3 @@ services:
 
 volumes:
   inky-data:
-

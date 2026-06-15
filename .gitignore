@@ -8,3 +8,4 @@ dist/
 *.tsbuildinfo
 backend/storage/
 backend/.venv/
+library/

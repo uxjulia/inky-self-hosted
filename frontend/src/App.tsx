@@ -27,13 +27,15 @@ import type { DragEvent, FormEvent } from "react";
 
 const API = import.meta.env.VITE_API_BASE_URL || "";
 const themeStorageKey = "inky-theme";
+const localSourceIndexStorageKey = "inky-local-source-index";
 const localSourceId = -1;
 
 type RemoteSourceType = "opds" | "webdav" | "feed";
 type SourceType = "local" | RemoteSourceType;
 type Theme = "light" | "dark";
-type SortMode = "source" | "title_asc" | "title_desc";
+type SortMode = "source" | "title_asc" | "title_desc" | "type";
 type ToastState = { message: string; tone: "success" | "error" };
+type PendingBrowseAction = { key: string; action: "save" | "send" };
 
 type Source = {
   id: number;
@@ -77,6 +79,8 @@ type LibraryItem = {
   original_path: string;
   optimized_path?: string | null;
   source_url?: string | null;
+  cover_url?: string | null;
+  sent_at?: string | null;
 };
 
 type Job = {
@@ -120,7 +124,9 @@ export default function App() {
   const [destinationPath, setDestinationPath] = useState("/");
   const [device, setDevice] = useState<"x4" | "x3">("x4");
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
+  const [localSourceIndex, setLocalSourceIndex] = useState(() => getInitialLocalSourceIndex());
   const [busy, setBusy] = useState(false);
+  const [pendingBrowseAction, setPendingBrowseAction] = useState<PendingBrowseAction | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [searching, setSearching] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -133,7 +139,7 @@ export default function App() {
   const [draggedSourceId, setDraggedSourceId] = useState<number | null>(null);
   const [dragOverSourceId, setDragOverSourceId] = useState<number | null>(null);
   const [sourceMenuId, setSourceMenuId] = useState<number | null>(null);
-  const allSources = useMemo(() => [localSource, ...sources], [sources]);
+  const allSources = useMemo(() => insertLocalSource(sources, localSourceIndex), [sources, localSourceIndex]);
   const selectedSource = allSources.find((source) => source.id === selectedSourceId) || null;
   const isLocalSource = selectedSourceId === localSourceId;
   const deviceLabel = device.toUpperCase();
@@ -147,8 +153,10 @@ export default function App() {
     );
   }, [library, trimmedSearchQuery]);
   const remoteItems = activeBrowseResult?.items || [];
+  const activeSortMode = !isLocalSource && sortMode === "type" ? "source" : sortMode;
+  const sortOptions: SortMode[] = isLocalSource ? ["source", "type", "title_asc", "title_desc"] : ["source", "title_asc", "title_desc"];
   const sortedLibrary = useMemo(() => sortLibraryItems(displayedLibrary, sortMode), [displayedLibrary, sortMode]);
-  const sortedRemoteItems = useMemo(() => sortBrowseItems(remoteItems, sortMode), [remoteItems, sortMode]);
+  const sortedRemoteItems = useMemo(() => sortBrowseItems(remoteItems, activeSortMode), [remoteItems, activeSortMode]);
   const displayedItems = isLocalSource ? sortedLibrary : sortedRemoteItems;
   const totalPages = Math.max(1, Math.ceil(displayedItems.length / browsePageSize));
   const clampedBrowsePage = Math.min(browsePage, totalPages);
@@ -162,7 +170,7 @@ export default function App() {
       ? `Catalog Page ${remotePage} · results page ${clampedBrowsePage} of ${totalPages}`
       : `Catalog Page ${remotePage}`
     : `Page ${clampedBrowsePage} of ${totalPages}`;
-  const sortLabel = sortLabelForMode(sortMode);
+  const sortLabel = sortLabelForMode(activeSortMode);
 
   useEffect(() => {
     refreshAll(false);
@@ -206,11 +214,24 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    const clampedIndex = clampLocalSourceIndex(localSourceIndex, sources.length);
+    if (clampedIndex === localSourceIndex) return;
+    setLocalSourceIndex(clampedIndex);
+    window.localStorage.setItem(localSourceIndexStorageKey, String(clampedIndex));
+  }, [localSourceIndex, sources.length]);
+
+  useEffect(() => {
     if (!error) return;
     if (window.matchMedia("(max-width: 760px)").matches) {
       showToast(readableError(error), "error");
     }
   }, [error]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
 
   const sourceIcon = useMemo(() => {
     if (selectedSource?.type === "local") return <Folder size={16} />;
@@ -363,23 +384,37 @@ export default function App() {
     });
   }
 
-  async function reorderSources(nextSources: Source[]) {
+  async function reorderSources(nextAllSources: Source[]) {
     const previousSources = sources;
+    const previousLocalSourceIndex = localSourceIndex;
+    const nextSources = nextAllSources.filter((source) => source.id !== localSourceId);
+    const nextLocalSourceIndex = Math.max(0, nextAllSources.findIndex((source) => source.id === localSourceId));
     setSources(nextSources);
-    const reordered = await runAction(() =>
-      api<Source[]>("/api/sources/reorder", {
-        method: "PUT",
-        body: JSON.stringify({ source_ids: nextSources.map((source) => source.id) })
-      })
-    );
-    if (reordered) setSources(reordered);
-    else setSources(previousSources);
+    setLocalSourceIndex(nextLocalSourceIndex);
+    window.localStorage.setItem(localSourceIndexStorageKey, String(nextLocalSourceIndex));
+
+    if (nextSources.length > 0) {
+      const reordered = await runAction(() =>
+        api<Source[]>("/api/sources/reorder", {
+          method: "PUT",
+          body: JSON.stringify({ source_ids: nextSources.map((source) => source.id) })
+        })
+      );
+      if (reordered) {
+        setSources(reordered);
+      } else {
+        setSources(previousSources);
+        setLocalSourceIndex(previousLocalSourceIndex);
+        window.localStorage.setItem(localSourceIndexStorageKey, String(previousLocalSourceIndex));
+      }
+    }
+
     setSourceMenuId(null);
   }
 
   async function dropSource(event: DragEvent<HTMLDivElement>, targetSourceId: number) {
     event.preventDefault();
-    if (!draggedSourceId || draggedSourceId === targetSourceId) {
+    if (draggedSourceId === null || draggedSourceId === targetSourceId) {
       setDraggedSourceId(null);
       setDragOverSourceId(null);
       return;
@@ -387,18 +422,18 @@ export default function App() {
 
     const targetBounds = event.currentTarget.getBoundingClientRect();
     const insertAfter = event.clientY > targetBounds.top + targetBounds.height / 2;
-    const nextSources = moveSource(sources, draggedSourceId, targetSourceId, insertAfter);
+    const nextSources = moveSource(allSources, draggedSourceId, targetSourceId, insertAfter);
     setDraggedSourceId(null);
     setDragOverSourceId(null);
     await reorderSources(nextSources);
   }
 
   async function moveSourceByOffset(sourceId: number, offset: -1 | 1) {
-    const currentIndex = sources.findIndex((source) => source.id === sourceId);
+    const currentIndex = allSources.findIndex((source) => source.id === sourceId);
     const nextIndex = currentIndex + offset;
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= sources.length) return;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= allSources.length) return;
 
-    const nextSources = [...sources];
+    const nextSources = [...allSources];
     const [source] = nextSources.splice(currentIndex, 1);
     nextSources.splice(nextIndex, 0, source);
     await reorderSources(nextSources);
@@ -487,21 +522,24 @@ export default function App() {
 
   async function importItem(item: BrowseItem) {
     if (!selectedSourceId || selectedSourceId === localSourceId) return;
+    setPendingBrowseAction({ key: browseItemKey(item), action: "save" });
     setBusy(true);
     try {
       await runAction(async () => {
         const imported = await importBrowseItem(item);
         if (!imported) return;
-        showToast("Downloaded");
+        showToast("Saved to Local Library");
         await loadLibrary();
-      });
+      }, { toastOnError: true });
     } finally {
+      setPendingBrowseAction(null);
       setBusy(false);
     }
   }
 
   async function sendBrowseItem(item: BrowseItem) {
     if (!selectedSourceId || selectedSourceId === localSourceId) return;
+    setPendingBrowseAction({ key: browseItemKey(item), action: "send" });
     setBusy(true);
     try {
       await runAction(async () => {
@@ -519,8 +557,9 @@ export default function App() {
         trackJob(job);
         showToast("Send queued");
         await loadLibrary();
-      });
+      }, { toastOnError: true });
     } finally {
+      setPendingBrowseAction(null);
       setBusy(false);
     }
   }
@@ -531,21 +570,33 @@ export default function App() {
     if (item.type === "article" && item.url) {
       return api<LibraryItem>("/api/library/import-article", {
         method: "POST",
-        body: JSON.stringify({ source_id: selectedSourceId, url: item.url, title: item.title, author: item.author })
+        body: JSON.stringify({
+          source_id: selectedSourceId,
+          url: item.url,
+          title: item.title,
+          author: item.author,
+          cover_url: item.image_url
+        })
       });
     }
 
     if (item.type === "file" && item.path && selectedSource?.type === "webdav") {
       return api<LibraryItem>("/api/library/import-webdav", {
         method: "POST",
-        body: JSON.stringify({ source_id: selectedSourceId, path: item.path, title: item.title })
+        body: JSON.stringify({ source_id: selectedSourceId, path: item.path, title: item.title, cover_url: item.image_url })
       });
     }
 
     if (item.url) {
       return api<LibraryItem>("/api/library/import-url", {
         method: "POST",
-        body: JSON.stringify({ source_id: selectedSourceId, url: item.url, title: item.title, author: item.author })
+        body: JSON.stringify({
+          source_id: selectedSourceId,
+          url: item.url,
+          title: item.title,
+          author: item.author,
+          cover_url: item.image_url
+        })
       });
     }
 
@@ -607,13 +658,14 @@ export default function App() {
     }
   }
 
-  async function runAction<T>(action: () => Promise<T>): Promise<T | undefined> {
+  async function runAction<T>(action: () => Promise<T>, options: { toastOnError?: boolean } = {}): Promise<T | undefined> {
     setError("");
     try {
       return await action();
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
       setError(message);
+      if (options.toastOnError) showToast(readableError(message), "error");
       return undefined;
     }
   }
@@ -744,25 +796,7 @@ export default function App() {
               </button>
             </div>
             <div className="source-list">
-              <div
-                className={`source-row ${localSource.id === selectedSourceId ? "selected" : ""}`}
-                onClick={() => {
-                  setSourceMenuId(null);
-                  setSelectedSourceId(localSource.id);
-                }}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setSelectedSourceId(localSource.id);
-                  }
-                }}
-              >
-                <span className="source-type">{localSource.type}</span>
-                <span className="source-name">{localSource.name}</span>
-              </div>
-              {sources.map((source, index) => (
+              {allSources.map((source, index) => (
                 <div
                   className={`source-row ${source.id === selectedSourceId ? "selected" : ""} ${
                     source.id === draggedSourceId ? "dragging" : ""
@@ -816,17 +850,19 @@ export default function App() {
                     </button>
                     {sourceMenuId === source.id && (
                       <div className="source-menu" role="menu">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            openEditSource(source);
-                          }}
-                          role="menuitem"
-                        >
-                          <Pencil size={15} />
-                          Edit
-                        </button>
+                        {source.id !== localSourceId && (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openEditSource(source);
+                            }}
+                            role="menuitem"
+                          >
+                            <Pencil size={15} />
+                            Edit
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={(event) => {
@@ -845,24 +881,26 @@ export default function App() {
                             event.stopPropagation();
                             moveSourceByOffset(source.id, 1);
                           }}
-                          disabled={index === sources.length - 1}
+                          disabled={index === allSources.length - 1}
                           role="menuitem"
                         >
                           <ArrowDown size={15} />
                           Move down
                         </button>
-                        <button
-                          type="button"
-                          className="danger-menu-item"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            deleteSource(source.id);
-                          }}
-                          role="menuitem"
-                        >
-                          <Trash2 size={15} />
-                          Delete
-                        </button>
+                        {source.id !== localSourceId && (
+                          <button
+                            type="button"
+                            className="danger-menu-item"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              deleteSource(source.id);
+                            }}
+                            role="menuitem"
+                          >
+                            <Trash2 size={15} />
+                            Delete
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -885,9 +923,9 @@ export default function App() {
                 </button>
               )}
               {isLocalSource && (
-                <label className="file-button border-0" title="Upload EPUB">
+                <label className="file-button border-0" title="Upload file" aria-label="Upload file">
                   <Plus size={16} />
-                  <input type="file" accept=".epub" onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)} />
+                  <input type="file" accept=".epub,.txt,.xtc,.xtch" onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)} />
                 </label>
               )}
             </div>
@@ -922,11 +960,11 @@ export default function App() {
                 </button>
                 {sortMenuOpen && (
                   <div className="sort-menu" role="menu">
-                    {(["source", "title_asc", "title_desc"] as SortMode[]).map((mode) => (
+                    {sortOptions.map((mode) => (
                       <button
                         key={mode}
                         type="button"
-                        className={sortMode === mode ? "active" : ""}
+                        className={activeSortMode === mode ? "active" : ""}
                         onClick={() => updateSortMode(mode)}
                         role="menuitem"
                       >
@@ -954,34 +992,52 @@ export default function App() {
             )}
             {!error &&
               isLocalSource &&
-              paginatedLibrary.map((item) => (
-                <div className="item-row" key={item.id}>
-                  <div className="item-icon">
-                    <BookOpen size={16} />
+              paginatedLibrary.map((item) => {
+                const itemMeta = formatLibraryItemMeta(item);
+                const canRemoveItem = !isMountedLibraryItem(item);
+                const sendTitle = canOptimizeLibraryItem(item) ? `Optimize for ${deviceLabel} & Send` : "Send to device";
+                const fileType = libraryFileType(item);
+                return (
+                  <div className="item-row local-library-row" key={item.id}>
+                    <div className={item.cover_url ? "item-cover" : "item-icon"}>
+                      {item.cover_url ? <img src={mediaUrl(item.cover_url)} alt="" loading="lazy" /> : <BookOpen size={16} />}
+                    </div>
+                    <div className="item-main">
+                      <div className="item-title-line">
+                        <strong>{item.title}</strong>
+                      </div>
+                      {itemMeta && <span>{itemMeta}</span>}
+                    </div>
+
+                    <div className="row-actions">
+                      {fileType && <span className={`file-type-tag file-type-${fileType}`}>{fileType}</span>}
+                      <button type="button" onClick={() => sendToDevice(item)} title={sendTitle}>
+                        <Send size={16} />
+                      </button>
+                      {canRemoveItem && (
+                        <button type="button" onClick={() => removeLocalItem(item)} title="Remove">
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="item-main">
-                    <strong>{item.title}</strong>
-                    <span>{item.optimized_path ? "Optimized" : "Not optimized yet"}</span>
-                  </div>
-                  <div className="row-actions">
-                    <button type="button" onClick={() => sendToDevice(item)} title={`Optimize for ${deviceLabel} & Send`}>
-                      <Send size={16} />
-                    </button>
-                    <button type="button" onClick={() => removeLocalItem(item)} title="Remove">
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             {!error && !isLocalSource && activeBrowseResult?.message && <div className="empty-state">{activeBrowseResult.message}</div>}
             {!error && !isLocalSource && selectedSource && !browseResult && (
               <div className="empty-state">Select refresh to browse this source.</div>
             )}
             {!isLocalSource && paginatedRemoteItems.map((item, index) => {
               const opensBrowseTarget = item.type === "navigation" || item.type === "directory";
+              const isSendableItem = item.type === "book" || item.type === "article" || item.type === "file";
+              const itemKey = browseItemKey(item);
+              const savingItem = pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "save";
+              const sendingItem = pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "send";
+              const sendTitle = canOptimizeBrowseItem(item) ? `Optimize for ${deviceLabel} & Send` : "Send to device";
+              const sendingTitle = canOptimizeBrowseItem(item) ? `Optimizing for ${deviceLabel} & sending` : "Sending to device";
               return (
                 <div
-                  className={`item-row ${opensBrowseTarget ? "clickable-row" : ""}`}
+                  className={`item-row ${isSendableItem ? "sendable-row" : "navigation-row"} ${opensBrowseTarget ? "clickable-row" : ""}`}
                   key={`${item.type}-${item.url || item.path}-${index}`}
                   onClick={opensBrowseTarget ? () => openBrowseItem(item) : undefined}
                   onKeyDown={
@@ -998,7 +1054,7 @@ export default function App() {
                   tabIndex={opensBrowseTarget ? 0 : undefined}
                 >
                   <div className={item.image_url ? "item-cover" : "item-icon"}>
-                    {item.image_url ? <img src={item.image_url} alt="" loading="lazy" /> : iconForItem(item)}
+                    {item.image_url ? <img src={mediaUrl(item.image_url)} alt="" loading="lazy" /> : iconForItem(item)}
                   </div>
                   <div className="item-main">
                     <strong>{item.title}</strong>
@@ -1006,18 +1062,25 @@ export default function App() {
                       {[item.author, item.published, item.size ? formatBytes(item.size) : null].filter(Boolean).join(" · ")}
                     </span>
                   </div>
-                  {(item.type === "book" || item.type === "article" || item.type === "file") && (
+                  {isSendableItem && (
                     <div className="row-actions">
-                      <button type="button" onClick={() => importItem(item)} title="Save to Local Library" disabled={busy}>
-                        <Save size={16} />
+                      <button
+                        type="button"
+                        onClick={() => importItem(item)}
+                        title={savingItem ? "Saving to Local Library" : "Save to Local Library"}
+                        aria-label={savingItem ? "Saving to Local Library" : "Save to Local Library"}
+                        disabled={busy}
+                      >
+                        {savingItem ? <RefreshCw className="spin" size={15} /> : <Save size={16} />}
                       </button>
                       <button
                         type="button"
                         onClick={() => sendBrowseItem(item)}
-                        title={`Optimize for ${deviceLabel} & Send`}
+                        title={sendingItem ? sendingTitle : sendTitle}
+                        aria-label={sendingItem ? sendingTitle : sendTitle}
                         disabled={busy}
                       >
-                        <Send size={16} />
+                        {sendingItem ? <RefreshCw className="spin" size={15} /> : <Send size={16} />}
                       </button>
                     </div>
                   )}
@@ -1127,6 +1190,53 @@ function formatJobLog(job: Job) {
   return `[${status}] ${job.type} ${job.progress}%${message ? ` - ${message}` : ""}`;
 }
 
+function formatSentDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
+}
+
+function formatLibraryItemMeta(item: LibraryItem) {
+  return [item.author, item.sent_at ? `Sent on ${formatSentDate(item.sent_at)}` : null].filter(Boolean).join(" · ");
+}
+
+function libraryFileType(item: LibraryItem) {
+  const path = item.original_path.split(/[?#]/, 1)[0].toLowerCase();
+  if (path.endsWith(".epub")) return "epub";
+  if (path.endsWith(".xtc") || path.endsWith(".xtch")) return "xtc";
+  if (path.endsWith(".txt")) return "txt";
+  return null;
+}
+
+function librarySortType(item: LibraryItem) {
+  return libraryFileType(item) || item.original_path.split(/[?#]/, 1)[0].split(".").pop()?.toLowerCase() || "";
+}
+
+function isMountedLibraryItem(item: LibraryItem) {
+  return item.source_url?.startsWith("mounted-library://") || false;
+}
+
+function canOptimizeLibraryItem(item: LibraryItem) {
+  return hasEpubExtension(item.original_path);
+}
+
+function canOptimizeBrowseItem(item: BrowseItem) {
+  if (item.type === "article") return true;
+  return item.media_type?.toLowerCase().includes("application/epub+zip") || hasEpubExtension(item.url) || hasEpubExtension(item.path);
+}
+
+function hasEpubExtension(value: string | null | undefined) {
+  return (value || "").split(/[?#]/, 1)[0].toLowerCase().endsWith(".epub");
+}
+
+function browseItemKey(item: BrowseItem) {
+  return [item.type, item.url || item.path || "", item.title].join(":");
+}
+
+function mediaUrl(url: string) {
+  return API && url.startsWith("/api/") ? `${API}${url}` : url;
+}
+
 function readableError(message: string) {
   try {
     const parsed = JSON.parse(message);
@@ -1153,6 +1263,21 @@ function getInitialTheme(): Theme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+function getInitialLocalSourceIndex() {
+  const stored = Number(window.localStorage.getItem(localSourceIndexStorageKey));
+  return Number.isFinite(stored) && stored >= 0 ? Math.floor(stored) : 0;
+}
+
+function clampLocalSourceIndex(index: number, remoteSourceCount: number) {
+  return Math.max(0, Math.min(index, remoteSourceCount));
+}
+
+function insertLocalSource(sources: Source[], localSourceIndex: number) {
+  const nextSources = [...sources];
+  nextSources.splice(clampLocalSourceIndex(localSourceIndex, sources.length), 0, localSource);
+  return nextSources;
+}
+
 function iconForItem(item: BrowseItem) {
   if (item.type === "article") return <Rss size={16} />;
   if (item.type === "directory" || item.type === "navigation") return <Folder size={16} />;
@@ -1160,12 +1285,18 @@ function iconForItem(item: BrowseItem) {
 }
 
 function sortBrowseItems(items: BrowseItem[], sortMode: SortMode) {
-  if (sortMode === "source") return items;
+  if (sortMode === "source" || sortMode === "type") return items;
   return [...items].sort((left, right) => compareTitles(left.title, right.title, sortMode));
 }
 
 function sortLibraryItems(items: LibraryItem[], sortMode: SortMode) {
   if (sortMode === "source") return items;
+  if (sortMode === "type") {
+    return [...items].sort((left, right) => {
+      const typeResult = librarySortType(left).localeCompare(librarySortType(right), undefined, { numeric: true, sensitivity: "base" });
+      return typeResult || compareTitles(left.title, right.title, "title_asc");
+    });
+  }
   return [...items].sort((left, right) => compareTitles(left.title, right.title, sortMode));
 }
 
@@ -1175,6 +1306,7 @@ function compareTitles(left: string, right: string, sortMode: SortMode) {
 }
 
 function sortLabelForMode(sortMode: SortMode) {
+  if (sortMode === "type") return "Type";
   if (sortMode === "title_asc") return "Title A-Z";
   if (sortMode === "title_desc") return "Title Z-A";
   return "Source order";

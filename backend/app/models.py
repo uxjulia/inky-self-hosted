@@ -58,6 +58,8 @@ class LibraryItem(Base):
     original_path = Column(Text, nullable=False)
     optimized_path = Column(Text, nullable=True)
     source_url = Column(Text, nullable=True)
+    cover_url = Column(Text, nullable=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 

@@ -1,9 +1,9 @@
 # Inky
 
 Self-hosted companion app for CrossInk devices. The MVP stores OPDS catalogs,
-WebDAV libraries, RSS/Atom feeds, and local EPUB uploads; imports books/articles
-into a local library; optimizes EPUBs with the vendored `auto-epub-optimizer`
-Python pipeline; and sends files to an X3/X4 running CrossInk File Transfer mode.
+WebDAV libraries, RSS/Atom feeds, and local uploads; imports books/articles into
+a local library; optimizes EPUBs with the vendored `auto-epub-optimizer` Python
+pipeline; and sends files to an X3/X4 running CrossInk File Transfer mode.
 
 ## Run With Docker Compose
 
@@ -23,6 +23,18 @@ The API is also exposed at:
 ```text
 http://localhost:8000
 ```
+
+To expose an existing local library folder in the app, set this in `.env` before
+starting Docker Compose:
+
+```bash
+INKY_LOCAL_LIBRARY_PATH=/path/to/your/books
+```
+
+Docker mounts that folder read-only at `/library`. Inky scans `.epub`, `.txt`,
+`.xtc`, and `.xtch` files from there into the Local Library view so they can be
+sent to a device without importing or copying them into Inky storage. Only EPUBs
+are optimized before sending.
 
 ## Local Development
 

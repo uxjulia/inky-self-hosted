@@ -14,6 +14,7 @@ from .utils import display_title_from_url, join_remote
 
 
 DAV_NS = "{DAV:}"
+SENDABLE_FILE_EXTENSIONS = {".epub", ".txt", ".xtc", ".xtch"}
 
 
 def _auth(source: Source) -> tuple[str, str] | None:
@@ -117,11 +118,7 @@ def _parse_opds(xml_text: str, source: Source, url: str) -> BrowseResult:
             media_type_lower = media_type.lower()
             if _is_image_link(rel_lower, media_type_lower) and not image_url:
                 image_url = href
-            is_book = (
-                "acquisition" in rel_lower
-                or "application/epub+zip" in media_type_lower
-                or href.lower().endswith(".epub")
-            )
+            is_book = "acquisition" in rel_lower or "application/epub+zip" in media_type_lower or _has_sendable_extension(href)
             if is_book and not best_book:
                 best_book = (href, media_type)
             elif _is_navigation_link(rel_lower, media_type_lower) and not best_nav:
@@ -296,6 +293,10 @@ def _is_image_link(rel: str, media_type: str) -> bool:
         or "opds-spec.org/image" in rel
         or rel in {"cover", "thumbnail", "http://opds-spec.org/image", "http://opds-spec.org/image/thumbnail"}
     )
+
+
+def _has_sendable_extension(url: str) -> bool:
+    return urlparse(url).path.lower().endswith(tuple(SENDABLE_FILE_EXTENSIONS))
 
 
 def _opds_search_link(root: ET.Element, base_url: str) -> tuple[str, str] | None:

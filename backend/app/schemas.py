@@ -67,6 +67,7 @@ class ImportUrlRequest(BaseModel):
     url: str
     title: str | None = None
     author: str | None = None
+    cover_url: str | None = None
     kind: LibraryKind = LibraryKind.epub
 
 
@@ -75,12 +76,14 @@ class ArticleImportRequest(BaseModel):
     url: HttpUrl
     title: str | None = None
     author: str | None = None
+    cover_url: str | None = None
 
 
 class WebDavImportRequest(BaseModel):
     source_id: int
     path: str
     title: str | None = None
+    cover_url: str | None = None
 
 
 class LibraryItemRead(BaseModel):
@@ -92,6 +95,8 @@ class LibraryItemRead(BaseModel):
     original_path: str
     optimized_path: str | None
     source_url: str | None
+    cover_url: str | None
+    sent_at: datetime | None
     created_at: datetime
     updated_at: datetime
 

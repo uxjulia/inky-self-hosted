@@ -263,6 +263,10 @@ h2 {
   min-height: 0;
 }
 
+.serif {
+  font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+}
+
 .source-row {
   display: flex;
   align-items: center;
@@ -380,6 +384,7 @@ h2 {
   display: flex;
   align-items: center;
   gap: 6px;
+  justify-content: end;
 }
 
 .search-bar {
@@ -484,6 +489,18 @@ h2 {
   grid-template-columns: 42px minmax(0, 1fr) auto;
 }
 
+.sendable-row {
+  grid-template-columns: 42px minmax(0, 1fr) 78px;
+}
+
+.navigation-row {
+  grid-template-columns: 42px minmax(0, 1fr) 36px;
+}
+
+.local-library-row {
+  grid-template-columns: 42px minmax(0, 1fr) 130px;
+}
+
 .clickable-row {
   cursor: pointer;
 }
@@ -563,12 +580,42 @@ h2 {
   min-width: 0;
 }
 
-.item-main strong {
+.item-title-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.item-title-line strong,
+.item-main > strong {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
   text-transform: capitalize;
+}
+
+.file-type-tag {
+  flex: 0 0 auto;
+  justify-self: end;
+  min-width: 36px;
+  padding: 2px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: var(--color-panel-muted);
+  color: var(--color-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.file-type-epub {
+  color: var(--color-primary-strong);
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .job-log {
@@ -599,15 +646,22 @@ h2 {
   color: var(--color-text);
   border-radius: 3px;
   min-height: 34px;
+  cursor: pointer;
   display: grid;
   place-items: center;
 }
 
+.file-button svg {
+  cursor: pointer;
+  pointer-events: none;
+}
+
 .file-button input {
   position: absolute;
-  inset: 0;
+  width: 1px;
+  height: 1px;
   opacity: 0;
-  cursor: pointer;
+  pointer-events: none;
 }
 
 progress {

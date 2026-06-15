@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .db import SessionLocal
 from .library import send_file_to_device
-from .models import Job, JobStatus, LibraryItem
+from .models import Job, JobStatus, LibraryItem, utc_now
 from .optimizer.service import optimize_epub
 from .schemas import DeviceSendRequest, OptimizeRequest
 
@@ -77,7 +77,8 @@ def run_send_job(job_id: str, item_id: int, request: DeviceSendRequest) -> None:
         db.commit()
 
         file_path = Path(item.optimized_path) if item.optimized_path else Path(item.original_path)
-        if request.optimize_first and item.original_path.lower().endswith(".epub") and not item.optimized_path:
+        is_epub = item.original_path.lower().endswith(".epub")
+        if request.optimize_first and is_epub and not item.optimized_path:
             def progress(percent: int, message: str) -> None:
                 set_job(job_id, progress=max(5, min(80, int(percent * 0.8))), message=message)
 
@@ -85,6 +86,9 @@ def run_send_job(job_id: str, item_id: int, request: DeviceSendRequest) -> None:
             item.optimized_path = str(output_path)
             file_path = output_path
             job.result_json = json.dumps({"optimization": result})
+            db.commit()
+        elif request.optimize_first and not is_epub:
+            job.result_json = json.dumps({"optimization": "skipped for non-EPUB file"})
             db.commit()
 
         set_job(job_id, progress=85, message="Uploading to device")
@@ -99,8 +103,9 @@ def run_send_job(job_id: str, item_id: int, request: DeviceSendRequest) -> None:
             message="Sent to device",
             result_json=json.dumps(result),
         )
+        item.sent_at = utc_now()
+        db.commit()
     except Exception as exc:
         set_job(job_id, status=JobStatus.failed.value, progress=100, message="Send failed", error=str(exc))
     finally:
         db.close()
-

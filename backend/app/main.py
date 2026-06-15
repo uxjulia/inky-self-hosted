@@ -3,8 +3,9 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+import httpx
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -12,7 +13,16 @@ from .config import ensure_data_dirs
 from .connectors import browse_source, search_source
 from .db import get_db, init_db
 from .jobs import create_job, run_optimize_job, run_send_job
-from .library import copy_uploaded_file, delete_library_item, import_article, import_url, import_webdav_file, probe_device
+from .library import (
+    copy_uploaded_file,
+    delete_library_item,
+    get_library_item_cover,
+    import_article,
+    import_url,
+    import_webdav_file,
+    probe_device,
+    sync_mounted_library,
+)
 from .models import Job, LibraryItem, Source
 from .schemas import (
     ArticleImportRequest,
@@ -50,6 +60,16 @@ def startup() -> None:
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True}
+
+
+def raise_download_error(exc: httpx.HTTPError) -> None:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code
+        reason = exc.response.reason_phrase
+        detail = f"Unable to download from source. The source returned {status_code} {reason}."
+    else:
+        detail = "Unable to download from source. Check the source connection and try again."
+    raise HTTPException(status_code=502, detail=detail) from exc
 
 
 @app.get("/api/sources", response_model=list[SourceRead])
@@ -131,6 +151,7 @@ async def search(source_id: int, q: str, target: str | None = None, db: Session 
 
 @app.get("/api/library", response_model=list[LibraryItemRead])
 def list_library(db: Session = Depends(get_db)) -> list[LibraryItem]:
+    sync_mounted_library(db)
     return db.query(LibraryItem).order_by(LibraryItem.updated_at.desc()).all()
 
 
@@ -141,12 +162,18 @@ async def import_remote(payload: ImportUrlRequest, db: Session = Depends(get_db)
         source = db.get(Source, payload.source_id)
         if source and source.username and source.password:
             auth = (source.username, source.password)
-    return await import_url(db, payload.url, payload.source_id, payload.title, payload.author, payload.kind.value, auth)
+    try:
+        return await import_url(db, payload.url, payload.source_id, payload.title, payload.author, payload.cover_url, payload.kind.value, auth)
+    except httpx.HTTPError as exc:
+        raise_download_error(exc)
 
 
 @app.post("/api/library/import-article", response_model=LibraryItemRead)
 async def import_feed_article(payload: ArticleImportRequest, db: Session = Depends(get_db)) -> LibraryItem:
-    return await import_article(db, str(payload.url), payload.source_id, payload.title, payload.author)
+    try:
+        return await import_article(db, str(payload.url), payload.source_id, payload.title, payload.author, payload.cover_url)
+    except httpx.HTTPError as exc:
+        raise_download_error(exc)
 
 
 @app.post("/api/library/import-webdav", response_model=LibraryItemRead)
@@ -154,7 +181,10 @@ async def import_from_webdav(payload: WebDavImportRequest, db: Session = Depends
     source = db.get(Source, payload.source_id)
     if not source or source.type != "webdav":
         raise HTTPException(status_code=404, detail="WebDAV source not found")
-    return await import_webdav_file(db, source, payload.path, payload.title)
+    try:
+        return await import_webdav_file(db, source, payload.path, payload.title, payload.cover_url)
+    except httpx.HTTPError as exc:
+        raise_download_error(exc)
 
 
 @app.post("/api/library/upload", response_model=LibraryItemRead)
@@ -168,6 +198,18 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
         return copy_uploaded_file(db, temp_path, file.filename or "upload.epub")
     finally:
         temp_path.unlink(missing_ok=True)
+
+
+@app.get("/api/library/{item_id}/cover")
+def library_cover(item_id: int, db: Session = Depends(get_db)) -> Response:
+    item = db.get(LibraryItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="library item not found")
+    try:
+        content, media_type = get_library_item_cover(item)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="cover not found") from exc
+    return Response(content=content, media_type=media_type)
 
 
 @app.delete("/api/library/{item_id}")
