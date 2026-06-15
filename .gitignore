@@ -1,0 +1,10 @@
+.DS_Store
+.env
+__pycache__/
+*.pyc
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+backend/storage/
+backend/.venv/

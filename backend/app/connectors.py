@@ -1,0 +1,216 @@
+from __future__ import annotations
+
+from urllib.parse import unquote, urljoin, urlparse
+from xml.etree import ElementTree as ET
+
+import feedparser
+import httpx
+from sqlalchemy.orm import Session
+
+from .config import get_settings
+from .models import Source
+from .schemas import BrowseItem, BrowseResult
+from .utils import display_title_from_url, join_remote
+
+
+DAV_NS = "{DAV:}"
+
+
+def _auth(source: Source) -> tuple[str, str] | None:
+    if source.username and source.password:
+        return source.username, source.password
+    return None
+
+
+async def browse_source(db: Session, source_id: int, target: str | None = None) -> BrowseResult:
+    source = db.get(Source, source_id)
+    if not source:
+        raise ValueError("source not found")
+
+    if source.type == "opds":
+        return await browse_opds(source, target)
+    if source.type == "feed":
+        return await browse_feed(source, target)
+    if source.type == "webdav":
+        return await browse_webdav(source, target or "/")
+    raise ValueError(f"unsupported source type: {source.type}")
+
+
+async def _fetch_text(url: str, source: Source) -> str:
+    async with httpx.AsyncClient(timeout=get_settings().http_timeout_seconds, follow_redirects=True) as client:
+        response = await client.get(url, auth=_auth(source))
+        response.raise_for_status()
+        return response.text
+
+
+async def browse_opds(source: Source, target: str | None = None) -> BrowseResult:
+    url = join_remote(source.url, target)
+    xml_text = await _fetch_text(url, source)
+    root = ET.fromstring(xml_text)
+    title = _child_text(root, "title") or source.name
+    items: list[BrowseItem] = []
+
+    for entry in _children(root, "entry"):
+        entry_title = _child_text(entry, "title") or "Untitled"
+        author = _first_child(entry, "author")
+        author_text = _child_text(author, "name") if author is not None else None
+
+        best_book: tuple[str, str | None] | None = None
+        best_nav: str | None = None
+        for link in _children(entry, "link"):
+            href = link.attrib.get("href")
+            if not href:
+                continue
+            href = urljoin(url, href)
+            rel = link.attrib.get("rel", "")
+            media_type = link.attrib.get("type", "")
+            rel_lower = rel.lower()
+            media_type_lower = media_type.lower()
+            is_book = (
+                "acquisition" in rel_lower
+                or "application/epub+zip" in media_type_lower
+                or href.lower().endswith(".epub")
+            )
+            if is_book and not best_book:
+                best_book = (href, media_type)
+            elif _is_navigation_link(rel_lower, media_type_lower) and not best_nav:
+                best_nav = href
+
+        if best_book:
+            items.append(
+                BrowseItem(type="book", title=entry_title, author=author_text, url=best_book[0], media_type=best_book[1])
+            )
+        elif best_nav:
+            items.append(BrowseItem(type="navigation", title=entry_title, url=best_nav))
+
+    message = None if items else "No OPDS entries were found in this catalog response."
+    return BrowseResult(source_id=source.id, source_type=source.type, base_url=url, title=title, items=items, message=message)
+
+
+async def browse_feed(source: Source, target: str | None = None) -> BrowseResult:
+    url = join_remote(source.url, target)
+    text = await _fetch_text(url, source)
+    parsed = feedparser.parse(text)
+    title = parsed.feed.get("title") or source.name
+    items = []
+    for entry in parsed.entries[:100]:
+        entry_url = entry.get("link")
+        if not entry_url:
+            continue
+        items.append(
+            BrowseItem(
+                type="article",
+                title=entry.get("title") or display_title_from_url(entry_url),
+                url=entry_url,
+                author=entry.get("author"),
+                summary=entry.get("summary"),
+                published=entry.get("published"),
+            )
+        )
+    message = None if items else "No feed entries were found."
+    return BrowseResult(source_id=source.id, source_type=source.type, base_url=url, title=title, items=items, message=message)
+
+
+async def browse_webdav(source: Source, target: str = "/") -> BrowseResult:
+    url = join_remote(source.url, target)
+    body = """<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:">
+  <D:prop>
+    <D:displayname/>
+    <D:getcontentlength/>
+    <D:getcontenttype/>
+    <D:resourcetype/>
+  </D:prop>
+</D:propfind>"""
+    async with httpx.AsyncClient(timeout=get_settings().http_timeout_seconds, follow_redirects=True) as client:
+        response = await client.request(
+            "PROPFIND",
+            url,
+            content=body,
+            auth=_auth(source),
+            headers={"Depth": "1", "Content-Type": "application/xml; charset=utf-8"},
+        )
+        response.raise_for_status()
+
+    root = ET.fromstring(response.text)
+    requested_path = _href_path(url)
+    items: list[BrowseItem] = []
+    for response_node in root.findall(f"{DAV_NS}response"):
+        href = response_node.findtext(f"{DAV_NS}href")
+        if not href:
+            continue
+        path = _href_path(urljoin(url, href))
+        if _same_path(path, requested_path):
+            continue
+        prop = response_node.find(f".//{DAV_NS}prop")
+        if prop is None:
+            continue
+        display_name = prop.findtext(f"{DAV_NS}displayname") or display_title_from_url(path)
+        is_dir = prop.find(f"{DAV_NS}resourcetype/{DAV_NS}collection") is not None
+        size_text = prop.findtext(f"{DAV_NS}getcontentlength")
+        media_type = prop.findtext(f"{DAV_NS}getcontenttype")
+        items.append(
+            BrowseItem(
+                type="directory" if is_dir else "file",
+                title=display_name.rstrip("/") or display_title_from_url(path),
+                path=path,
+                url=urljoin(source.url.rstrip("/") + "/", path.lstrip("/")),
+                size=int(size_text) if size_text and size_text.isdigit() else None,
+                media_type=media_type,
+            )
+        )
+
+    items.sort(key=lambda item: (item.type != "directory", item.title.lower()))
+    message = None if items else "No WebDAV entries were found."
+    return BrowseResult(source_id=source.id, source_type=source.type, base_url=url, title=source.name, items=items, message=message)
+
+
+def _local_name(tag: str) -> str:
+    if "}" in tag:
+        return tag.rsplit("}", 1)[1]
+    if ":" in tag:
+        return tag.rsplit(":", 1)[1]
+    return tag
+
+
+def _children(node: ET.Element, name: str) -> list[ET.Element]:
+    return [child for child in list(node) if _local_name(child.tag) == name]
+
+
+def _first_child(node: ET.Element | None, name: str) -> ET.Element | None:
+    if node is None:
+        return None
+    for child in list(node):
+        if _local_name(child.tag) == name:
+            return child
+    return None
+
+
+def _child_text(node: ET.Element | None, name: str) -> str | None:
+    child = _first_child(node, name)
+    if child is not None and child.text:
+        return child.text.strip()
+    return None
+
+
+def _is_navigation_link(rel: str, media_type: str) -> bool:
+    if "acquisition" in rel:
+        return False
+    if rel in {"search", "self", "start", "next", "previous", "prev"}:
+        return False
+    return (
+        "application/atom+xml" in media_type
+        or "application/opds+json" in media_type
+        or "application/xml" in media_type
+        or "text/xml" in media_type
+    )
+
+
+def _href_path(value: str) -> str:
+    parsed = urlparse(value)
+    path = unquote(parsed.path or "/")
+    return path if path.startswith("/") else f"/{path}"
+
+
+def _same_path(left: str, right: str) -> bool:
+    return left.rstrip("/") == right.rstrip("/")
