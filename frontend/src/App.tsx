@@ -3,8 +3,10 @@ import {
   ArrowUp,
   ArrowUpDown,
   BookOpen,
+  CircleHelp,
   GripVertical,
   Folder,
+  Home,
   Library,
   MoreVertical,
   Moon,
@@ -26,10 +28,13 @@ import { useEffect, useMemo, useState } from "react";
 import type { DragEvent, FormEvent } from "react";
 
 const API = import.meta.env.VITE_API_BASE_URL || "";
+const APP_MODE = import.meta.env.VITE_INKY_APP_MODE === "hosted" ? "hosted" : "self-hosted";
 const themeStorageKey = "inky-theme";
 const localSourceIndexStorageKey = "inky-local-source-index";
 const localSourceId = -1;
 
+type AppView = "app" | "help";
+type AppMode = "hosted" | "self-hosted";
 type RemoteSourceType = "opds" | "webdav" | "feed";
 type SourceType = "local" | RemoteSourceType;
 type Theme = "light" | "dark";
@@ -106,6 +111,7 @@ const localSource: Source = { id: localSourceId, type: "local", name: "Local Lib
 const browsePageSize = 25;
 
 export default function App() {
+  const [view, setView] = useState<AppView>(() => getInitialView());
   const [sources, setSources] = useState<Source[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<number | null>(null);
   const [browseResult, setBrowseResult] = useState<BrowseResult | null>(null);
@@ -178,6 +184,12 @@ export default function App() {
       loadLibrary();
     }, 2500);
     return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const updateViewFromHash = () => setView(getInitialView());
+    window.addEventListener("hashchange", updateViewFromHash);
+    return () => window.removeEventListener("hashchange", updateViewFromHash);
   }, []);
 
   useEffect(() => {
@@ -685,6 +697,20 @@ export default function App() {
     };
   }
 
+  function openHelp() {
+    if (window.location.hash !== "#help") {
+      window.location.hash = "help";
+    }
+    setView("help");
+  }
+
+  function openApp() {
+    if (window.location.hash === "#help") {
+      window.history.pushState("", document.title, window.location.pathname + window.location.search);
+    }
+    setView("app");
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -692,10 +718,21 @@ export default function App() {
           <span className="brand-logo" aria-hidden="true" />
           <div>
             <h1>Inky</h1>
-            <span>A CrossInk Companion App</span>
+            <span>A Cross<span className="serif">I</span>nk Companion App</span>
           </div>
         </div>
         <div className="topbar-actions">
+          {view === "help" ? (
+            <button className="icon-text" type="button" onClick={openApp} title="Open app">
+              <Home size={16} />
+              App
+            </button>
+          ) : (
+            <button className="icon-text" type="button" onClick={openHelp} title="Help">
+              <CircleHelp size={16} />
+              Help
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
@@ -704,13 +741,18 @@ export default function App() {
           >
             {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
-          <button className="icon-text" type="button" onClick={() => refreshAll()} title="Refresh" disabled={refreshing}>
-            <RefreshCw className={refreshing ? "spin" : ""} size={15} />
-            {refreshing ? "Refreshing" : "Refresh"}
-          </button>
+          {view === "app" && (
+            <button className="icon-text" type="button" onClick={() => refreshAll()} title="Refresh" disabled={refreshing}>
+              <RefreshCw className={refreshing ? "spin" : ""} size={15} />
+              {refreshing ? "Refreshing" : "Refresh"}
+            </button>
+          )}
         </div>
       </header>
 
+      {view === "help" ? (
+        <HelpPage appMode={APP_MODE} onOpenApp={openApp} />
+      ) : (
       <section className="layout">
         <aside className="sidebar">
           <section className="panel device-panel">
@@ -758,7 +800,7 @@ export default function App() {
               />
             </label>
             <label className="field">
-              <span>Destination folder</span>
+              <span>Destination folder (created if needed)</span>
               <input value={destinationPath} onChange={(event) => setDestinationPath(event.target.value)} placeholder="/" />
             </label>
             <label className="field">
@@ -1122,8 +1164,9 @@ export default function App() {
         </section>
 
       </section>
+      )}
 
-      {sourceModalOpen && (
+      {view === "app" && sourceModalOpen && (
         <div className="modal-backdrop" role="presentation">
           <form className="panel form-panel modal-card" onSubmit={saveSource} role="dialog" aria-modal="true" aria-labelledby="source-modal-title">
             <div className="panel-header">
@@ -1181,6 +1224,84 @@ export default function App() {
         </div>
       )}
     </main>
+  );
+}
+
+function HelpPage({ appMode, onOpenApp }: { appMode: AppMode; onOpenApp: () => void }) {
+  return (
+    <section className="help-page">
+      <div className="help-hero">
+        <div>
+          <p className="eyebrow">Getting Started</p>
+          <h2>Send books and articles to your Cross<span className="serif">I</span>nk reader</h2>
+          <p>
+            Inky connects catalogs, feeds, cloud folders, and local files to an X3 or X4 device. EPUBs can be optimized before sending;
+            TXT, XTC, and XTCH files are sent as-is.
+          </p>
+        </div>
+        <button className="primary icon-text" type="button" onClick={onOpenApp}>
+          <Home size={16} />
+          Open App
+        </button>
+      </div>
+
+      <div className="help-grid">
+        <article className="help-card">
+          <span className="help-step">1</span>
+          <div>
+            <h3>Connect Your Device</h3>
+            <p>On the reader, open File Transfer and join the same network as this app.</p>
+            <ul>
+              <li>Use the device host shown by CrossInk, usually `crosspoint.local` or an IP address.</li>
+              <li>Keep the destination folder as `/` or enter a folder such as `/Books`; Inky creates missing folders before upload.</li>
+              <li>Select X3 or X4 before sending EPUBs so the optimizer uses the right screen target.</li>
+              <li>Use Test Connection to confirm the app can reach the reader.</li>
+            </ul>
+          </div>
+        </article>
+
+        <article className="help-card">
+          <span className="help-step">2</span>
+          <div>
+            <h3>Add Sources</h3>
+            <p>Sources are places Inky can browse for books, files, or articles.</p>
+            <ul>
+              <li>OPDS catalogs expose book catalogs such as Standard Ebooks or Project Gutenberg.</li>
+              <li>WebDAV sources expose cloud folders from services such as Koofr, Nextcloud, or compatible storage.</li>
+              <li>RSS and Atom feeds expose articles that Inky can convert into simple EPUB files.</li>
+              <li>Local Library contains uploaded files and any mounted folders configured for this app.</li>
+            </ul>
+          </div>
+        </article>
+
+        <article className="help-card">
+          <span className="help-step">3</span>
+          <div>
+            <h3>Browse And Search</h3>
+            <p>Select a source, then browse folders, catalog pages, or feed entries.</p>
+            <ul>
+              <li>Use Search when a source supports it or to filter the current results.</li>
+              <li>Use Sort for source order, title order, and Local Library file type order.</li>
+              <li>Folder rows open when clicked; book, article, and file rows show save/send actions.</li>
+            </ul>
+          </div>
+        </article>
+
+        <article className="help-card">
+          <span className="help-step">4</span>
+          <div>
+            <h3>Send Files</h3>
+            <p>Use the send icon beside a result or a Local Library item.</p>
+            <ul>
+              <li>EPUBs are optimized for the selected X3 or X4 device before upload.</li>
+              <li>RSS and Atom articles are first converted to EPUB, then optimized and sent.</li>
+              <li>TXT, XTC, and XTCH files skip optimization and upload directly.</li>
+              <li>The Device card shows the latest job log after send work starts.</li>
+            </ul>
+          </div>
+        </article>
+      </div>
+    </section>
   );
 }
 
@@ -1261,6 +1382,10 @@ function getInitialTheme(): Theme {
     return stored;
   }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function getInitialView(): AppView {
+  return window.location.hash === "#help" ? "help" : "app";
 }
 
 function getInitialLocalSourceIndex() {

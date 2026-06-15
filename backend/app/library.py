@@ -316,11 +316,43 @@ async def send_file_to_device(file_path: Path, device_url: str, destination_path
     base = normalize_device_url(device_url)
     destination_path = destination_path or "/"
     async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
+        created_folders = await _ensure_device_folder(client, base, destination_path)
         with file_path.open("rb") as handle:
             files = {"file": (file_path.name, handle, _media_type_for_device_upload(file_path))}
             response = await client.post(f"{base}/upload?path={quote(destination_path)}", files=files)
             response.raise_for_status()
-            return {"device_url": base, "destination_path": destination_path, "response": response.text}
+            return {"device_url": base, "destination_path": destination_path, "created_folders": created_folders, "response": response.text}
+
+
+async def _ensure_device_folder(client: httpx.AsyncClient, base: str, destination_path: str) -> list[str]:
+    segments = _destination_folder_segments(destination_path)
+    created_folders: list[str] = []
+    parent = "/"
+
+    for segment in segments:
+        response = await client.post(f"{base}/mkdir", data={"path": parent, "name": segment})
+        if response.status_code == 400 and "already exists" in response.text.lower():
+            parent = _join_device_folder(parent, segment)
+            continue
+        response.raise_for_status()
+        parent = _join_device_folder(parent, segment)
+        created_folders.append(parent)
+
+    return created_folders
+
+
+def _destination_folder_segments(destination_path: str) -> list[str]:
+    normalized = (destination_path or "/").replace("\\", "/").strip()
+    segments = [segment for segment in normalized.split("/") if segment and segment != "."]
+    if any(segment == ".." for segment in segments):
+        raise ValueError("destination folder cannot contain '..'")
+    return segments
+
+
+def _join_device_folder(parent: str, segment: str) -> str:
+    if parent == "/":
+        return f"/{segment}"
+    return f"{parent.rstrip('/')}/{segment}"
 
 
 def _unique_path(path: Path) -> Path:

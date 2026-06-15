@@ -18,6 +18,12 @@ Open:
 http://localhost:3000
 ```
 
+The in-app guide is available at:
+
+```text
+http://localhost:3000/#help
+```
+
 The API is also exposed at:
 
 ```text
@@ -35,6 +41,9 @@ Docker mounts that folder read-only at `/library`. Inky scans `.epub`, `.txt`,
 `.xtc`, and `.xtch` files from there into the Local Library view so they can be
 sent to a device without importing or copying them into Inky storage. Only EPUBs
 are optimized before sending.
+
+Set `VITE_INKY_APP_MODE=hosted` when building a future public hosted frontend.
+The current self-hosted default is `VITE_INKY_APP_MODE=self-hosted`.
 
 ## Local Development
 

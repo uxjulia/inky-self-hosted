@@ -16,6 +16,8 @@ services:
   web:
     build:
       context: ./frontend
+      args:
+        VITE_INKY_APP_MODE: ${VITE_INKY_APP_MODE:-self-hosted}
     restart: unless-stopped
     depends_on:
       - api

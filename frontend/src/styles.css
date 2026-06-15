@@ -163,7 +163,6 @@ h2 {
 
 .brand span,
 .item-main span {
-  display: block;
   color: var(--color-muted);
   font-size: 12px;
   line-height: 1.35;
@@ -177,6 +176,100 @@ h2 {
   padding: 12px;
   min-height: 0;
   overflow: hidden;
+}
+
+.help-page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.help-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 16px;
+  max-width: 1080px;
+  margin: 0 auto 12px;
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: var(--color-panel);
+}
+
+.help-hero h2 {
+  max-width: 760px;
+  margin-bottom: 8px;
+  font-size: 26px;
+  line-height: 1.15;
+}
+
+.help-hero p {
+  max-width: 780px;
+  margin: 0;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--color-primary-strong);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.help-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  max-width: 1080px;
+  margin: 0 auto 12px;
+}
+
+.help-card {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: var(--color-panel);
+}
+
+.help-step {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-primary);
+  border-radius: 3px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+  font-weight: 700;
+}
+
+.help-card h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.help-card p {
+  margin: 0 0 8px;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+
+.help-card ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--color-text);
+}
+
+.help-card li {
+  margin: 5px 0;
+  line-height: 1.4;
 }
 
 .sidebar {
@@ -765,6 +858,23 @@ progress {
     grid-template-columns: 1fr;
     align-content: start;
     overflow: visible;
+  }
+
+  .help-page {
+    overflow: visible;
+  }
+
+  .help-hero,
+  .help-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .help-hero {
+    align-items: stretch;
+  }
+
+  .help-hero h2 {
+    font-size: 22px;
   }
 
   .sidebar {
