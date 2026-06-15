@@ -1,10 +1,10 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from .config import get_settings
-from .models import Base
+from .models import Base, Source
 
 
 def _connect_args() -> dict:
@@ -19,6 +19,22 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+    _ensure_source_columns()
+
+
+def _ensure_source_columns() -> None:
+    columns = {column["name"] for column in inspect(engine).get_columns("sources")}
+    if "display_order" in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE sources ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0"))
+
+    with Session(engine) as db:
+        sources = db.query(Source).order_by(Source.created_at.desc(), Source.id.desc()).all()
+        for index, source in enumerate(sources):
+            source.display_order = index
+        db.commit()
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -27,4 +43,3 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
-

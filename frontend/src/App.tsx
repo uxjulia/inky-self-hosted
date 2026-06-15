@@ -1,10 +1,14 @@
 import {
-  ArrowDownToLine,
+  ArrowDown,
+  ArrowUp,
   ArrowUpDown,
   BookOpen,
+  GripVertical,
   Folder,
   Library,
+  MoreVertical,
   Moon,
+  Pencil,
   Plus,
   RefreshCw,
   Rss,
@@ -19,7 +23,7 @@ import {
   X
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import type { DragEvent, FormEvent } from "react";
 
 const API = import.meta.env.VITE_API_BASE_URL || "";
 const themeStorageKey = "inky-theme";
@@ -37,6 +41,7 @@ type Source = {
   name: string;
   url: string;
   username?: string | null;
+  display_order?: number;
 };
 
 type BrowseItem = {
@@ -123,6 +128,10 @@ export default function App() {
   const [deviceStatus, setDeviceStatus] = useState("");
   const [testingDevice, setTestingDevice] = useState(false);
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
+  const [editingSource, setEditingSource] = useState<Source | null>(null);
+  const [draggedSourceId, setDraggedSourceId] = useState<number | null>(null);
+  const [dragOverSourceId, setDragOverSourceId] = useState<number | null>(null);
+  const [sourceMenuId, setSourceMenuId] = useState<number | null>(null);
   const allSources = useMemo(() => [localSource, ...sources], [sources]);
   const selectedSource = allSources.find((source) => source.id === selectedSourceId) || null;
   const isLocalSource = selectedSourceId === localSourceId;
@@ -250,11 +259,56 @@ export default function App() {
     });
   }
 
-  async function addSource(event: FormEvent) {
+  function openAddSourceModal() {
+    setSourceMenuId(null);
+    setEditingSource(null);
+    setForm(emptySourceForm);
+    setSourceModalOpen(true);
+  }
+
+  function openEditSource(source: Source) {
+    if (source.type === "local") return;
+    setSourceMenuId(null);
+    setEditingSource(source);
+    setForm({
+      type: source.type,
+      name: source.name,
+      url: source.url,
+      username: source.username || "",
+      password: ""
+    });
+    setSourceModalOpen(true);
+  }
+
+  function closeSourceModal() {
+    setSourceModalOpen(false);
+    setEditingSource(null);
+    setForm(emptySourceForm);
+  }
+
+  async function saveSource(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     try {
       await runAction(async () => {
+        if (editingSource) {
+          const updatedSource = await api<Source>(`/api/sources/${editingSource.id}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              type: form.type,
+              name: form.name,
+              url: form.url,
+              username: form.username || null,
+              password: form.password || null
+            })
+          });
+          setSelectedSourceId(updatedSource.id);
+          await loadSources();
+          showToast("Source updated");
+          closeSourceModal();
+          return;
+        }
+
         const source = await api<Source>("/api/sources", {
           method: "POST",
           body: JSON.stringify({
@@ -269,7 +323,8 @@ export default function App() {
         await loadSources();
         setSelectedSourceId(source.id);
         await browse(source.id, null);
-        setSourceModalOpen(false);
+        showToast("Source added");
+        closeSourceModal();
       });
     } finally {
       setBusy(false);
@@ -278,11 +333,53 @@ export default function App() {
 
   async function deleteSource(sourceId: number) {
     if (sourceId === localSourceId) return;
+    setSourceMenuId(null);
     await runAction(async () => {
       await api(`/api/sources/${sourceId}`, { method: "DELETE" });
       setSelectedSourceId(localSourceId);
       await loadSources();
     });
+  }
+
+  async function reorderSources(nextSources: Source[]) {
+    const previousSources = sources;
+    setSources(nextSources);
+    const reordered = await runAction(() =>
+      api<Source[]>("/api/sources/reorder", {
+        method: "PUT",
+        body: JSON.stringify({ source_ids: nextSources.map((source) => source.id) })
+      })
+    );
+    if (reordered) setSources(reordered);
+    else setSources(previousSources);
+    setSourceMenuId(null);
+  }
+
+  async function dropSource(event: DragEvent<HTMLDivElement>, targetSourceId: number) {
+    event.preventDefault();
+    if (!draggedSourceId || draggedSourceId === targetSourceId) {
+      setDraggedSourceId(null);
+      setDragOverSourceId(null);
+      return;
+    }
+
+    const targetBounds = event.currentTarget.getBoundingClientRect();
+    const insertAfter = event.clientY > targetBounds.top + targetBounds.height / 2;
+    const nextSources = moveSource(sources, draggedSourceId, targetSourceId, insertAfter);
+    setDraggedSourceId(null);
+    setDragOverSourceId(null);
+    await reorderSources(nextSources);
+  }
+
+  async function moveSourceByOffset(sourceId: number, offset: -1 | 1) {
+    const currentIndex = sources.findIndex((source) => source.id === sourceId);
+    const nextIndex = currentIndex + offset;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= sources.length) return;
+
+    const nextSources = [...sources];
+    const [source] = nextSources.splice(currentIndex, 1);
+    nextSources.splice(nextIndex, 0, source);
+    await reorderSources(nextSources);
   }
 
   async function openBrowseItem(item: BrowseItem) {
@@ -614,8 +711,9 @@ export default function App() {
               <h2>Sources</h2>
               </div>
               <button
+                className="border-0"
                 type="button"
-                onClick={() => setSourceModalOpen(true)}
+                onClick={openAddSourceModal}
                 title="Add source"
                 aria-label="Add source"
               >
@@ -623,16 +721,129 @@ export default function App() {
               </button>
             </div>
             <div className="source-list">
-              {allSources.map((source) => (
-                <button
-                  type="button"
-                  className={`source-row ${source.id === selectedSourceId ? "selected" : ""}`}
+              <div
+                className={`source-row ${localSource.id === selectedSourceId ? "selected" : ""}`}
+                onClick={() => {
+                  setSourceMenuId(null);
+                  setSelectedSourceId(localSource.id);
+                }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedSourceId(localSource.id);
+                  }
+                }}
+              >
+                <span className="source-type">{localSource.type}</span>
+                <span className="source-name">{localSource.name}</span>
+              </div>
+              {sources.map((source, index) => (
+                <div
+                  className={`source-row ${source.id === selectedSourceId ? "selected" : ""} ${
+                    source.id === draggedSourceId ? "dragging" : ""
+                  } ${source.id === dragOverSourceId ? "drag-over" : ""}`}
+                  draggable
                   key={source.id}
-                  onClick={() => setSelectedSourceId(source.id)}
+                  onClick={() => {
+                    setSourceMenuId(null);
+                    setSelectedSourceId(source.id);
+                  }}
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = "move";
+                    setDraggedSourceId(source.id);
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDragOverSourceId(source.id);
+                  }}
+                  onDragLeave={() => setDragOverSourceId((current) => (current === source.id ? null : current))}
+                  onDragEnd={() => {
+                    setDraggedSourceId(null);
+                    setDragOverSourceId(null);
+                  }}
+                  onDrop={(event) => dropSource(event, source.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedSourceId(source.id);
+                    }
+                  }}
                 >
+                  <GripVertical className="source-drag-icon" size={15} aria-hidden="true" />
                   <span className="source-type">{source.type}</span>
-                  <span>{source.name}</span>
-                </button>
+                  <span className="source-name">{source.name}</span>
+                  <div className="source-menu-wrap">
+                    <button
+                      className="source-menu-button"
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSourceMenuId((current) => (current === source.id ? null : source.id));
+                      }}
+                      title={`${source.name} settings`}
+                      aria-label={`${source.name} settings`}
+                      aria-expanded={sourceMenuId === source.id}
+                    >
+                      <MoreVertical size={15} />
+                    </button>
+                    {sourceMenuId === source.id && (
+                      <div className="source-menu" role="menu">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openEditSource(source);
+                          }}
+                          role="menuitem"
+                        >
+                          <Pencil size={15} />
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            moveSourceByOffset(source.id, -1);
+                          }}
+                          disabled={index === 0}
+                          role="menuitem"
+                        >
+                          <ArrowUp size={15} />
+                          Move up
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            moveSourceByOffset(source.id, 1);
+                          }}
+                          disabled={index === sources.length - 1}
+                          role="menuitem"
+                        >
+                          <ArrowDown size={15} />
+                          Move down
+                        </button>
+                        <button
+                          type="button"
+                          className="danger-menu-item"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            deleteSource(source.id);
+                          }}
+                          role="menuitem"
+                        >
+                          <Trash2 size={15} />
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               ))}
             </div>
           </section>
@@ -651,15 +862,10 @@ export default function App() {
                 </button>
               )}
               {isLocalSource && (
-                <label className="file-button" title="Upload EPUB">
+                <label className="file-button border-0" title="Upload EPUB">
                   <Plus size={16} />
                   <input type="file" accept=".epub" onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)} />
                 </label>
-              )}
-              {selectedSource && !isLocalSource && (
-                <button type="button" onClick={() => deleteSource(selectedSource.id)} title="Delete source">
-                  <Trash2 size={16} />
-                </button>
               )}
             </div>
           </div>
@@ -833,10 +1039,10 @@ export default function App() {
 
       {sourceModalOpen && (
         <div className="modal-backdrop" role="presentation">
-          <form className="panel form-panel modal-card" onSubmit={addSource} role="dialog" aria-modal="true" aria-labelledby="add-source-title">
+          <form className="panel form-panel modal-card" onSubmit={saveSource} role="dialog" aria-modal="true" aria-labelledby="source-modal-title">
             <div className="panel-header">
-              <h2 id="add-source-title">Add Source</h2>
-              <button type="button" onClick={() => setSourceModalOpen(false)} title="Close" aria-label="Close add source">
+              <h2 id="source-modal-title">{editingSource ? "Edit Source" : "Add Source"}</h2>
+              <button type="button" onClick={closeSourceModal} title="Close" aria-label="Close source modal">
                 <X size={16} />
               </button>
             </div>
@@ -863,16 +1069,16 @@ export default function App() {
               <input
                 value={form.password}
                 onChange={(event) => setForm({ ...form, password: event.target.value })}
-                placeholder="Password"
+                placeholder={editingSource ? "New password (leave blank to keep current)" : "Password"}
                 type="password"
               />
               <div className="modal-actions">
-                <button type="button" onClick={() => setSourceModalOpen(false)}>
+                <button type="button" onClick={closeSourceModal}>
                   Cancel
                 </button>
                 <button className="primary" type="submit" disabled={busy || !form.name || !form.url}>
-                  <Plus size={16} />
-                  Add Source
+                  {editingSource ? <Save size={16} /> : <Plus size={16} />}
+                  {editingSource ? "Save Source" : "Add Source"}
                 </button>
               </div>
             </div>
@@ -949,6 +1155,18 @@ function sortLabelForMode(sortMode: SortMode) {
   if (sortMode === "title_asc") return "Title A-Z";
   if (sortMode === "title_desc") return "Title Z-A";
   return "Source order";
+}
+
+function moveSource(sources: Source[], draggedSourceId: number, targetSourceId: number, insertAfter: boolean) {
+  const draggedSource = sources.find((source) => source.id === draggedSourceId);
+  if (!draggedSource) return sources;
+
+  const nextSources = sources.filter((source) => source.id !== draggedSourceId);
+  const targetIndex = nextSources.findIndex((source) => source.id === targetSourceId);
+  if (targetIndex < 0) return sources;
+
+  nextSources.splice(targetIndex + (insertAfter ? 1 : 0), 0, draggedSource);
+  return nextSources;
 }
 
 function formatBytes(size: number) {

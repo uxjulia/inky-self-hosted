@@ -14,12 +14,25 @@ class SourceCreate(BaseModel):
     password: str | None = None
 
 
+class SourceUpdate(BaseModel):
+    type: SourceType
+    name: str = Field(min_length=1, max_length=160)
+    url: str = Field(min_length=1)
+    username: str | None = None
+    password: str | None = None
+
+
+class SourceReorder(BaseModel):
+    source_ids: list[int] = Field(min_length=1)
+
+
 class SourceRead(BaseModel):
     id: int
     type: SourceType
     name: str
     url: str
     username: str | None = None
+    display_order: int
     created_at: datetime
 
     model_config = {"from_attributes": True}

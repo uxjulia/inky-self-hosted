@@ -56,6 +56,7 @@ html,
 body,
 #root {
   height: 100%;
+  font-size: 0.95rem;
 }
 
 body {
@@ -135,6 +136,10 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.border-0 {
+  border: none !important;
 }
 
 .brand {
@@ -239,7 +244,13 @@ h2 {
   color: var(--color-primary-strong);
 }
 
-.source-list,
+.source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: visible;
+}
+
 .table-list {
   display: flex;
   flex-direction: column;
@@ -253,10 +264,19 @@ h2 {
 }
 
 .source-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   justify-content: flex-start;
   width: 100%;
   min-height: 42px;
   padding: 6px 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 3px;
+  background: var(--color-panel);
+  color: var(--color-text);
+  cursor: pointer;
+  user-select: none;
 }
 
 .source-row.selected {
@@ -264,11 +284,72 @@ h2 {
   border-color: var(--color-primary);
 }
 
+.source-row.dragging {
+  opacity: 0.55;
+}
+
+.source-row.drag-over {
+  border-color: var(--color-primary);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.source-drag-icon {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  cursor: grab;
+}
+
 .source-type {
-  min-width: 54px;
+  min-width: 44px;
   color: var(--color-primary);
   font-size: 11px;
   text-transform: uppercase;
+}
+
+.source-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-menu-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.source-menu-button {
+  width: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: none;
+}
+
+.source-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 6;
+  width: 140px;
+  padding: 4px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 3px;
+  background: var(--color-panel);
+  box-shadow: 0 10px 24px rgba(17, 24, 22, 0.16);
+}
+
+.source-menu button {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 32px;
+  padding: 0 8px;
+  border-color: transparent;
+}
+
+.source-menu .danger-menu-item {
+  color: var(--color-danger);
 }
 
 .browse-panel {
@@ -581,7 +662,7 @@ progress {
   display: grid;
   place-items: center;
   padding: 16px;
-  background: rgba(17, 24, 22, 0.54);
+  background: rgba(17, 24, 22, 0.95);
 }
 
 .modal-card {
@@ -634,6 +715,10 @@ progress {
 
   .sidebar {
     align-self: start;
+  }
+
+  .source-drag-icon {
+    display: none;
   }
 
   .search-bar {

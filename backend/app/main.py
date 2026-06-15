@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .config import ensure_data_dirs
@@ -23,7 +24,9 @@ from .schemas import (
     LibraryItemRead,
     OptimizeRequest,
     SourceCreate,
+    SourceReorder,
     SourceRead,
+    SourceUpdate,
     WebDavImportRequest,
 )
 
@@ -51,13 +54,46 @@ def health() -> dict:
 
 @app.get("/api/sources", response_model=list[SourceRead])
 def list_sources(db: Session = Depends(get_db)) -> list[Source]:
-    return db.query(Source).order_by(Source.created_at.desc()).all()
+    return db.query(Source).order_by(Source.display_order.asc(), Source.created_at.desc()).all()
 
 
 @app.post("/api/sources", response_model=SourceRead)
 def create_source(payload: SourceCreate, db: Session = Depends(get_db)) -> Source:
-    source = Source(**payload.model_dump(mode="json"))
+    next_order = (db.query(func.max(Source.display_order)).scalar() or -1) + 1
+    source = Source(**payload.model_dump(mode="json"), display_order=next_order)
     db.add(source)
+    db.commit()
+    db.refresh(source)
+    return source
+
+
+@app.put("/api/sources/reorder", response_model=list[SourceRead])
+def reorder_sources(payload: SourceReorder, db: Session = Depends(get_db)) -> list[Source]:
+    sources = db.query(Source).filter(Source.id.in_(payload.source_ids)).all()
+    sources_by_id = {source.id: source for source in sources}
+    if len(sources_by_id) != len(set(payload.source_ids)):
+        raise HTTPException(status_code=400, detail="invalid source order")
+
+    for index, source_id in enumerate(payload.source_ids):
+        sources_by_id[source_id].display_order = index
+
+    db.commit()
+    return db.query(Source).order_by(Source.display_order.asc(), Source.created_at.desc()).all()
+
+
+@app.put("/api/sources/{source_id}", response_model=SourceRead)
+def update_source(source_id: int, payload: SourceUpdate, db: Session = Depends(get_db)) -> Source:
+    source = db.get(Source, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="source not found")
+
+    source.type = payload.type.value
+    source.name = payload.name
+    source.url = payload.url
+    source.username = payload.username
+    if payload.password:
+        source.password = payload.password
+
     db.commit()
     db.refresh(source)
     return source

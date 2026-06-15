@@ -41,6 +41,7 @@ class Source(Base):
     url = Column(Text, nullable=False)
     username = Column(String(255), nullable=True)
     password = Column(String(255), nullable=True)
+    display_order = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     items = relationship("LibraryItem", back_populates="source")
@@ -76,4 +77,3 @@ class Job(Base):
     result_json = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
-
