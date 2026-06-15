@@ -2,7 +2,6 @@ import {
   ArrowDownToLine,
   BookOpen,
   Folder,
-  Globe2,
   Library,
   Moon,
   Plus,
@@ -12,7 +11,9 @@ import {
   Server,
   Settings2,
   Sun,
-  Trash2
+  Trash2,
+  Wifi,
+  X
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
@@ -102,9 +103,13 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
   const [deviceError, setDeviceError] = useState("");
+  const [deviceStatus, setDeviceStatus] = useState("");
+  const [testingDevice, setTestingDevice] = useState(false);
+  const [sourceModalOpen, setSourceModalOpen] = useState(false);
   const allSources = useMemo(() => [localSource, ...sources], [sources]);
   const selectedSource = allSources.find((source) => source.id === selectedSourceId) || null;
   const isLocalSource = selectedSourceId === localSourceId;
+  const deviceLabel = device.toUpperCase();
 
   useEffect(() => {
     refreshAll();
@@ -187,6 +192,7 @@ export default function App() {
         await loadSources();
         setSelectedSourceId(source.id);
         await browse(source.id, null);
+        setSourceModalOpen(false);
       });
     } finally {
       setBusy(false);
@@ -320,15 +326,19 @@ export default function App() {
 
   async function probeDevice() {
     setDeviceError("");
+    setDeviceStatus("");
+    setTestingDevice(true);
     try {
       const status = await api<Record<string, unknown>>("/api/devices/probe", {
         method: "POST",
         body: JSON.stringify({ device_url: deviceUrl })
       });
-      setToast(`${status.device || "Device"} ${status.version || ""} at ${status.ip || deviceUrl}`);
+      setDeviceStatus(`Successfully connected to: ${status.device || "Device"} at ${status.ip || deviceUrl}`);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
-      setDeviceError(message);
+      setDeviceError(readableDeviceError(message));
+    } finally {
+      setTestingDevice(false);
     }
   }
 
@@ -362,7 +372,7 @@ export default function App() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <Globe2 size={22} />
+          <span className="brand-logo" aria-hidden="true" />
           <div>
             <h1>Inky</h1>
             <span>OPDS, WebDAV, feeds, optimizer, device send</span>
@@ -386,52 +396,98 @@ export default function App() {
 
       <section className="layout">
         <aside className="sidebar">
-          <form className="panel form-panel" onSubmit={addSource}>
-            <h2>Sources</h2>
-            <div className="segmented">
-              {(["opds", "webdav", "feed"] as RemoteSourceType[]).map((type) => (
+          <section className="panel device-panel">
+            <div className="panel-header">
+              <div className="heading-line">
+                <Settings2 size={16} />
+                <h2>Device</h2>
+              </div>
+              <button type="button" onClick={probeDevice} title="Test Connection" disabled={testingDevice}>
+                {testingDevice ? <RefreshCw className="spin" size={15} /> : <Wifi size={15} />}
+                {testingDevice ? "Testing" : "Test Connection"}
+              </button>
+            </div>
+            {deviceError && (
+              <div className="empty-state status-state error-state">
+                <span>{readableError(deviceError)}</span>
+                <button type="button" onClick={() => setDeviceError("")} title="Dismiss device error" aria-label="Dismiss device error">
+                  <X size={16} />
+                </button>
+              </div>
+            )}
+            {deviceStatus && (
+              <div className="empty-state status-state success-state">
+                <span>{deviceStatus}</span>
                 <button
-                  key={type}
                   type="button"
-                  className={form.type === type ? "active" : ""}
-                  onClick={() => setForm((current) => ({ ...current, type }))}
+                  onClick={() => setDeviceStatus("")}
+                  title="Dismiss connection status"
+                  aria-label="Dismiss connection status"
                 >
-                  {type.toUpperCase()}
+                  <X size={16} />
+                </button>
+              </div>
+            )}
+            <label className="field">
+              <span>Device host</span>
+              <input
+                value={deviceUrl}
+                onChange={(event) => {
+                  setDeviceError("");
+                  setDeviceStatus("");
+                  setDeviceUrl(event.target.value);
+                }}
+                placeholder="crosspoint.local"
+              />
+            </label>
+            <label className="field">
+              <span>Destination folder</span>
+              <input value={destinationPath} onChange={(event) => setDestinationPath(event.target.value)} placeholder="/" />
+            </label>
+            <label className="field">
+              <span>Optimize for</span>
+              <div className="segmented">
+                <button type="button" className={device === "x4" ? "active" : ""} onClick={() => setDevice("x4")}>
+                  X4
+                </button>
+                <button type="button" className={device === "x3" ? "active" : ""} onClick={() => setDevice("x3")}>
+                  X3
+                </button>
+              </div>
+            </label>
+            {jobs.length > 0 && (
+              <pre className="job-log" aria-label="Recent device jobs">
+                <code>{jobs.slice(0, 8).map(formatJobLog).join("\n")}</code>
+              </pre>
+            )}
+          </section>
+
+          <section className="panel source-panel">
+            <div className="panel-header">
+              <h2>Sources</h2>
+              <button
+                type="button"
+                onClick={() => setSourceModalOpen(true)}
+                title="Add source"
+                aria-label="Add source"
+              >
+                <Plus size={16} />
+              </button>
+            </div>
+            <div className="source-list">
+              {allSources.map((source) => (
+                <button
+                  type="button"
+                  className={`source-row ${source.id === selectedSourceId ? "selected" : ""}`}
+                  key={source.id}
+                  onClick={() => setSelectedSourceId(source.id)}
+                >
+                  <span className="source-type">{source.type}</span>
+                  <span>{source.name}</span>
                 </button>
               ))}
             </div>
-            <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Name" />
-            <input value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} placeholder="URL" />
-            <input
-              value={form.username}
-              onChange={(event) => setForm({ ...form, username: event.target.value })}
-              placeholder="Username"
-            />
-            <input
-              value={form.password}
-              onChange={(event) => setForm({ ...form, password: event.target.value })}
-              placeholder="Password"
-              type="password"
-            />
-            <button className="primary" type="submit" disabled={busy || !form.name || !form.url}>
-              <Plus size={16} />
-              Add
-            </button>
-          </form>
-
-          <div className="source-list">
-            {allSources.map((source) => (
-              <button
-                type="button"
-                className={`source-row ${source.id === selectedSourceId ? "selected" : ""}`}
-                key={source.id}
-                onClick={() => setSelectedSourceId(source.id)}
-              >
-                <span className="source-type">{source.type}</span>
-                <span>{source.name}</span>
-              </button>
-            ))}
-          </div>
+          </section>
         </aside>
 
         <section className="panel browse-panel">
@@ -474,7 +530,7 @@ export default function App() {
                     <span>{item.optimized_path ? "Optimized" : "Not optimized yet"}</span>
                   </div>
                   <div className="row-actions">
-                    <button type="button" onClick={() => sendToDevice(item)} title="Optimize & Send">
+                    <button type="button" onClick={() => sendToDevice(item)} title={`Optimize for ${deviceLabel} & Send`}>
                       <Send size={16} />
                     </button>
                     <button type="button" onClick={() => removeLocalItem(item)} title="Remove">
@@ -507,7 +563,12 @@ export default function App() {
                       <button type="button" onClick={() => importItem(item)} title="Download to Local Library" disabled={busy}>
                         <ArrowDownToLine size={16} />
                       </button>
-                      <button type="button" onClick={() => sendBrowseItem(item)} title="Download, Optimize & Send" disabled={busy}>
+                      <button
+                        type="button"
+                        onClick={() => sendBrowseItem(item)}
+                        title={`Download, Optimize for ${deviceLabel} & Send`}
+                        disabled={busy}
+                      >
                         <Send size={16} />
                       </button>
                     </>
@@ -518,57 +579,56 @@ export default function App() {
           </div>
         </section>
 
-        <aside className="right-rail">
-          <section className="panel device-panel">
-            <div className="panel-header">
-              <div className="heading-line">
-                <Settings2 size={16} />
-                <h2>Device</h2>
-              </div>
-              <button type="button" onClick={probeDevice} title="Test Connection">
-                Test Connection
-              </button>
-            </div>
-            {deviceError && <div className="empty-state error-state">{readableError(deviceError)}</div>}
-            <label className="field">
-              <span>Device host</span>
-              <input
-                value={deviceUrl}
-                onChange={(event) => {
-                  setDeviceError("");
-                  setDeviceUrl(event.target.value);
-                }}
-                placeholder="crosspoint.local"
-              />
-            </label>
-            <label className="field">
-              <span>Destination folder</span>
-              <input value={destinationPath} onChange={(event) => setDestinationPath(event.target.value)} placeholder="/" />
-            </label>
-            <div className="segmented">
-              <button type="button" className={device === "x4" ? "active" : ""} onClick={() => setDevice("x4")}>
-                X4
-              </button>
-              <button type="button" className={device === "x3" ? "active" : ""} onClick={() => setDevice("x3")}>
-                X3
-              </button>
-            </div>
-          </section>
-
-          <section className="panel jobs-panel">
-            <h2>Jobs</h2>
-            {jobs.slice(0, 8).map((job) => (
-              <div className="job-row" key={job.id}>
-                <div>
-                  <strong>{job.type}</strong>
-                  <span>{job.error || job.message || job.status}</span>
-                </div>
-                <progress value={job.progress} max={100} />
-              </div>
-            ))}
-          </section>
-        </aside>
       </section>
+
+      {sourceModalOpen && (
+        <div className="modal-backdrop" role="presentation">
+          <form className="panel form-panel modal-card" onSubmit={addSource} role="dialog" aria-modal="true" aria-labelledby="add-source-title">
+            <div className="panel-header">
+              <h2 id="add-source-title">Add Source</h2>
+              <button type="button" onClick={() => setSourceModalOpen(false)} title="Close" aria-label="Close add source">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="source-form-body">
+              <div className="segmented">
+                {(["opds", "webdav", "feed"] as RemoteSourceType[]).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className={form.type === type ? "active" : ""}
+                    onClick={() => setForm((current) => ({ ...current, type }))}
+                  >
+                    {type.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Name" />
+              <input value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} placeholder="URL" />
+              <input
+                value={form.username}
+                onChange={(event) => setForm({ ...form, username: event.target.value })}
+                placeholder="Username"
+              />
+              <input
+                value={form.password}
+                onChange={(event) => setForm({ ...form, password: event.target.value })}
+                placeholder="Password"
+                type="password"
+              />
+              <div className="modal-actions">
+                <button type="button" onClick={() => setSourceModalOpen(false)}>
+                  Cancel
+                </button>
+                <button className="primary" type="submit" disabled={busy || !form.name || !form.url}>
+                  <Plus size={16} />
+                  Add Source
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
 
       {toast && (
         <button className="toast" type="button" onClick={() => setToast("")}>
@@ -579,6 +639,12 @@ export default function App() {
   );
 }
 
+function formatJobLog(job: Job) {
+  const status = job.error ? "error" : job.status;
+  const message = job.error || job.message || job.status;
+  return `[${status}] ${job.type} ${job.progress}%${message ? ` - ${message}` : ""}`;
+}
+
 function readableError(message: string) {
   try {
     const parsed = JSON.parse(message);
@@ -587,6 +653,14 @@ function readableError(message: string) {
     // Keep original text below.
   }
   return message;
+}
+
+function readableDeviceError(message: string) {
+  const detail = readableError(message);
+  if (!detail || detail === message) {
+    return "Unable to connect to device.";
+  }
+  return `Unable to connect to device. ${detail}`;
 }
 
 function getInitialTheme(): Theme {
