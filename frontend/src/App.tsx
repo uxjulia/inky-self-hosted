@@ -3,22 +3,29 @@ import {
   BookOpen,
   Folder,
   Globe2,
-  HardDriveUpload,
   Library,
+  Moon,
   Plus,
+  Paintbrush,
   RefreshCw,
   Rss,
   Send,
   Server,
   Settings2,
+  Sun,
   Trash2,
   Upload
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 
 const API = import.meta.env.VITE_API_BASE_URL || "";
+const themeStorageKey = "inky-theme";
+const localSourceId = -1;
 
-type SourceType = "opds" | "webdav" | "feed";
+type RemoteSourceType = "opds" | "webdav" | "feed";
+type SourceType = "local" | RemoteSourceType;
+type Theme = "light" | "dark";
 
 type Source = {
   id: number;
@@ -71,7 +78,7 @@ type Job = {
 };
 
 type SourceForm = {
-  type: SourceType;
+  type: RemoteSourceType;
   name: string;
   url: string;
   username: string;
@@ -79,6 +86,7 @@ type SourceForm = {
 };
 
 const emptySourceForm: SourceForm = { type: "opds", name: "", url: "", username: "", password: "" };
+const localSource: Source = { id: localSourceId, type: "local", name: "Local Library", url: "local://library" };
 
 export default function App() {
   const [sources, setSources] = useState<Source[]>([]);
@@ -91,10 +99,13 @@ export default function App() {
   const [deviceUrl, setDeviceUrl] = useState("crosspoint.local");
   const [destinationPath, setDestinationPath] = useState("/");
   const [device, setDevice] = useState<"x4" | "x3">("x4");
+  const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
-  const selectedSource = sources.find((source) => source.id === selectedSourceId) || null;
+  const allSources = useMemo(() => [localSource, ...sources], [sources]);
+  const selectedSource = allSources.find((source) => source.id === selectedSourceId) || null;
+  const isLocalSource = selectedSourceId === localSourceId;
 
   useEffect(() => {
     refreshAll();
@@ -106,7 +117,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (selectedSourceId) {
+    if (selectedSourceId === localSourceId) {
+      setBrowseStack([null]);
+      setBrowseResult(null);
+    } else if (selectedSourceId) {
       setBrowseStack([null]);
       browse(selectedSourceId, null);
     } else {
@@ -114,7 +128,13 @@ export default function App() {
     }
   }, [selectedSourceId]);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem(themeStorageKey, theme);
+  }, [theme]);
+
   const sourceIcon = useMemo(() => {
+    if (selectedSource?.type === "local") return <Library size={16} />;
     if (selectedSource?.type === "webdav") return <Server size={16} />;
     if (selectedSource?.type === "feed") return <Rss size={16} />;
     return <BookOpen size={16} />;
@@ -127,7 +147,7 @@ export default function App() {
   async function loadSources() {
     const data = await api<Source[]>("/api/sources");
     setSources(data);
-    if (!selectedSourceId && data.length) setSelectedSourceId(data[0].id);
+    if (!selectedSourceId) setSelectedSourceId(localSourceId);
   }
 
   async function loadLibrary() {
@@ -139,6 +159,10 @@ export default function App() {
   }
 
   async function browse(sourceId: number, target: string | null) {
+    if (sourceId === localSourceId) {
+      setBrowseResult(null);
+      return;
+    }
     const query = target ? `?target=${encodeURIComponent(target)}` : "";
     await runAction(async () => {
       setBrowseResult(await api<BrowseResult>(`/api/sources/${sourceId}/browse${query}`));
@@ -171,29 +195,30 @@ export default function App() {
   }
 
   async function deleteSource(sourceId: number) {
+    if (sourceId === localSourceId) return;
     await runAction(async () => {
       await api(`/api/sources/${sourceId}`, { method: "DELETE" });
-      setSelectedSourceId(null);
+      setSelectedSourceId(localSourceId);
       await loadSources();
     });
   }
 
   async function openBrowseItem(item: BrowseItem) {
     const target = item.path || item.url || null;
-    if (!selectedSourceId || !target) return;
+    if (!selectedSourceId || selectedSourceId === localSourceId || !target) return;
     setBrowseStack((stack) => [...stack, target]);
     await browse(selectedSourceId, target);
   }
 
   async function browseBack() {
-    if (!selectedSourceId || browseStack.length <= 1) return;
+    if (!selectedSourceId || selectedSourceId === localSourceId || browseStack.length <= 1) return;
     const nextStack = browseStack.slice(0, -1);
     setBrowseStack(nextStack);
     await browse(selectedSourceId, nextStack[nextStack.length - 1]);
   }
 
   async function importItem(item: BrowseItem) {
-    if (!selectedSourceId) return;
+    if (!selectedSourceId || selectedSourceId === localSourceId) return;
     setBusy(true);
     try {
       await runAction(async () => {
@@ -227,6 +252,7 @@ export default function App() {
       const formData = new FormData();
       formData.append("file", file);
       await api("/api/library/upload", { method: "POST", body: formData, rawBody: true });
+      setToast("Uploaded");
       await loadLibrary();
     });
   }
@@ -302,10 +328,20 @@ export default function App() {
             <span>OPDS, WebDAV, feeds, optimizer, device send</span>
           </div>
         </div>
-        <button className="icon-text" type="button" onClick={refreshAll} title="Refresh">
-          <RefreshCw size={16} />
-          Refresh
-        </button>
+        <div className="topbar-actions">
+          <button
+            type="button"
+            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            title={theme === "dark" ? "Use light mode" : "Use dark mode"}
+            aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"}
+          >
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+          <button className="icon-text" type="button" onClick={refreshAll} title="Refresh">
+            <RefreshCw size={16} />
+            Refresh
+          </button>
+        </div>
       </header>
 
       <section className="layout">
@@ -313,7 +349,7 @@ export default function App() {
           <form className="panel form-panel" onSubmit={addSource}>
             <h2>Sources</h2>
             <div className="segmented">
-              {(["opds", "webdav", "feed"] as SourceType[]).map((type) => (
+              {(["opds", "webdav", "feed"] as RemoteSourceType[]).map((type) => (
                 <button
                   key={type}
                   type="button"
@@ -344,7 +380,7 @@ export default function App() {
           </form>
 
           <div className="source-list">
-            {sources.map((source) => (
+            {allSources.map((source) => (
               <button
                 type="button"
                 className={`source-row ${source.id === selectedSourceId ? "selected" : ""}`}
@@ -362,13 +398,21 @@ export default function App() {
           <div className="panel-header">
             <div className="heading-line">
               {sourceIcon}
-              <h2>{browseResult?.title || selectedSource?.name || "Browse"}</h2>
+              <h2>{isLocalSource ? localSource.name : browseResult?.title || selectedSource?.name || "Browse"}</h2>
             </div>
             <div className="toolbar">
-              <button type="button" onClick={browseBack} disabled={browseStack.length <= 1} title="Back">
-                Back
-              </button>
-              {selectedSource && (
+              {!isLocalSource && (
+                <button type="button" onClick={browseBack} disabled={browseStack.length <= 1} title="Back">
+                  Back
+                </button>
+              )}
+              {isLocalSource && (
+                <label className="file-button" title="Upload EPUB">
+                  <Upload size={16} />
+                  <input type="file" accept=".epub" onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)} />
+                </label>
+              )}
+              {selectedSource && !isLocalSource && (
                 <button type="button" onClick={() => deleteSource(selectedSource.id)} title="Delete source">
                   <Trash2 size={16} />
                 </button>
@@ -377,9 +421,33 @@ export default function App() {
           </div>
           <div className="table-list">
             {error && <div className="empty-state error-state">{readableError(error)}</div>}
-            {!error && browseResult?.message && <div className="empty-state">{browseResult.message}</div>}
-            {!error && selectedSource && !browseResult && <div className="empty-state">Select refresh to browse this source.</div>}
-            {browseResult?.items.map((item, index) => (
+            {!error && isLocalSource && library.length === 0 && <div className="empty-state">No local EPUBs yet.</div>}
+            {!error &&
+              isLocalSource &&
+              library.map((item) => (
+                <div className="item-row" key={item.id}>
+                  <div className="item-icon">
+                    <BookOpen size={16} />
+                  </div>
+                  <div className="item-main">
+                    <strong>{item.title}</strong>
+                    <span>{item.optimized_path ? "Optimized" : "Original"}</span>
+                  </div>
+                  <div className="row-actions">
+                    <button type="button" onClick={() => optimize(item)} title="Optimize">
+                      <Paintbrush size={16} />
+                    </button>
+                    <button type="button" onClick={() => sendToDevice(item)} title="Send">
+                      <Send size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            {!error && !isLocalSource && browseResult?.message && <div className="empty-state">{browseResult.message}</div>}
+            {!error && !isLocalSource && selectedSource && !browseResult && (
+              <div className="empty-state">Select refresh to browse this source.</div>
+            )}
+            {!isLocalSource && browseResult?.items.map((item, index) => (
               <div className="item-row" key={`${item.type}-${item.url || item.path}-${index}`}>
                 <div className="item-icon">{iconForItem(item)}</div>
                 <div className="item-main">
@@ -434,10 +502,6 @@ export default function App() {
                 <Library size={16} />
                 <h2>Library</h2>
               </div>
-              <label className="file-button" title="Upload EPUB">
-                <Upload size={16} />
-                <input type="file" accept=".epub" onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)} />
-              </label>
             </div>
             <div className="library-list">
               {library.map((item) => (
@@ -448,7 +512,7 @@ export default function App() {
                   </div>
                   <div className="row-actions">
                     <button type="button" onClick={() => optimize(item)} title="Optimize">
-                      <HardDriveUpload size={16} />
+                      <Paintbrush size={16} />
                     </button>
                     <button type="button" onClick={() => sendToDevice(item)} title="Send">
                       <Send size={16} />
@@ -491,6 +555,14 @@ function readableError(message: string) {
     // Keep original text below.
   }
   return message;
+}
+
+function getInitialTheme(): Theme {
+  const stored = window.localStorage.getItem(themeStorageKey);
+  if (stored === "light" || stored === "dark") {
+    return stored;
+  }
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 function iconForItem(item: BrowseItem) {

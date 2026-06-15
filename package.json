@@ -1,0 +1,15 @@
+{
+  "name": "inky",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "npm run setup",
+    "setup": "npm run setup:web && npm run setup:api",
+    "setup:web": "npm install --prefix frontend",
+    "setup:api": "python3 -m venv backend/.venv && backend/.venv/bin/python -m pip install -r backend/requirements.txt",
+    "dev": "node scripts/dev.mjs",
+    "dev:api": "mkdir -p backend/storage && cd backend && INKY_DATABASE_URL=${INKY_DATABASE_URL:-sqlite:///./storage/inky.db} INKY_DATA_DIR=${INKY_DATA_DIR:-./storage} .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
+    "dev:web": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend && backend/.venv/bin/python -m compileall backend/app"
+  }
+}

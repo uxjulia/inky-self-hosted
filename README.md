@@ -1,9 +1,9 @@
 # Inky
 
 Self-hosted companion app for CrossInk devices. The MVP stores OPDS catalogs,
-WebDAV libraries, and RSS/Atom feeds; imports books/articles into a local
-library; optimizes EPUBs with the vendored `auto-epub-optimizer` Python pipeline;
-and sends files to an X3/X4 running CrossInk File Transfer mode.
+WebDAV libraries, RSS/Atom feeds, and local EPUB uploads; imports books/articles
+into a local library; optimizes EPUBs with the vendored `auto-epub-optimizer`
+Python pipeline; and sends files to an X3/X4 running CrossInk File Transfer mode.
 
 ## Run With Docker Compose
 
@@ -26,21 +26,15 @@ http://localhost:8000
 
 ## Local Development
 
-Backend:
+Install all frontend and backend dependencies:
 
 ```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-INKY_DATABASE_URL=sqlite:///./storage/inky.db INKY_DATA_DIR=./storage uvicorn app.main:app --reload
+npm install
 ```
 
-Frontend:
+Run the API and frontend together with live reload:
 
 ```bash
-cd frontend
-npm install
 npm run dev
 ```
 
@@ -49,6 +43,13 @@ Open:
 ```text
 http://localhost:5173
 ```
+
+The root `postinstall` script installs the frontend packages and creates the
+backend Python virtualenv at `backend/.venv`. The API runs on
+`http://localhost:8000`, and Vite proxies `/api` to it.
+
+If Docker Compose is running, stop it first with `docker compose down` so the
+local API can use port `8000`.
 
 ## Device Send Flow
 
@@ -67,6 +68,7 @@ and BLE can be added as alternate transports behind the same backend route.
 - `backend/app/optimizer/epubkit_pipeline/` is copied from
   `~/code/auto-epub-optimizer`.
 - `backend/app/jobs.py` runs optimize/send work as API background jobs.
+- The frontend treats local uploads as a virtual source; uploaded files are still
+  persisted by the backend library store.
 - SQLite is the default store, but `INKY_DATABASE_URL` is isolated so Postgres
   can replace it when multi-user auth becomes real.
-
