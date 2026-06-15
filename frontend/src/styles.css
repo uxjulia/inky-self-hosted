@@ -731,6 +731,17 @@ h2 {
   line-height: 1.45;
 }
 
+.help-card code {
+  background: var(--color-border-strong);
+  padding: 2px;
+  border: 1px solid var(--color-text);
+  border-radius: 3px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
 .file-button {
   position: relative;
   overflow: hidden;

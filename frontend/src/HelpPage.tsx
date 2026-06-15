@@ -12,14 +12,9 @@ export function HelpPage({ onOpenApp }: HelpPageProps) {
           <p className="eyebrow">Getting Started</p>
           <h2>Send books and articles to your Cross<span className="serif">I</span>nk reader</h2>
           <p>
-            Inky connects catalogs, feeds, cloud folders, and local files to an X3 or X4 device. EPUBs can be optimized before sending;
-            TXT, XTC, and XTCH files are sent as-is.
+            Inky connects catalogs, feeds, cloud folders, and local files to an X3 or X4 device. EPUBs can be optimized before sending. TXT, XTC, and XTCH files are sent as-is.
           </p>
         </div>
-        <button className="primary icon-text" type="button" onClick={onOpenApp}>
-          <Home size={16} />
-          Open App
-        </button>
       </div>
 
       <div className="help-grid">
@@ -29,8 +24,8 @@ export function HelpPage({ onOpenApp }: HelpPageProps) {
             <h3>Connect Your Device</h3>
             <p>On the reader, open File Transfer and join the same network as this app.</p>
             <ul>
-              <li>Use the device host shown by CrossInk, usually `crosspoint.local` or an IP address.</li>
-              <li>Keep the destination folder as `/` or enter a folder such as `/Books`; Inky creates missing folders before upload.</li>
+              <li>Use the device host shown by CrossInk, usually <code>crosspoint.local</code> or an IP address.</li>
+              <li>Keep the destination folder as <code>/</code> or enter a folder such as <code>/Books</code>. Inky creates missing folders before upload.</li>
               <li>Select X3 or X4 before sending EPUBs so the optimizer uses the right screen target.</li>
               <li>Use Test Connection to confirm the app can reach the reader.</li>
             </ul>

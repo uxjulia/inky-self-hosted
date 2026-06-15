@@ -757,7 +757,7 @@ export default function App() {
         </div>
         <div className="topbar-actions">
           {view === "help" ? (
-            <button className="icon-text" type="button" onClick={openApp} title="Open app">
+            <button className="primary icon-text" type="button" onClick={openApp} title="Open app">
               <Home size={16} />
               App
             </button>
