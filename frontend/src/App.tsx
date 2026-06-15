@@ -6,15 +6,13 @@ import {
   Library,
   Moon,
   Plus,
-  Paintbrush,
   RefreshCw,
   Rss,
   Send,
   Server,
   Settings2,
   Sun,
-  Trash2,
-  Upload
+  Trash2
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
@@ -103,6 +101,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
+  const [deviceError, setDeviceError] = useState("");
   const allSources = useMemo(() => [localSource, ...sources], [sources]);
   const selectedSource = allSources.find((source) => source.id === selectedSourceId) || null;
   const isLocalSource = selectedSourceId === localSourceId;
@@ -222,28 +221,65 @@ export default function App() {
     setBusy(true);
     try {
       await runAction(async () => {
-        if (item.type === "article" && item.url) {
-          await api("/api/library/import-article", {
-            method: "POST",
-            body: JSON.stringify({ source_id: selectedSourceId, url: item.url, title: item.title, author: item.author })
-          });
-        } else if (item.type === "file" && item.path && selectedSource?.type === "webdav") {
-          await api("/api/library/import-webdav", {
-            method: "POST",
-            body: JSON.stringify({ source_id: selectedSourceId, path: item.path, title: item.title })
-          });
-        } else if (item.url) {
-          await api("/api/library/import-url", {
-            method: "POST",
-            body: JSON.stringify({ source_id: selectedSourceId, url: item.url, title: item.title, author: item.author })
-          });
-        }
-        setToast("Imported");
+        const imported = await importBrowseItem(item);
+        if (!imported) return;
+        setToast("Downloaded");
         await loadLibrary();
       });
     } finally {
       setBusy(false);
     }
+  }
+
+  async function sendBrowseItem(item: BrowseItem) {
+    if (!selectedSourceId || selectedSourceId === localSourceId) return;
+    setBusy(true);
+    try {
+      await runAction(async () => {
+        const imported = await importBrowseItem(item);
+        if (!imported) return;
+        await api(`/api/library/${imported.id}/send`, {
+          method: "POST",
+          body: JSON.stringify({
+            ...defaultOptimizePayload(),
+            device_url: deviceUrl,
+            destination_path: destinationPath,
+            optimize_first: true
+          })
+        });
+        setToast("Send queued");
+        await Promise.all([loadLibrary(), loadJobs()]);
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function importBrowseItem(item: BrowseItem): Promise<LibraryItem | null> {
+    if (!selectedSourceId || selectedSourceId === localSourceId) return null;
+
+    if (item.type === "article" && item.url) {
+      return api<LibraryItem>("/api/library/import-article", {
+        method: "POST",
+        body: JSON.stringify({ source_id: selectedSourceId, url: item.url, title: item.title, author: item.author })
+      });
+    }
+
+    if (item.type === "file" && item.path && selectedSource?.type === "webdav") {
+      return api<LibraryItem>("/api/library/import-webdav", {
+        method: "POST",
+        body: JSON.stringify({ source_id: selectedSourceId, path: item.path, title: item.title })
+      });
+    }
+
+    if (item.url) {
+      return api<LibraryItem>("/api/library/import-url", {
+        method: "POST",
+        body: JSON.stringify({ source_id: selectedSourceId, url: item.url, title: item.title, author: item.author })
+      });
+    }
+
+    return null;
   }
 
   async function uploadLocalFile(file: File | null) {
@@ -257,13 +293,13 @@ export default function App() {
     });
   }
 
-  async function optimize(item: LibraryItem) {
+  async function removeLocalItem(item: LibraryItem) {
+    const confirmed = window.confirm(`Remove "${item.title}" from the local library?`);
+    if (!confirmed) return;
     await runAction(async () => {
-      await api(`/api/library/${item.id}/optimize`, {
-        method: "POST",
-        body: JSON.stringify(defaultOptimizePayload())
-      });
-      await loadJobs();
+      await api(`/api/library/${item.id}`, { method: "DELETE" });
+      setToast("Removed");
+      await Promise.all([loadLibrary(), loadJobs()]);
     });
   }
 
@@ -283,13 +319,17 @@ export default function App() {
   }
 
   async function probeDevice() {
-    await runAction(async () => {
+    setDeviceError("");
+    try {
       const status = await api<Record<string, unknown>>("/api/devices/probe", {
         method: "POST",
         body: JSON.stringify({ device_url: deviceUrl })
       });
       setToast(`${status.device || "Device"} ${status.version || ""} at ${status.ip || deviceUrl}`);
-    });
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      setDeviceError(message);
+    }
   }
 
   async function runAction<T>(action: () => Promise<T>): Promise<T | undefined> {
@@ -338,7 +378,7 @@ export default function App() {
             {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
           <button className="icon-text" type="button" onClick={refreshAll} title="Refresh">
-            <RefreshCw size={16} />
+            <RefreshCw size={15} />
             Refresh
           </button>
         </div>
@@ -408,7 +448,7 @@ export default function App() {
               )}
               {isLocalSource && (
                 <label className="file-button" title="Upload EPUB">
-                  <Upload size={16} />
+                  <Plus size={16} />
                   <input type="file" accept=".epub" onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)} />
                 </label>
               )}
@@ -431,14 +471,14 @@ export default function App() {
                   </div>
                   <div className="item-main">
                     <strong>{item.title}</strong>
-                    <span>{item.optimized_path ? "Optimized" : "Original"}</span>
+                    <span>{item.optimized_path ? "Optimized" : "Not optimized yet"}</span>
                   </div>
                   <div className="row-actions">
-                    <button type="button" onClick={() => optimize(item)} title="Optimize">
-                      <Paintbrush size={16} />
-                    </button>
-                    <button type="button" onClick={() => sendToDevice(item)} title="Send">
+                    <button type="button" onClick={() => sendToDevice(item)} title="Optimize & Send">
                       <Send size={16} />
+                    </button>
+                    <button type="button" onClick={() => removeLocalItem(item)} title="Remove">
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 </div>
@@ -463,9 +503,14 @@ export default function App() {
                     </button>
                   )}
                   {(item.type === "book" || item.type === "article" || item.type === "file") && (
-                    <button type="button" onClick={() => importItem(item)} title="Import">
-                      <ArrowDownToLine size={16} />
-                    </button>
+                    <>
+                      <button type="button" onClick={() => importItem(item)} title="Download to Local Library" disabled={busy}>
+                        <ArrowDownToLine size={16} />
+                      </button>
+                      <button type="button" onClick={() => sendBrowseItem(item)} title="Download, Optimize & Send" disabled={busy}>
+                        <Send size={16} />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -480,12 +525,26 @@ export default function App() {
                 <Settings2 size={16} />
                 <h2>Device</h2>
               </div>
-              <button type="button" onClick={probeDevice} title="Probe">
-                Probe
+              <button type="button" onClick={probeDevice} title="Test Connection">
+                Test Connection
               </button>
             </div>
-            <input value={deviceUrl} onChange={(event) => setDeviceUrl(event.target.value)} placeholder="crosspoint.local" />
-            <input value={destinationPath} onChange={(event) => setDestinationPath(event.target.value)} placeholder="/" />
+            {deviceError && <div className="empty-state error-state">{readableError(deviceError)}</div>}
+            <label className="field">
+              <span>Device host</span>
+              <input
+                value={deviceUrl}
+                onChange={(event) => {
+                  setDeviceError("");
+                  setDeviceUrl(event.target.value);
+                }}
+                placeholder="crosspoint.local"
+              />
+            </label>
+            <label className="field">
+              <span>Destination folder</span>
+              <input value={destinationPath} onChange={(event) => setDestinationPath(event.target.value)} placeholder="/" />
+            </label>
             <div className="segmented">
               <button type="button" className={device === "x4" ? "active" : ""} onClick={() => setDevice("x4")}>
                 X4
@@ -493,33 +552,6 @@ export default function App() {
               <button type="button" className={device === "x3" ? "active" : ""} onClick={() => setDevice("x3")}>
                 X3
               </button>
-            </div>
-          </section>
-
-          <section className="panel library-panel">
-            <div className="panel-header">
-              <div className="heading-line">
-                <Library size={16} />
-                <h2>Library</h2>
-              </div>
-            </div>
-            <div className="library-list">
-              {library.map((item) => (
-                <div className="library-item" key={item.id}>
-                  <div>
-                    <strong>{item.title}</strong>
-                    <span>{item.optimized_path ? "Optimized" : "Original"}</span>
-                  </div>
-                  <div className="row-actions">
-                    <button type="button" onClick={() => optimize(item)} title="Optimize">
-                      <Paintbrush size={16} />
-                    </button>
-                    <button type="button" onClick={() => sendToDevice(item)} title="Send">
-                      <Send size={16} />
-                    </button>
-                  </div>
-                </div>
-              ))}
             </div>
           </section>
 

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .article_epub import fetch_article_as_epub
 from .config import get_settings
-from .models import LibraryItem, Source
+from .models import Job, LibraryItem, Source
 from .utils import display_title_from_url, extension_from_url, join_remote, normalize_device_url, safe_filename
 
 
@@ -86,6 +86,16 @@ def copy_uploaded_file(db: Session, source_path: Path, filename: str) -> Library
     return item
 
 
+def delete_library_item(db: Session, item: LibraryItem) -> None:
+    for file_path in (item.original_path, item.optimized_path):
+        if file_path:
+            _unlink_data_file(Path(file_path))
+
+    db.query(Job).filter(Job.item_id == item.id).update({Job.item_id: None})
+    db.delete(item)
+    db.commit()
+
+
 async def probe_device(device_url: str) -> dict:
     base = normalize_device_url(device_url)
     async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
@@ -113,3 +123,11 @@ def _unique_path(path: Path) -> Path:
         if not candidate.exists():
             return candidate
     raise RuntimeError(f"could not create unique filename for {path.name}")
+
+
+def _unlink_data_file(path: Path) -> None:
+    data_dir = get_settings().data_dir.resolve()
+    resolved = path.resolve()
+    if not resolved.is_relative_to(data_dir) or not resolved.is_file():
+        return
+    resolved.unlink(missing_ok=True)

@@ -11,7 +11,7 @@ from .config import ensure_data_dirs
 from .connectors import browse_source
 from .db import get_db, init_db
 from .jobs import create_job, run_optimize_job, run_send_job
-from .library import copy_uploaded_file, import_article, import_url, import_webdav_file, probe_device
+from .library import copy_uploaded_file, delete_library_item, import_article, import_url, import_webdav_file, probe_device
 from .models import Job, LibraryItem, Source
 from .schemas import (
     ArticleImportRequest,
@@ -122,6 +122,15 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
         return copy_uploaded_file(db, temp_path, file.filename or "upload.epub")
     finally:
         temp_path.unlink(missing_ok=True)
+
+
+@app.delete("/api/library/{item_id}")
+def remove_library_item(item_id: int, db: Session = Depends(get_db)) -> dict:
+    item = db.get(LibraryItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="library item not found")
+    delete_library_item(db, item)
+    return {"ok": True}
 
 
 @app.post("/api/library/{item_id}/optimize", response_model=JobRead)
