@@ -7,6 +7,7 @@ import {
   Plus,
   RefreshCw,
   Rss,
+  Search,
   Send,
   Server,
   Settings2,
@@ -91,6 +92,8 @@ export default function App() {
   const [sources, setSources] = useState<Source[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState<number | null>(null);
   const [browseResult, setBrowseResult] = useState<BrowseResult | null>(null);
+  const [searchResult, setSearchResult] = useState<BrowseResult | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [browseStack, setBrowseStack] = useState<(string | null)[]>([null]);
   const [library, setLibrary] = useState<LibraryItem[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -100,6 +103,7 @@ export default function App() {
   const [device, setDevice] = useState<"x4" | "x3">("x4");
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
   const [busy, setBusy] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
   const [deviceError, setDeviceError] = useState("");
@@ -110,6 +114,15 @@ export default function App() {
   const selectedSource = allSources.find((source) => source.id === selectedSourceId) || null;
   const isLocalSource = selectedSourceId === localSourceId;
   const deviceLabel = device.toUpperCase();
+  const trimmedSearchQuery = searchQuery.trim();
+  const activeBrowseResult = searchResult || browseResult;
+  const displayedLibrary = useMemo(() => {
+    if (!trimmedSearchQuery) return library;
+    const needle = trimmedSearchQuery.toLocaleLowerCase();
+    return library.filter((item) =>
+      [item.title, item.author, item.source_url, item.original_path].some((value) => value?.toLocaleLowerCase().includes(needle))
+    );
+  }, [library, trimmedSearchQuery]);
 
   useEffect(() => {
     refreshAll();
@@ -121,6 +134,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    clearSearch();
     if (selectedSourceId === localSourceId) {
       setBrowseStack([null]);
       setBrowseResult(null);
@@ -211,15 +225,45 @@ export default function App() {
   async function openBrowseItem(item: BrowseItem) {
     const target = item.path || item.url || null;
     if (!selectedSourceId || selectedSourceId === localSourceId || !target) return;
+    clearSearch();
     setBrowseStack((stack) => [...stack, target]);
     await browse(selectedSourceId, target);
   }
 
   async function browseBack() {
     if (!selectedSourceId || selectedSourceId === localSourceId || browseStack.length <= 1) return;
+    clearSearch();
     const nextStack = browseStack.slice(0, -1);
     setBrowseStack(nextStack);
     await browse(selectedSourceId, nextStack[nextStack.length - 1]);
+  }
+
+  async function searchSelectedSource(event: FormEvent) {
+    event.preventDefault();
+    if (!trimmedSearchQuery || !selectedSourceId || isLocalSource) return;
+
+    const params = new URLSearchParams({ q: trimmedSearchQuery });
+    const currentTarget = browseStack[browseStack.length - 1];
+    if (currentTarget) params.set("target", currentTarget);
+
+    setSearching(true);
+    try {
+      await runAction(async () => {
+        setSearchResult(await api<BrowseResult>(`/api/sources/${selectedSourceId}/search?${params.toString()}`));
+      });
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function updateSearchQuery(value: string) {
+    setSearchQuery(value);
+    if (!value.trim()) setSearchResult(null);
+  }
+
+  function clearSearch() {
+    setSearchQuery("");
+    setSearchResult(null);
   }
 
   async function importItem(item: BrowseItem) {
@@ -494,7 +538,7 @@ export default function App() {
           <div className="panel-header">
             <div className="heading-line">
               {sourceIcon}
-              <h2>{isLocalSource ? localSource.name : browseResult?.title || selectedSource?.name || "Browse"}</h2>
+              <h2>{isLocalSource ? localSource.name : activeBrowseResult?.title || selectedSource?.name || "Browse"}</h2>
             </div>
             <div className="toolbar">
               {!isLocalSource && (
@@ -515,12 +559,35 @@ export default function App() {
               )}
             </div>
           </div>
+          {selectedSource && (
+            <form className="search-bar" onSubmit={searchSelectedSource}>
+              <input
+                value={searchQuery}
+                onChange={(event) => updateSearchQuery(event.target.value)}
+                placeholder={`Search ${selectedSource.name}`}
+                aria-label={`Search ${selectedSource.name}`}
+              />
+              {searchQuery && (
+                <button type="button" onClick={clearSearch} title="Clear search" aria-label="Clear search">
+                  <X size={16} />
+                </button>
+              )}
+              <button type="submit" disabled={searching || !trimmedSearchQuery} title="Search">
+                {searching ? <RefreshCw className="spin" size={15} /> : <Search size={15} />}
+                Search
+              </button>
+            </form>
+          )}
           <div className="table-list">
             {error && <div className="empty-state error-state">{readableError(error)}</div>}
-            {!error && isLocalSource && library.length === 0 && <div className="empty-state">No local EPUBs yet.</div>}
+            {!error && isLocalSource && displayedLibrary.length === 0 && (
+              <div className="empty-state">
+                {trimmedSearchQuery ? `No results found for "${trimmedSearchQuery}".` : "No local EPUBs yet."}
+              </div>
+            )}
             {!error &&
               isLocalSource &&
-              library.map((item) => (
+              displayedLibrary.map((item) => (
                 <div className="item-row" key={item.id}>
                   <div className="item-icon">
                     <BookOpen size={16} />
@@ -539,11 +606,11 @@ export default function App() {
                   </div>
                 </div>
               ))}
-            {!error && !isLocalSource && browseResult?.message && <div className="empty-state">{browseResult.message}</div>}
+            {!error && !isLocalSource && activeBrowseResult?.message && <div className="empty-state">{activeBrowseResult.message}</div>}
             {!error && !isLocalSource && selectedSource && !browseResult && (
               <div className="empty-state">Select refresh to browse this source.</div>
             )}
-            {!isLocalSource && browseResult?.items.map((item, index) => (
+            {!isLocalSource && activeBrowseResult?.items.map((item, index) => (
               <div className="item-row" key={`${item.type}-${item.url || item.path}-${index}`}>
                 <div className="item-icon">{iconForItem(item)}</div>
                 <div className="item-main">

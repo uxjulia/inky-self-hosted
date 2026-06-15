@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from urllib.parse import unquote, urljoin, urlparse
+from urllib.parse import quote, unquote, urljoin, urlparse
 from xml.etree import ElementTree as ET
 
 import feedparser
@@ -36,6 +36,24 @@ async def browse_source(db: Session, source_id: int, target: str | None = None) 
     raise ValueError(f"unsupported source type: {source.type}")
 
 
+async def search_source(db: Session, source_id: int, query: str, target: str | None = None) -> BrowseResult:
+    source = db.get(Source, source_id)
+    if not source:
+        raise ValueError("source not found")
+
+    normalized_query = query.strip()
+    if not normalized_query:
+        return await browse_source(db, source_id, target)
+
+    if source.type == "opds":
+        return await search_opds(source, normalized_query, target)
+    if source.type == "feed":
+        return await search_feed(source, normalized_query, target)
+    if source.type == "webdav":
+        return await search_webdav(source, normalized_query, target or "/")
+    raise ValueError(f"unsupported source type: {source.type}")
+
+
 async def _fetch_text(url: str, source: Source) -> str:
     async with httpx.AsyncClient(timeout=get_settings().http_timeout_seconds, follow_redirects=True) as client:
         response = await client.get(url, auth=_auth(source))
@@ -46,6 +64,36 @@ async def _fetch_text(url: str, source: Source) -> str:
 async def browse_opds(source: Source, target: str | None = None) -> BrowseResult:
     url = join_remote(source.url, target)
     xml_text = await _fetch_text(url, source)
+    return _parse_opds(xml_text, source, url)
+
+
+async def search_opds(source: Source, query: str, target: str | None = None) -> BrowseResult:
+    url = join_remote(source.url, target)
+    xml_text = await _fetch_text(url, source)
+    root = ET.fromstring(xml_text)
+    search_url = None
+    search_link = _opds_search_link(root, url)
+    if search_link:
+        search_href, search_media_type = search_link
+        if "opensearchdescription" in search_media_type:
+            description_text = await _fetch_text(search_href, source)
+            search_url = _opensearch_url(description_text, search_href, query)
+        else:
+            search_url = _apply_search_template(search_href, query)
+
+    if search_url:
+        xml_text = await _fetch_text(search_url, source)
+        result = _parse_opds(xml_text, source, search_url)
+    else:
+        result = _parse_opds(xml_text, source, url)
+        result.items = [item for item in result.items if _matches_item(item, query)]
+
+    result.title = f'Search "{query}"'
+    result.message = None if result.items else f'No results found for "{query}".'
+    return result
+
+
+def _parse_opds(xml_text: str, source: Source, url: str) -> BrowseResult:
     root = ET.fromstring(xml_text)
     title = _child_text(root, "title") or source.name
     items: list[BrowseItem] = []
@@ -111,6 +159,14 @@ async def browse_feed(source: Source, target: str | None = None) -> BrowseResult
     return BrowseResult(source_id=source.id, source_type=source.type, base_url=url, title=title, items=items, message=message)
 
 
+async def search_feed(source: Source, query: str, target: str | None = None) -> BrowseResult:
+    result = await browse_feed(source, target)
+    result.items = [item for item in result.items if _matches_item(item, query)]
+    result.title = f'Search "{query}"'
+    result.message = None if result.items else f'No results found for "{query}".'
+    return result
+
+
 async def browse_webdav(source: Source, target: str = "/") -> BrowseResult:
     url = join_remote(source.url, target)
     body = """<?xml version="1.0" encoding="utf-8" ?>
@@ -165,6 +221,14 @@ async def browse_webdav(source: Source, target: str = "/") -> BrowseResult:
     return BrowseResult(source_id=source.id, source_type=source.type, base_url=url, title=source.name, items=items, message=message)
 
 
+async def search_webdav(source: Source, query: str, target: str = "/") -> BrowseResult:
+    result = await browse_webdav(source, target)
+    result.items = [item for item in result.items if _matches_item(item, query)]
+    result.title = f'Search "{query}"'
+    result.message = None if result.items else f'No results found for "{query}" in this folder.'
+    return result
+
+
 def _local_name(tag: str) -> str:
     if "}" in tag:
         return tag.rsplit("}", 1)[1]
@@ -204,6 +268,54 @@ def _is_navigation_link(rel: str, media_type: str) -> bool:
         or "application/xml" in media_type
         or "text/xml" in media_type
     )
+
+
+def _opds_search_link(root: ET.Element, base_url: str) -> tuple[str, str] | None:
+    for link in _children(root, "link"):
+        rel = link.attrib.get("rel", "").lower()
+        if "search" not in rel:
+            continue
+        href = link.attrib.get("href")
+        if not href:
+            continue
+        return urljoin(base_url, href), link.attrib.get("type", "").lower()
+    return None
+
+
+def _opensearch_url(xml_text: str, base_url: str, query: str) -> str | None:
+    root = ET.fromstring(xml_text)
+    fallback: str | None = None
+    for url_node in _children(root, "Url"):
+        template = url_node.attrib.get("template")
+        if not template:
+            continue
+        media_type = url_node.attrib.get("type", "").lower()
+        absolute_template = urljoin(base_url, template)
+        if "atom" in media_type or "opds" in media_type:
+            return _apply_search_template(absolute_template, query)
+        if fallback is None:
+            fallback = _apply_search_template(absolute_template, query)
+    return fallback
+
+
+def _apply_search_template(template: str, query: str) -> str:
+    encoded_query = quote(query)
+    replacements = {
+        "{searchTerms}": encoded_query,
+        "{searchterms}": encoded_query,
+        "%7BsearchTerms%7D": encoded_query,
+        "%7bsearchterms%7d": encoded_query,
+    }
+    result = template
+    for token, value in replacements.items():
+        result = result.replace(token, value)
+    return result
+
+
+def _matches_item(item: BrowseItem, query: str) -> bool:
+    needle = query.casefold()
+    values = [item.title, item.author, item.summary, item.published, item.path, item.url, item.media_type]
+    return any(needle in value.casefold() for value in values if value)
 
 
 def _href_path(value: str) -> str:

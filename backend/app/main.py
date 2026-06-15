@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from .config import ensure_data_dirs
-from .connectors import browse_source
+from .connectors import browse_source, search_source
 from .db import get_db, init_db
 from .jobs import create_job, run_optimize_job, run_send_job
 from .library import copy_uploaded_file, delete_library_item, import_article, import_url, import_webdav_file, probe_device
@@ -77,6 +77,16 @@ def delete_source(source_id: int, db: Session = Depends(get_db)) -> dict:
 async def browse(source_id: int, target: str | None = None, db: Session = Depends(get_db)) -> BrowseResult:
     try:
         return await browse_source(db, source_id, target)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/sources/{source_id}/search", response_model=BrowseResult)
+async def search(source_id: int, q: str, target: str | None = None, db: Session = Depends(get_db)) -> BrowseResult:
+    try:
+        return await search_source(db, source_id, q, target)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
