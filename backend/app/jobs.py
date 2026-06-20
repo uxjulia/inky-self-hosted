@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import SessionLocal
-from .library import send_file_to_device
+from .library import format_upload_bytes, send_file_to_device
 from .models import Job, JobStatus, LibraryItem, utc_now
 from .optimizer.service import optimize_epub
 from .schemas import DeviceSendRequest, OptimizeRequest
@@ -91,8 +91,18 @@ def run_send_job(job_id: str, item_id: int, request: DeviceSendRequest) -> None:
             job.result_json = json.dumps({"optimization": "skipped for non-EPUB file"})
             db.commit()
 
-        set_job(job_id, progress=85, message="Uploading to device")
-        send_result = asyncio.run(send_file_to_device(file_path, request.device_url, request.destination_path))
+        set_job(
+            job_id,
+            progress=0,
+            message=f"Uploading to device (0 KB of {format_upload_bytes(file_path.stat().st_size)})",
+        )
+
+        def send_progress(percent: int, message: str) -> None:
+            set_job(job_id, progress=max(0, min(100, percent)), message=message)
+
+        send_result = asyncio.run(
+            send_file_to_device(file_path, request.device_url, request.destination_path, send_progress)
+        )
         result = {"send": send_result}
         if job.result_json:
             result.update(json.loads(job.result_json))

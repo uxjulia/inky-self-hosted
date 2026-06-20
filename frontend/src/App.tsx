@@ -224,6 +224,11 @@ export default function App() {
       const job = await loadVisibleJob(activeJobId);
       if (job && (job.status === "succeeded" || job.status === "failed")) {
         setActiveJobId(null);
+        if (job.status === "failed") {
+          showToast(job.error || job.message || "Send failed", "error");
+        } else if (job.type === "send") {
+          showToast("Sent to device");
+        }
         await loadLibrary();
       }
     };
@@ -1379,7 +1384,8 @@ export default function App() {
 function formatJobLog(job: Job) {
   const status = job.error ? "error" : job.status;
   const message = job.error || job.message || job.status;
-  return `[${status}] ${job.type} ${job.progress}%${message ? ` - ${message}` : ""}`;
+  const progress = message.startsWith("Uploading to device (") ? ` ${job.progress}%` : "";
+  return `[${status}] ${job.type}${progress}${message ? ` - ${message}` : ""}`;
 }
 
 function formatSentDate(value: string) {

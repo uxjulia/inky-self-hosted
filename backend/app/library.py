@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import shutil
 import posixpath
+import uuid
 import zipfile
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from xml.etree import ElementTree as ET
 from pathlib import Path
-from urllib.parse import quote, unquote, urlsplit, urlunsplit
+from urllib.parse import quote, unquote
 
 import httpx
 from sqlalchemy.orm import Session
@@ -378,18 +380,20 @@ async def probe_device(device_url: str) -> dict:
         return response.json()
 
 
-async def send_file_to_device(file_path: Path, device_url: str, destination_path: str = "/") -> dict:
+SendProgress = Callable[[int, str], None]
+
+
+async def send_file_to_device(
+    file_path: Path,
+    device_url: str,
+    destination_path: str = "/",
+    progress: SendProgress | None = None,
+) -> dict:
     base = normalize_device_url(device_url)
     destination_path = _normalize_destination_path(destination_path)
     async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
         created_folders = await _ensure_device_folder(client, base, destination_path)
-        if destination_path == "/":
-            return await _put_file_to_device_root(client, base, file_path, created_folders)
-        with file_path.open("rb") as handle:
-            files = {"file": (file_path.name, handle, _media_type_for_device_upload(file_path))}
-            response = await client.post(f"{base}/upload?path={quote(destination_path)}", files=files)
-            response.raise_for_status()
-            return {"device_url": base, "destination_path": destination_path, "created_folders": created_folders, "response": response.text}
+        return await _upload_file_atomically(client, base, file_path, destination_path, created_folders, progress)
 
 
 async def _ensure_device_folder(client: httpx.AsyncClient, base: str, destination_path: str) -> list[str]:
@@ -426,24 +430,162 @@ def _normalize_destination_path(destination_path: str) -> str:
     return normalized.rstrip("/") or "/"
 
 
-async def _put_file_to_device_root(
+async def _upload_file_atomically(
     client: httpx.AsyncClient,
     base: str,
     file_path: Path,
+    destination_path: str,
     created_folders: list[str],
+    progress: SendProgress | None,
 ) -> dict:
-    upload_url = _join_device_url(base, quote(file_path.name))
+    final_name = _device_filename(file_path.name)
+    temp_name = _temporary_upload_name(final_name)
+    temp_path = _join_device_folder(destination_path, temp_name)
+    final_path = _join_device_folder(destination_path, final_name)
+
+    try:
+        _send_log(f"Uploading {file_path.name} to {destination_path} as temporary file {temp_name}")
+        upload_response = await _post_file_to_device(client, base, file_path, destination_path, temp_name, progress)
+        _send_log(f"Upload response {upload_response.status_code}: {_response_summary(upload_response)}")
+        _raise_for_device_response(upload_response, "Device upload failed")
+
+        if progress:
+            progress(100, "Finalizing on device")
+        rename_response = await client.post(f"{base}/rename", data={"path": temp_path, "name": final_name})
+        if rename_response.status_code == 409 and "target already exists" in rename_response.text.lower():
+            await _delete_device_file_if_present(client, base, final_path)
+            rename_response = await client.post(f"{base}/rename", data={"path": temp_path, "name": final_name})
+        _send_log(f"Finalize response {rename_response.status_code}: {_response_summary(rename_response)}")
+        _raise_for_device_response(rename_response, "Device finalize failed")
+    except Exception:
+        await _cleanup_device_file(client, base, temp_path)
+        raise
+
+    return {
+        "device_url": base,
+        "destination_path": destination_path,
+        "filename": final_name,
+        "created_folders": created_folders,
+        "response": upload_response.text,
+    }
+
+
+async def _post_file_to_device(
+    client: httpx.AsyncClient,
+    base: str,
+    file_path: Path,
+    destination_path: str,
+    upload_name: str,
+    progress: SendProgress | None,
+) -> httpx.Response:
     with file_path.open("rb") as handle:
-        response = await client.put(upload_url, content=handle, headers={"Content-Type": _media_type_for_device_upload(file_path)})
-        response.raise_for_status()
-        return {"device_url": base, "destination_path": "/", "created_folders": created_folders, "response": response.text}
+        upload_file = _ProgressFile(handle, file_path.stat().st_size, progress)
+        files = {"file": (upload_name, upload_file, _media_type_for_device_upload(file_path))}
+        return await client.post(f"{base}/upload?path={quote(destination_path)}", files=files)
 
 
-def _join_device_url(base: str, path: str) -> str:
-    parts = urlsplit(base)
-    base_path = parts.path.rstrip("/")
-    joined_path = f"{base_path}/{path.lstrip('/')}"
-    return urlunsplit((parts.scheme, parts.netloc, joined_path, "", ""))
+async def _delete_device_file_if_present(client: httpx.AsyncClient, base: str, path: str) -> None:
+    response = await client.post(f"{base}/delete", data={"path": path})
+    if response.status_code < 400 or "not found" in response.text.lower():
+        if response.status_code < 400:
+            _send_log(f"Removed existing device file before finalize: {path}")
+        return
+    _raise_for_device_response(response, "Device overwrite cleanup failed")
+
+
+async def _cleanup_device_file(client: httpx.AsyncClient, base: str, path: str) -> None:
+    try:
+        response = await client.post(f"{base}/delete", data={"path": path})
+        _send_log(f"Temporary cleanup response {response.status_code}: {_response_summary(response)}")
+    except httpx.HTTPError as exc:
+        _send_log(f"Temporary cleanup request failed: {exc}")
+
+
+def _raise_for_device_response(response: httpx.Response, prefix: str) -> None:
+    if response.status_code < 400:
+        return
+    detail = response.text.strip() or response.reason_phrase or f"HTTP {response.status_code}"
+    raise RuntimeError(f"{prefix} ({response.status_code}): {detail}")
+
+
+def _temporary_upload_name(file_name: str) -> str:
+    return _device_filename(f"inky-upload-{uuid.uuid4().hex[:8]}-{file_name}")
+
+
+def _device_filename(file_name: str, max_bytes: int = 255) -> str:
+    trimmed = file_name.strip(" .")
+    extension_start = _safe_extension_start(trimmed)
+    if extension_start is not None:
+        extension = trimmed[extension_start:]
+        base_budget = max_bytes - len(extension.encode("utf-8"))
+        base = _device_filename_part(trimmed[:extension_start], base_budget)
+        if base:
+            return f"{base}{extension}"
+    return _device_filename_part(file_name, max_bytes)
+
+
+def _safe_extension_start(file_name: str) -> int | None:
+    dot = file_name.rfind(".")
+    if dot <= 0 or dot + 1 >= len(file_name):
+        return None
+    extension = file_name[dot:]
+    if len(extension.encode("utf-8")) > 16 or not extension[1:].isalnum():
+        return None
+    return dot
+
+
+def _device_filename_part(file_name: str, max_bytes: int) -> str:
+    result = ""
+    for char in file_name.lstrip(" ."):
+        char = "_" if char in '/\\:*?"<>|' or ord(char) < 32 else char
+        candidate = f"{result}{char}"
+        if len(candidate.encode("utf-8")) > max_bytes:
+            break
+        result = candidate
+    return result.rstrip(" .") or "book"
+
+
+def _response_summary(response: httpx.Response) -> str:
+    return (response.text or response.reason_phrase or "").strip()[:240]
+
+
+def _send_log(message: str) -> None:
+    print(f"[send] {message}", flush=True)
+
+
+class _ProgressFile:
+    def __init__(self, handle, total_bytes: int, progress: SendProgress | None):
+        self._handle = handle
+        self._total_bytes = max(1, total_bytes)
+        self._progress = progress
+        self._sent = 0
+        self._last_percent = -1
+
+    def read(self, size=-1):
+        chunk = self._handle.read(size)
+        if chunk and self._progress:
+            self._sent += len(chunk)
+            percent = min(100, int((self._sent / self._total_bytes) * 100))
+            if percent > self._last_percent:
+                self._last_percent = percent
+                message = (
+                    f"Uploading to device ({format_upload_bytes(self._sent)} "
+                    f"of {format_upload_bytes(self._total_bytes)})"
+                )
+                self._progress(percent, message)
+        return chunk
+
+    def __getattr__(self, name):
+        return getattr(self._handle, name)
+
+
+def format_upload_bytes(byte_count: int) -> str:
+    if byte_count <= 0:
+        return "0 KB"
+    kb = max(1, (byte_count + 1023) // 1024)
+    if kb < 1000:
+        return f"{kb} KB"
+    return f"{byte_count / (1024 * 1024):.2f} MB"
 
 
 def _join_device_folder(parent: str, segment: str) -> str:
