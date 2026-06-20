@@ -21,6 +21,7 @@
   "build": {
     "appId": "app.inky.reader",
     "productName": "Inky",
+    "icon": "build/icon.png",
     "files": [
       "electron/**",
       "package.json"
@@ -40,6 +41,7 @@
     },
     "mac": {
       "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
       "identity": null,
       "target": [
         "dmg",

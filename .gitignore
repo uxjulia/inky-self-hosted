@@ -12,3 +12,7 @@ backend/.venv/
 backend/desktop-build/
 backend/desktop-dist/
 library/
+
+!build/
+!build/icon.png
+!build/icon.icns

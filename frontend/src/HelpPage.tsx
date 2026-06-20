@@ -12,7 +12,7 @@ export function HelpPage({ onOpenApp }: HelpPageProps) {
           <p className="eyebrow">Getting Started</p>
           <h2>Send books and articles to your Cross<span className="serif">I</span>nk reader</h2>
           <p>
-            Inky connects catalogs, feeds, cloud folders, and local files to an X3 or X4 device. EPUBs can be optimized before sending. TXT, XTC, and XTCH files are sent as-is.
+            Inky connects catalogs, feeds, cloud folders, and local files to an X3 or X4 device. EPUBs can be optimized before sending. TXT, XTC, XTCH, BMP, and PNG files are sent as-is.
           </p>
         </div>
       </div>
@@ -67,7 +67,7 @@ export function HelpPage({ onOpenApp }: HelpPageProps) {
             <ul>
               <li>EPUBs are optimized for the selected X3 or X4 device before upload.</li>
               <li>RSS and Atom articles are first converted to EPUB, then optimized and sent.</li>
-              <li>TXT, XTC, and XTCH files skip optimization and upload directly.</li>
+              <li>TXT, XTC, XTCH, BMP, and PNG files skip optimization and upload directly.</li>
               <li>The Device card shows the latest job log after send work starts.</li>
             </ul>
           </div>

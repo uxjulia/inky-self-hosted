@@ -53,7 +53,7 @@ INKY_LOCAL_LIBRARY_PATH=/path/to/your/books
 ```
 
 Docker mounts that folder read-only at `/library`. Inky scans `.epub`, `.txt`,
-`.xtc`, and `.xtch` files from there into the Local Library view so they can be
+`.xtc`, `.xtch`, `.bmp`, and `.png` files from there into the Local Library view so they can be
 sent to a device without importing or copying them into Inky storage. Only EPUBs
 are optimized before sending.
 

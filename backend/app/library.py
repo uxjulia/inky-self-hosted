@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from xml.etree import ElementTree as ET
 from pathlib import Path
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 import httpx
 from sqlalchemy.orm import Session
@@ -21,6 +21,8 @@ from .utils import display_title_from_url, extension_from_url, join_remote, norm
 MOUNTED_LIBRARY_SOURCE_PREFIX = "mounted-library://"
 DESKTOP_LIBRARY_SOURCE_PREFIX = "desktop-folder://"
 LOCAL_LIBRARY_EXTENSIONS = {".epub", ".txt", ".xtc", ".xtch"}
+IMAGE_LIBRARY_EXTENSIONS = {".bmp", ".png"}
+SENDABLE_LIBRARY_EXTENSIONS = LOCAL_LIBRARY_EXTENSIONS | IMAGE_LIBRARY_EXTENSIONS
 EPUB_EXTENSION = ".epub"
 CONTAINER_NS = {"container": "urn:oasis:names:tc:opendocument:xmlns:container"}
 OPF_NS = {"dc": "http://purl.org/dc/elements/1.1/"}
@@ -168,7 +170,7 @@ def _sync_library_root(
     include_root_in_source_url: bool,
 ) -> None:
     for file_path in sorted(root.rglob("*")):
-        if not file_path.is_file() or file_path.suffix.lower() not in LOCAL_LIBRARY_EXTENSIONS:
+        if not file_path.is_file() or file_path.suffix.lower() not in SENDABLE_LIBRARY_EXTENSIONS:
             continue
 
         resolved_path = file_path.resolve()
@@ -290,6 +292,10 @@ def _media_type_for_device_upload(path: Path) -> str:
         return "application/epub+zip"
     if suffix == ".txt":
         return "text/plain"
+    if suffix == ".bmp":
+        return "image/bmp"
+    if suffix == ".png":
+        return "image/png"
     return "application/octet-stream"
 
 
@@ -374,9 +380,11 @@ async def probe_device(device_url: str) -> dict:
 
 async def send_file_to_device(file_path: Path, device_url: str, destination_path: str = "/") -> dict:
     base = normalize_device_url(device_url)
-    destination_path = destination_path or "/"
+    destination_path = _normalize_destination_path(destination_path)
     async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
         created_folders = await _ensure_device_folder(client, base, destination_path)
+        if destination_path == "/":
+            return await _put_file_to_device_root(client, base, file_path, created_folders)
         with file_path.open("rb") as handle:
             files = {"file": (file_path.name, handle, _media_type_for_device_upload(file_path))}
             response = await client.post(f"{base}/upload?path={quote(destination_path)}", files=files)
@@ -402,11 +410,40 @@ async def _ensure_device_folder(client: httpx.AsyncClient, base: str, destinatio
 
 
 def _destination_folder_segments(destination_path: str) -> list[str]:
-    normalized = (destination_path or "/").replace("\\", "/").strip()
+    normalized = _normalize_destination_path(destination_path)
     segments = [segment for segment in normalized.split("/") if segment and segment != "."]
     if any(segment == ".." for segment in segments):
         raise ValueError("destination folder cannot contain '..'")
     return segments
+
+
+def _normalize_destination_path(destination_path: str) -> str:
+    normalized = (destination_path or "/").replace("\\", "/").strip()
+    if not normalized or normalized == ".":
+        return "/"
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
+    return normalized.rstrip("/") or "/"
+
+
+async def _put_file_to_device_root(
+    client: httpx.AsyncClient,
+    base: str,
+    file_path: Path,
+    created_folders: list[str],
+) -> dict:
+    upload_url = _join_device_url(base, quote(file_path.name))
+    with file_path.open("rb") as handle:
+        response = await client.put(upload_url, content=handle, headers={"Content-Type": _media_type_for_device_upload(file_path)})
+        response.raise_for_status()
+        return {"device_url": base, "destination_path": "/", "created_folders": created_folders, "response": response.text}
+
+
+def _join_device_url(base: str, path: str) -> str:
+    parts = urlsplit(base)
+    base_path = parts.path.rstrip("/")
+    joined_path = f"{base_path}/{path.lstrip('/')}"
+    return urlunsplit((parts.scheme, parts.netloc, joined_path, "", ""))
 
 
 def _join_device_folder(parent: str, segment: str) -> str:

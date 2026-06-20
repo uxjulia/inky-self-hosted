@@ -1115,7 +1115,7 @@ export default function App() {
                   )}
                   <label className="file-button border-0" title="Upload file" aria-label="Upload file">
                     <Plus size={16} />
-                    <input type="file" accept=".epub,.txt,.xtc,.xtch" onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)} />
+                    <input type="file" accept=".epub,.txt,.xtc,.xtch,.bmp,.png" onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)} />
                   </label>
                 </>
               )}
@@ -1178,7 +1178,7 @@ export default function App() {
             )}
             {!error && isLocalSource && displayedLibrary.length === 0 && (
               <div className="empty-state">
-                {trimmedSearchQuery ? `No results found for "${trimmedSearchQuery}".` : "No local EPUBs yet."}
+                {trimmedSearchQuery ? `No results found for "${trimmedSearchQuery}".` : "No local files yet."}
               </div>
             )}
             {!error &&
@@ -1397,6 +1397,8 @@ function libraryFileType(item: LibraryItem) {
   if (path.endsWith(".epub")) return "epub";
   if (path.endsWith(".xtc") || path.endsWith(".xtch")) return "xtc";
   if (path.endsWith(".txt")) return "txt";
+  if (path.endsWith(".bmp")) return "bmp";
+  if (path.endsWith(".png")) return "png";
   return null;
 }
 
