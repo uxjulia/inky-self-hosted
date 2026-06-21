@@ -13,16 +13,18 @@ from .auth import require_basic_auth
 from .config import ensure_data_dirs, get_settings
 from .connectors import browse_source, search_source
 from .db import get_db, init_db
-from .jobs import create_job, run_optimize_job, run_send_job
+from .jobs import create_job, run_optimize_job, run_send_job, run_send_path_job
 from .library import (
     copy_uploaded_file,
     delete_library_item,
     get_library_item_cover,
     import_article,
+    import_local_source_file,
     import_url,
     import_webdav_file,
     probe_device,
     register_desktop_library_folder,
+    resolve_local_source_file,
     sync_mounted_library,
 )
 from .models import Job, LibraryItem, Source
@@ -34,6 +36,8 @@ from .schemas import (
     ImportUrlRequest,
     JobRead,
     LibraryItemRead,
+    LocalFileImportRequest,
+    LocalFileSendRequest,
     LocalFolderImportRequest,
     OptimizeRequest,
     SourceCreate,
@@ -200,6 +204,17 @@ async def import_from_webdav(payload: WebDavImportRequest, db: Session = Depends
         raise_download_error(exc)
 
 
+@app.post("/api/library/import-local-file", response_model=LibraryItemRead)
+def import_from_local_folder(payload: LocalFileImportRequest, db: Session = Depends(get_db)) -> LibraryItem:
+    source = db.get(Source, payload.source_id)
+    if not source or source.type != "local_folder":
+        raise HTTPException(status_code=404, detail="Local folder source not found")
+    try:
+        return import_local_source_file(db, source, payload.path, payload.title)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/library/upload", response_model=LibraryItemRead)
 async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)) -> LibraryItem:
     suffix = Path(file.filename or "upload.epub").suffix or ".epub"
@@ -261,6 +276,25 @@ def send_item(item_id: int, payload: DeviceSendRequest, background: BackgroundTa
         raise HTTPException(status_code=404, detail="library item not found")
     job = create_job(db, "send", item_id)
     background.add_task(run_send_job, job.id, item_id, payload)
+    return job
+
+
+@app.post("/api/sources/{source_id}/send-local-file", response_model=JobRead)
+def send_local_source_file(
+    source_id: int,
+    payload: LocalFileSendRequest,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> Job:
+    source = db.get(Source, source_id)
+    if not source or source.type != "local_folder":
+        raise HTTPException(status_code=404, detail="Local folder source not found")
+    try:
+        file_path = resolve_local_source_file(source, payload.path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    job = create_job(db, "send")
+    background.add_task(run_send_path_job, job.id, str(file_path), payload)
     return job
 
 

@@ -53,9 +53,9 @@ INKY_LOCAL_LIBRARY_PATH=/path/to/your/books
 ```
 
 Docker mounts that folder read-only at `/library`. Inky scans `.epub`, `.txt`,
-`.xtc`, `.xtch`, `.bmp`, and `.png` files from there into the Local Library view so they can be
-sent to a device without importing or copying them into Inky storage. Only EPUBs
-are optimized before sending.
+`.xtc`, `.xtch`, `.bmp`, and `.png` files from there into the Local Library view
+so they can be sent to a device without importing or copying them into Inky
+storage. Only EPUBs are optimized before sending.
 
 Set `VITE_INKY_APP_MODE=hosted` when building a future public hosted frontend.
 The current self-hosted default is `VITE_INKY_APP_MODE=self-hosted`.
@@ -132,7 +132,9 @@ and BLE can be added as alternate transports behind the same backend route.
 - `backend/app/optimizer/epubkit_pipeline/` is copied from
   `~/code/auto-epub-optimizer`.
 - `backend/app/jobs.py` runs optimize/send work as API background jobs.
-- The frontend treats local uploads as a virtual source; uploaded files are still
-  persisted by the backend library store.
+- The frontend treats local uploads as a virtual Local Library source; files
+  saved from external sources are persisted by the backend library store.
+- Desktop folder picks are modeled as Local Folder sources and can be browsed
+  without copying their files into Local Library.
 - SQLite is the default store, but `INKY_DATABASE_URL` is isolated so Postgres
   can replace it when multi-user auth becomes real.

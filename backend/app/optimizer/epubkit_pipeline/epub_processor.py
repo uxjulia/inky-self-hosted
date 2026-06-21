@@ -21,9 +21,7 @@ from metadata_handler import (
 from html_cleaner import (
     repair_html, remove_unused_css, collect_used_selectors,
     remove_embedded_fonts_from_css, find_font_files, normalize_whitespace,
-    add_chapter_page_breaks, strip_unnecessary_attributes,
-    build_crossink_css_plan, flatten_crossink_css_in_xhtml,
-    assess_crossink_css_flattening
+    add_chapter_page_breaks, strip_unnecessary_attributes
 )
 from text_cleaner import clean_text_content, TextCleanOptions, TextCleanReport
 from epub_packager import (
@@ -33,7 +31,7 @@ from epub_structure import (
     build_rename_map, update_opf, update_opf_remove_fonts,
     update_xhtml_references, update_css_references,
     fix_svg_covers, fix_toc, find_content_files, add_image_to_opf,
-    write_crossink_location_manifest, remove_css_from_opf
+    write_crossink_location_manifest
 )
 
 
@@ -74,8 +72,6 @@ class ProcessingReport:
     image_formats: dict = field(default_factory=dict)  # e.g. {"PNG→JPEG": 5, "baseline JPEG": 3}
     fonts_removed: int = 0
     css_rules_removed: int = 0
-    css_elements_flattened: int = 0
-    css_files_removed: int = 0
     svg_covers_fixed: int = 0
     toc_status: str = ''
     metadata_items_stripped: int = 0
@@ -86,6 +82,7 @@ class ProcessingReport:
     os_artifacts_removed: int = 0
     cover_generated: bool = False
     crossink_locations: int = 0
+    crossink_reference_pages: int = 0
     # Details
     image_details: list = field(default_factory=list)
 
@@ -102,12 +99,6 @@ class ProcessingReport:
 
         if self.css_rules_removed > 0:
             parts.append(f"Stripped {self.css_rules_removed} unused CSS rules")
-
-        if self.css_elements_flattened > 0:
-            parts.append(f"Flattened CSS into {self.css_elements_flattened} elements")
-
-        if self.css_files_removed > 0:
-            parts.append(f"Removed {self.css_files_removed} flattened CSS files")
 
         if self.svg_covers_fixed > 0:
             parts.append(f"Fixed {self.svg_covers_fixed} SVG cover wrappers")
@@ -134,7 +125,10 @@ class ProcessingReport:
             parts.append(f"Removed {self.os_artifacts_removed} OS artifacts")
 
         if self.crossink_locations > 0:
-            parts.append(f"Generated {self.crossink_locations} CrossInk locations")
+            parts.append(
+                f"Generated {self.crossink_locations} CrossInk locations"
+                f" and {self.crossink_reference_pages} reference pages"
+            )
 
         if self.original_size > 0 and self.optimized_size > 0:
             reduction = (1 - self.optimized_size / self.original_size) * 100
@@ -365,40 +359,7 @@ def process_epub(input_path: str, output_path: str,
                 # Remove from OPF manifest
                 update_opf_remove_fonts(opf_path, font_files)
 
-        # Step 14: Flatten CrossInk-supported CSS into XHTML (82%)
-        _progress(82, "Flattening CSS...")
-        css_texts = []
-        existing_css_files = [css_path for css_path in content_files['css'] if os.path.exists(css_path)]
-        for css_path in existing_css_files:
-            with open(css_path, 'r', encoding='utf-8', errors='ignore') as f:
-                css_texts.append(f.read())
-
-        css_plan = build_crossink_css_plan(css_texts)
-        xhtml_payloads = []
-        for xhtml_path in content_files['xhtml']:
-            if os.path.exists(xhtml_path):
-                with open(xhtml_path, 'rb') as f:
-                    xhtml_payloads.append(f.read())
-
-        css_decision = assess_crossink_css_flattening(xhtml_payloads, css_plan)
-        if css_decision['enabled']:
-            for xhtml_path in content_files['xhtml']:
-                if os.path.exists(xhtml_path):
-                    with open(xhtml_path, 'rb') as f:
-                        html_bytes = f.read()
-                    flattened, elements, links = flatten_crossink_css_in_xhtml(html_bytes, css_plan)
-                    report.css_elements_flattened += elements
-                    if elements > 0 or links > 0:
-                        with open(xhtml_path, 'wb') as f:
-                            f.write(flattened)
-
-            remove_css_from_opf(opf_path)
-            for css_path in existing_css_files:
-                if os.path.exists(css_path):
-                    os.unlink(css_path)
-                    report.css_files_removed += 1
-
-        # Step 15: Normalize whitespace and page breaks (84%)
+        # Step 14: Normalize whitespace and page breaks (84%)
         _progress(84, "Normalizing content...")
         for xhtml_path in content_files['xhtml']:
             if os.path.exists(xhtml_path):
@@ -410,7 +371,7 @@ def process_epub(input_path: str, output_path: str,
                 with open(xhtml_path, 'wb') as f:
                     f.write(cleaned)
 
-        # Step 16: Text content cleanup (86%)
+        # Step 15: Text content cleanup (86%)
         if options.text_cleanup:
             _progress(86, "Cleaning text content...")
             text_opts = TextCleanOptions(normalize_quotes=options.normalize_quotes)
@@ -444,17 +405,19 @@ def process_epub(input_path: str, output_path: str,
 
         # Step 18: Generate CrossInk location sidecar (92%)
         _progress(92, "Generating CrossInk locations...")
-        report.crossink_locations = write_crossink_location_manifest(work_dir, opf_path)
+        report.crossink_locations, report.crossink_reference_pages = write_crossink_location_manifest(
+            work_dir, opf_path
+        )
 
-        # Step 18: Clean OS artifacts (93%)
+        # Step 19: Clean OS artifacts (93%)
         _progress(93, "Cleaning up...")
         report.os_artifacts_removed = remove_os_artifacts(work_dir)
 
-        # Step 19: Repackage (95%)
+        # Step 20: Repackage (95%)
         _progress(95, "Repackaging EPUB...")
         package_epub(work_dir, output_path)
 
-        # Step 20: Generate output filename
+        # Step 21: Generate output filename
         opf_tree = etree.parse(opf_path)
         final_metadata = extract_metadata(opf_tree)
         title = options.metadata_edits.get('title', final_metadata['title']) or final_metadata['title']

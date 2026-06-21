@@ -13,7 +13,7 @@ let apiBaseUrl = "";
 
 ipcMain.handle("select-library-folder", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: "Add Local Library Folder",
+    title: "Add Local Folder Source",
     properties: ["openDirectory"]
   });
   if (result.canceled || result.filePaths.length === 0) return null;

@@ -76,46 +76,74 @@ def run_send_job(job_id: str, item_id: int, request: DeviceSendRequest) -> None:
         job.message = "Preparing file"
         db.commit()
 
-        file_path = Path(item.optimized_path) if item.optimized_path else Path(item.original_path)
-        is_epub = item.original_path.lower().endswith(".epub")
-        if request.optimize_first and is_epub and not item.optimized_path:
-            def progress(percent: int, message: str) -> None:
-                set_job(job_id, progress=max(5, min(80, int(percent * 0.8))), message=message)
-
-            output_path, result = optimize_epub(Path(item.original_path), get_settings().optimized_dir, request, progress)
-            item.optimized_path = str(output_path)
-            file_path = output_path
-            job.result_json = json.dumps({"optimization": result})
-            db.commit()
-        elif request.optimize_first and not is_epub:
-            job.result_json = json.dumps({"optimization": "skipped for non-EPUB file"})
+        file_path = _send_path(job_id, job, Path(item.original_path), request, Path(item.optimized_path) if item.optimized_path else None)
+        if request.optimize_first and item.original_path.lower().endswith(".epub") and not item.optimized_path:
+            item.optimized_path = str(file_path)
             db.commit()
 
-        set_job(
-            job_id,
-            progress=0,
-            message=f"Uploading to device (0 KB of {format_upload_bytes(file_path.stat().st_size)})",
-        )
-
-        def send_progress(percent: int, message: str) -> None:
-            set_job(job_id, progress=max(0, min(100, percent)), message=message)
-
-        send_result = asyncio.run(
-            send_file_to_device(file_path, request.device_url, request.destination_path, send_progress)
-        )
-        result = {"send": send_result}
-        if job.result_json:
-            result.update(json.loads(job.result_json))
-        set_job(
-            job_id,
-            status=JobStatus.succeeded.value,
-            progress=100,
-            message="Sent to device",
-            result_json=json.dumps(result),
-        )
+        _send_file(job_id, job, file_path, request)
         item.sent_at = utc_now()
         db.commit()
     except Exception as exc:
         set_job(job_id, status=JobStatus.failed.value, progress=100, message="Send failed", error=str(exc))
     finally:
         db.close()
+
+
+def run_send_path_job(job_id: str, source_path: str, request: DeviceSendRequest) -> None:
+    db = SessionLocal()
+    try:
+        job = db.get(Job, job_id)
+        if not job:
+            return
+        job.status = JobStatus.running.value
+        job.progress = 5
+        job.message = "Preparing file"
+        db.commit()
+
+        file_path = _send_path(job_id, job, Path(source_path), request)
+        _send_file(job_id, job, file_path, request)
+    except Exception as exc:
+        set_job(job_id, status=JobStatus.failed.value, progress=100, message="Send failed", error=str(exc))
+    finally:
+        db.close()
+
+
+def _send_path(job_id: str, job: Job, original_path: Path, request: DeviceSendRequest, optimized_path: Path | None = None) -> Path:
+    file_path = optimized_path or original_path
+    is_epub = original_path.suffix.lower() == ".epub"
+    if request.optimize_first and is_epub and optimized_path is None:
+        def progress(percent: int, message: str) -> None:
+            set_job(job_id, progress=max(5, min(80, int(percent * 0.8))), message=message)
+
+        output_path, result = optimize_epub(original_path, get_settings().optimized_dir, request, progress)
+        file_path = output_path
+        job.result_json = json.dumps({"optimization": result})
+    elif request.optimize_first and not is_epub:
+        job.result_json = json.dumps({"optimization": "skipped for non-EPUB file"})
+    return file_path
+
+
+def _send_file(job_id: str, job: Job, file_path: Path, request: DeviceSendRequest) -> None:
+    set_job(
+        job_id,
+        progress=0,
+        message=f"Uploading to device (0 KB of {format_upload_bytes(file_path.stat().st_size)})",
+    )
+
+    def send_progress(percent: int, message: str) -> None:
+        set_job(job_id, progress=max(0, min(100, percent)), message=message)
+
+    send_result = asyncio.run(
+        send_file_to_device(file_path, request.device_url, request.destination_path, send_progress)
+    )
+    result = {"send": send_result}
+    if job.result_json:
+        result.update(json.loads(job.result_json))
+    set_job(
+        job_id,
+        status=JobStatus.succeeded.value,
+        progress=100,
+        message="Sent to device",
+        result_json=json.dumps(result),
+    )

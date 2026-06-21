@@ -1,10 +1,11 @@
 import { Home } from "lucide-react";
 
 type HelpPageProps = {
+  isDesktopApp: boolean;
   onOpenApp: () => void;
 };
 
-export function HelpPage({ onOpenApp }: HelpPageProps) {
+export function HelpPage({ isDesktopApp, onOpenApp }: HelpPageProps) {
   return (
     <section className="help-page">
       <div className="help-hero">
@@ -41,7 +42,8 @@ export function HelpPage({ onOpenApp }: HelpPageProps) {
               <li>OPDS catalogs expose book catalogs such as Standard Ebooks or Project Gutenberg.</li>
               <li>WebDAV sources expose cloud folders from services such as Koofr, Nextcloud, or compatible storage.</li>
               <li>RSS and Atom feeds expose articles that Inky can convert into simple EPUB files.</li>
-              <li>Local Library contains uploaded files and folders added from the desktop app.</li>
+              {isDesktopApp && <li>Local Folder sources (desktop only) allow adding local folders.</li>}
+              <li>Local Library contains uploaded files and items saved from external sources.</li>
             </ul>
           </div>
         </article>
@@ -73,6 +75,24 @@ export function HelpPage({ onOpenApp }: HelpPageProps) {
           </div>
         </article>
       </div>
+
+      <section className="help-section">
+        <div className="help-section-header">
+          <p className="eyebrow">CrossInk Specific</p>
+          <h3>What Inky Adds To EPUBs</h3>
+        </div>
+        <article className="help-card help-card-wide">
+          <div>
+            <p>Optimized EPUBs include extra data and cleanup that CrossInk can use while reading.</p>
+            <ul>
+              <li>Page locations let CrossInk jump and resume using stable word-based positions instead of fragile screen pages.</li>
+              <li>Reference pages give a consistent page-style number that stays useful even when font size, margins, or orientation change.</li>
+              <li>TOC, cover, image, and metadata cleanup help books open cleaner and use less device memory.</li>
+              <li>Images are prepared for the selected X3 or X4 screen so covers and illustrations fit the target display better.</li>
+            </ul>
+          </div>
+        </article>
+      </section>
     </section>
   );
 }

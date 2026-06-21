@@ -265,6 +265,20 @@ h2 {
   margin: 0 auto 12px;
 }
 
+.help-section {
+  max-width: 1080px;
+  margin: 0 auto 12px;
+}
+
+.help-section-header {
+  margin: 18px 0 8px;
+}
+
+.help-section-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
 .help-card {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr);
@@ -273,6 +287,10 @@ h2 {
   border: 1px solid var(--color-border);
   border-radius: 3px;
   background: var(--color-panel);
+}
+
+.help-card-wide {
+  display: block;
 }
 
 .help-step {
@@ -359,13 +377,29 @@ h2 {
 
 .segmented {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
+}
+
+.source-type-segmented {
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
 }
 
 .segmented button {
   min-width: 0;
   font-size: 12px;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.folder-source-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.folder-source-field button {
+  padding: 0 10px;
 }
 
 .segmented .active {

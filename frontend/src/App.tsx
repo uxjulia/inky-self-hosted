@@ -6,7 +6,6 @@ import {
   CircleHelp,
   GripVertical,
   Folder,
-  FolderPlus,
   Home,
   Library,
   LogIn,
@@ -47,7 +46,7 @@ const authStorageKey = "inky-basic-auth";
 const localSourceId = -1;
 
 type AppView = "app" | "help";
-type RemoteSourceType = "opds" | "webdav" | "feed";
+type RemoteSourceType = "opds" | "webdav" | "feed" | "local_folder";
 type SourceType = "local" | RemoteSourceType;
 type Theme = "light" | "dark";
 type SortMode = "source" | "title_asc" | "title_desc" | "type";
@@ -120,6 +119,8 @@ type SourceForm = {
 
 const emptySourceForm: SourceForm = { type: "opds", name: "", url: "", username: "", password: "" };
 const localSource: Source = { id: localSourceId, type: "local", name: "Local Library", url: "local://library" };
+const sourceTypes: RemoteSourceType[] = ["opds", "webdav", "feed", "local_folder"];
+const isDesktopApp = Boolean(window.inkyDesktop?.selectLibraryFolder);
 const browsePageSize = 25;
 
 export default function App() {
@@ -151,7 +152,6 @@ export default function App() {
   const [localSourceIndex, setLocalSourceIndex] = useState(() => getInitialLocalSourceIndex());
   const [busy, setBusy] = useState(false);
   const [pendingBrowseAction, setPendingBrowseAction] = useState<PendingBrowseAction | null>(null);
-  const [addingFolder, setAddingFolder] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [searching, setSearching] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -180,6 +180,10 @@ export default function App() {
   const remoteItems = activeBrowseResult?.items || [];
   const activeSortMode = !isLocalSource && sortMode === "type" ? "source" : sortMode;
   const sortOptions: SortMode[] = isLocalSource ? ["source", "type", "title_asc", "title_desc"] : ["source", "title_asc", "title_desc"];
+  const availableSourceTypes = useMemo(
+    () => sourceTypes.filter((type) => type !== "local_folder" || isDesktopApp),
+    []
+  );
   const sortedLibrary = useMemo(() => sortLibraryItems(displayedLibrary, sortMode), [displayedLibrary, sortMode]);
   const sortedRemoteItems = useMemo(() => sortBrowseItems(remoteItems, activeSortMode), [remoteItems, activeSortMode]);
   const displayedItems = isLocalSource ? sortedLibrary : sortedRemoteItems;
@@ -277,6 +281,7 @@ export default function App() {
 
   const sourceIcon = useMemo(() => {
     if (selectedSource?.type === "local") return <Folder size={16} />;
+    if (selectedSource?.type === "local_folder") return <Folder size={16} />;
     if (selectedSource?.type === "webdav") return <Server size={16} />;
     if (selectedSource?.type === "feed") return <Rss size={16} />;
     return <BookOpen size={16} />;
@@ -422,6 +427,30 @@ export default function App() {
     setForm(emptySourceForm);
   }
 
+  async function selectSourceType(type: RemoteSourceType) {
+    if (type !== "local_folder") {
+      setForm((current) => ({ ...current, type }));
+      return;
+    }
+
+    const selectLibraryFolder = window.inkyDesktop?.selectLibraryFolder;
+    if (!selectLibraryFolder) {
+      showToast("Local Folder sources are available in the desktop app.", "error");
+      return;
+    }
+
+    const folderPath = await selectLibraryFolder();
+    if (!folderPath) return;
+    setForm((current) => ({
+      ...current,
+      type,
+      name: current.name || folderNameFromPath(folderPath),
+      url: folderPath,
+      username: "",
+      password: ""
+    }));
+  }
+
   async function saveSource(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -434,8 +463,8 @@ export default function App() {
               type: form.type,
               name: form.name,
               url: form.url,
-              username: form.username || null,
-              password: form.password || null
+              username: form.type === "local_folder" ? null : form.username || null,
+              password: form.type === "local_folder" ? null : form.password || null
             })
           });
           setSelectedSourceId(updatedSource.id);
@@ -451,8 +480,8 @@ export default function App() {
             type: form.type,
             name: form.name,
             url: form.url,
-            username: form.username || null,
-            password: form.password || null
+            username: form.type === "local_folder" ? null : form.username || null,
+            password: form.type === "local_folder" ? null : form.password || null
           })
         });
         setForm(emptySourceForm);
@@ -636,6 +665,22 @@ export default function App() {
     setBusy(true);
     try {
       await runAction(async () => {
+        if (selectedSource?.type === "local_folder" && item.path) {
+          const job = await api<Job>(`/api/sources/${selectedSourceId}/send-local-file`, {
+            method: "POST",
+            body: JSON.stringify({
+              ...defaultOptimizePayload(),
+              path: item.path,
+              device_url: deviceUrl,
+              destination_path: destinationPath,
+              optimize_first: true
+            })
+          });
+          trackJob(job);
+          showToast("Send queued");
+          return;
+        }
+
         const imported = await importBrowseItem(item);
         if (!imported) return;
         const job = await api<Job>(`/api/library/${imported.id}/send`, {
@@ -680,6 +725,13 @@ export default function App() {
       });
     }
 
+    if (item.type === "file" && item.path && selectedSource?.type === "local_folder") {
+      return api<LibraryItem>("/api/library/import-local-file", {
+        method: "POST",
+        body: JSON.stringify({ source_id: selectedSourceId, path: item.path, title: item.title })
+      });
+    }
+
     if (item.url) {
       return api<LibraryItem>("/api/library/import-url", {
         method: "POST",
@@ -705,30 +757,6 @@ export default function App() {
       showToast("Uploaded");
       await loadLibrary();
     });
-  }
-
-  async function addLocalFolder() {
-    const selectLibraryFolder = window.inkyDesktop?.selectLibraryFolder;
-    if (!selectLibraryFolder) {
-      showToast("Folder import is available in the desktop app.", "error");
-      return;
-    }
-
-    const folderPath = await selectLibraryFolder();
-    if (!folderPath) return;
-
-    setAddingFolder(true);
-    try {
-      await runAction(async () => {
-        setLibrary(await api<LibraryItem[]>("/api/library/folders", {
-          method: "POST",
-          body: JSON.stringify({ path: folderPath })
-        }));
-        showToast("Folder added");
-      });
-    } finally {
-      setAddingFolder(false);
-    }
   }
 
   async function removeLocalItem(item: LibraryItem) {
@@ -898,7 +926,7 @@ export default function App() {
       </header>
 
       {view === "help" ? (
-        <HelpPage onOpenApp={openApp} />
+        <HelpPage onOpenApp={openApp} isDesktopApp={isDesktopApp} />
       ) : (
       <section className="layout">
         <aside className="sidebar">
@@ -1021,7 +1049,7 @@ export default function App() {
                   }}
                 >
                   <GripVertical className="source-drag-icon" size={15} aria-hidden="true" />
-                  <span className="source-type">{source.type}</span>
+                  <span className="source-type">{sourceTypeShortLabel(source.type)}</span>
                   <span className="source-name">{source.name}</span>
                   <div className="source-menu-wrap">
                     <button
@@ -1039,7 +1067,7 @@ export default function App() {
                     </button>
                     {sourceMenuId === source.id && (
                       <div className="source-menu" role="menu">
-                        {source.id !== localSourceId && (
+                        {source.id !== localSourceId && (source.type !== "local_folder" || isDesktopApp) && (
                           <button
                             type="button"
                             onClick={(event) => {
@@ -1113,11 +1141,6 @@ export default function App() {
               )}
               {isLocalSource && (
                 <>
-                  {window.inkyDesktop?.selectLibraryFolder && (
-                    <button type="button" onClick={addLocalFolder} title="Add folder" aria-label="Add folder" disabled={addingFolder}>
-                      {addingFolder ? <RefreshCw className="spin" size={15} /> : <FolderPlus size={16} />}
-                    </button>
-                  )}
                   <label className="file-button border-0" title="Upload file" aria-label="Upload file">
                     <Plus size={16} />
                     <input type="file" accept=".epub,.txt,.xtc,.xtch,.bmp,.png" onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)} />
@@ -1330,31 +1353,42 @@ export default function App() {
               </button>
             </div>
             <div className="source-form-body">
-              <div className="segmented">
-                {(["opds", "webdav", "feed"] as RemoteSourceType[]).map((type) => (
+              <div className="segmented source-type-segmented">
+                {availableSourceTypes.map((type) => (
                   <button
                     key={type}
                     type="button"
                     className={form.type === type ? "active" : ""}
-                    onClick={() => setForm((current) => ({ ...current, type }))}
+                    onClick={() => selectSourceType(type)}
                   >
-                    {type.toUpperCase()}
+                    {sourceTypeLabel(type)}
                   </button>
                 ))}
               </div>
               <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Name" />
-              <input value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} placeholder="URL" />
-              <input
-                value={form.username}
-                onChange={(event) => setForm({ ...form, username: event.target.value })}
-                placeholder="Username"
-              />
-              <input
-                value={form.password}
-                onChange={(event) => setForm({ ...form, password: event.target.value })}
-                placeholder={editingSource ? "New password (leave blank to keep current)" : "Password"}
-                type="password"
-              />
+              {form.type === "local_folder" ? (
+                <div className="folder-source-field">
+                  <input value={form.url} readOnly placeholder="Select a folder" />
+                  <button type="button" onClick={() => selectSourceType("local_folder")}>
+                    Browse
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <input value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} placeholder="URL" />
+                  <input
+                    value={form.username}
+                    onChange={(event) => setForm({ ...form, username: event.target.value })}
+                    placeholder="Username"
+                  />
+                  <input
+                    value={form.password}
+                    onChange={(event) => setForm({ ...form, password: event.target.value })}
+                    placeholder={editingSource ? "New password (leave blank to keep current)" : "Password"}
+                    type="password"
+                  />
+                </>
+              )}
               <div className="modal-actions">
                 <button type="button" onClick={closeSourceModal}>
                   Cancel
@@ -1514,6 +1548,21 @@ function sortLabelForMode(sortMode: SortMode) {
   if (sortMode === "title_asc") return "Title A-Z";
   if (sortMode === "title_desc") return "Title Z-A";
   return "Source order";
+}
+
+function sourceTypeLabel(type: RemoteSourceType) {
+  if (type === "local_folder") return "Local Folder";
+  return type.toUpperCase();
+}
+
+function sourceTypeShortLabel(type: SourceType) {
+  if (type === "local_folder") return "Folder";
+  return type;
+}
+
+function folderNameFromPath(path: string) {
+  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return normalized.split("/").pop() || "Local Folder";
 }
 
 function moveSource(sources: Source[], draggedSourceId: number, targetSourceId: number, insertAfter: boolean) {
