@@ -20,6 +20,7 @@ import {
   Search,
   Send,
   Server,
+  SlidersHorizontal,
   TabletSmartphone,
   Sun,
   Trash2,
@@ -42,6 +43,7 @@ declare global {
 const API = window.inkyDesktop?.apiBaseUrl || import.meta.env.VITE_API_BASE_URL || "";
 const themeStorageKey = "inky-theme";
 const localSourceIndexStorageKey = "inky-local-source-index";
+const optimizerSettingsStorageKey = "inky-optimizer-settings";
 const authStorageKey = "inky-basic-auth";
 const localSourceId = -1;
 
@@ -52,6 +54,17 @@ type Theme = "light" | "dark";
 type SortMode = "source" | "title_asc" | "title_desc" | "type";
 type ToastState = { message: string; tone: "success" | "error" };
 type PendingBrowseAction = { key: string; action: "save" | "send" };
+type OptimizerSettings = {
+  quality: number;
+  grayscale: boolean;
+  contrast_boost: boolean;
+  contrast_factor: number;
+  eink_quantize: boolean;
+  light_novel: boolean;
+  remove_fonts: boolean;
+  remove_css: boolean;
+  text_cleanup: boolean;
+};
 
 type Source = {
   id: number;
@@ -122,6 +135,17 @@ const localSource: Source = { id: localSourceId, type: "local", name: "Local Lib
 const sourceTypes: RemoteSourceType[] = ["opds", "webdav", "feed", "local_folder"];
 const isDesktopApp = Boolean(window.inkyDesktop?.selectLibraryFolder);
 const browsePageSize = 25;
+const defaultOptimizerSettings: OptimizerSettings = {
+  quality: 70,
+  grayscale: true,
+  contrast_boost: true,
+  contrast_factor: 1.1,
+  eink_quantize: true,
+  light_novel: false,
+  remove_fonts: true,
+  remove_css: true,
+  text_cleanup: true
+};
 
 export default function App() {
   const [view, setView] = useState<AppView>(() => getInitialView());
@@ -148,6 +172,7 @@ export default function App() {
   const [deviceUrl, setDeviceUrl] = useState("crosspoint.local");
   const [destinationPath, setDestinationPath] = useState("/");
   const [device, setDevice] = useState<"x4" | "x3">("x4");
+  const [optimizerSettings, setOptimizerSettings] = useState<OptimizerSettings>(() => getInitialOptimizerSettings());
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
   const [localSourceIndex, setLocalSourceIndex] = useState(() => getInitialLocalSourceIndex());
   const [busy, setBusy] = useState(false);
@@ -160,6 +185,7 @@ export default function App() {
   const [deviceStatus, setDeviceStatus] = useState("");
   const [testingDevice, setTestingDevice] = useState(false);
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
+  const [optimizerModalOpen, setOptimizerModalOpen] = useState(false);
   const [editingSource, setEditingSource] = useState<Source | null>(null);
   const [draggedSourceId, setDraggedSourceId] = useState<number | null>(null);
   const [dragOverSourceId, setDragOverSourceId] = useState<number | null>(null);
@@ -258,6 +284,10 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem(themeStorageKey, theme);
   }, [theme]);
+
+  useEffect(() => {
+    window.localStorage.setItem(optimizerSettingsStorageKey, JSON.stringify(optimizerSettings));
+  }, [optimizerSettings]);
 
   useEffect(() => {
     const clampedIndex = clampLocalSourceIndex(localSourceIndex, sources.length);
@@ -624,6 +654,14 @@ export default function App() {
     setSortMenuOpen(false);
   }
 
+  function updateOptimizerSetting<K extends keyof OptimizerSettings>(key: K, value: OptimizerSettings[K]) {
+    setOptimizerSettings((current) => ({ ...current, [key]: value }));
+  }
+
+  function resetOptimizerSettings() {
+    setOptimizerSettings(defaultOptimizerSettings);
+  }
+
   function showToast(message: string, tone: ToastState["tone"] = "success") {
     setToast({ message, tone });
   }
@@ -818,15 +856,7 @@ export default function App() {
   function defaultOptimizePayload() {
     return {
       device,
-      quality: 70,
-      grayscale: true,
-      contrast_boost: true,
-      contrast_factor: 1.5,
-      eink_quantize: true,
-      light_novel: false,
-      remove_fonts: true,
-      remove_css: true,
-      text_cleanup: true
+      ...optimizerSettings
     };
   }
 
@@ -989,6 +1019,10 @@ export default function App() {
                 </button>
               </div>
             </label>
+            <button className="icon-text optimizer-settings-button" type="button" onClick={() => setOptimizerModalOpen(true)} title="EPUB Optimizer Settings">
+              <SlidersHorizontal size={16} />
+              EPUB Optimizer Settings
+            </button>
             {jobs.length > 0 && (
               <pre className="job-log" aria-label="Latest device job">
                 <code>{jobs.map(formatJobLog).join("\n")}</code>
@@ -1403,6 +1437,131 @@ export default function App() {
         </div>
       )}
 
+      {view === "app" && optimizerModalOpen && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="panel form-panel modal-card optimizer-modal-card" role="dialog" aria-modal="true" aria-labelledby="optimizer-modal-title">
+            <div className="panel-header">
+              <h2 id="optimizer-modal-title">EPUB Optimizer Settings</h2>
+              <button type="button" onClick={() => setOptimizerModalOpen(false)} title="Close" aria-label="Close optimizer settings">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="settings-grid">
+              <label className="field">
+                <span>JPEG quality</span>
+                <div className="range-field">
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    step="1"
+                    value={optimizerSettings.quality}
+                    onChange={(event) => updateOptimizerSetting("quality", clampNumber(Number(event.target.value), 1, 100))}
+                  />
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={optimizerSettings.quality}
+                    onChange={(event) => updateOptimizerSetting("quality", clampNumber(Number(event.target.value), 1, 100))}
+                    aria-label="JPEG quality"
+                  />
+                </div>
+              </label>
+              <label className="field">
+                <span>Contrast multiplier</span>
+                <div className="range-field">
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="3"
+                    step="0.1"
+                    value={optimizerSettings.contrast_factor}
+                    disabled={!optimizerSettings.contrast_boost}
+                    onChange={(event) => updateOptimizerSetting("contrast_factor", clampNumber(Number(event.target.value), 0.5, 3))}
+                  />
+                  <input
+                    type="number"
+                    min="0.5"
+                    max="3"
+                    step="0.1"
+                    value={optimizerSettings.contrast_factor}
+                    disabled={!optimizerSettings.contrast_boost}
+                    onChange={(event) => updateOptimizerSetting("contrast_factor", clampNumber(Number(event.target.value), 0.5, 3))}
+                    aria-label="Contrast multiplier"
+                  />
+                </div>
+              </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={optimizerSettings.grayscale}
+                  onChange={(event) => updateOptimizerSetting("grayscale", event.target.checked)}
+                />
+                <span>Convert images to grayscale</span>
+              </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={optimizerSettings.contrast_boost}
+                  onChange={(event) => updateOptimizerSetting("contrast_boost", event.target.checked)}
+                />
+                <span>Boost image contrast</span>
+              </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={optimizerSettings.eink_quantize}
+                  onChange={(event) => updateOptimizerSetting("eink_quantize", event.target.checked)}
+                />
+                <span>Use 4-level e-ink grayscale</span>
+              </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={optimizerSettings.light_novel}
+                  onChange={(event) => updateOptimizerSetting("light_novel", event.target.checked)}
+                />
+                <span>Rotate and split landscape images</span>
+              </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={optimizerSettings.remove_fonts}
+                  onChange={(event) => updateOptimizerSetting("remove_fonts", event.target.checked)}
+                />
+                <span>Remove embedded fonts</span>
+              </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={optimizerSettings.remove_css}
+                  onChange={(event) => updateOptimizerSetting("remove_css", event.target.checked)}
+                />
+                <span>Remove unused CSS</span>
+              </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={optimizerSettings.text_cleanup}
+                  onChange={(event) => updateOptimizerSetting("text_cleanup", event.target.checked)}
+                />
+                <span>Clean text punctuation and spacing</span>
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button type="button" onClick={resetOptimizerSettings}>
+                Reset Defaults
+              </button>
+              <button className="primary" type="button" onClick={() => setOptimizerModalOpen(false)}>
+                <Save size={16} />
+                Save Settings
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {toast && (
         <div className={`toast ${toast.tone === "error" ? "error-toast" : "success-toast"}`} role={toast.tone === "error" ? "alert" : "status"}>
           <span>{toast.message}</span>
@@ -1499,6 +1658,41 @@ function getInitialTheme(): Theme {
 
 function getInitialView(): AppView {
   return window.location.hash === "#help" ? "help" : "app";
+}
+
+function getInitialOptimizerSettings(): OptimizerSettings {
+  const stored = window.localStorage.getItem(optimizerSettingsStorageKey);
+  if (!stored) return defaultOptimizerSettings;
+  try {
+    return normalizeOptimizerSettings(JSON.parse(stored));
+  } catch {
+    return defaultOptimizerSettings;
+  }
+}
+
+function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
+  if (!value || typeof value !== "object") return defaultOptimizerSettings;
+  const stored = value as Partial<OptimizerSettings>;
+  return {
+    quality: clampNumber(Number(stored.quality ?? defaultOptimizerSettings.quality), 1, 100),
+    grayscale: booleanOrDefault(stored.grayscale, defaultOptimizerSettings.grayscale),
+    contrast_boost: booleanOrDefault(stored.contrast_boost, defaultOptimizerSettings.contrast_boost),
+    contrast_factor: clampNumber(Number(stored.contrast_factor ?? defaultOptimizerSettings.contrast_factor), 0.5, 3),
+    eink_quantize: booleanOrDefault(stored.eink_quantize, defaultOptimizerSettings.eink_quantize),
+    light_novel: booleanOrDefault(stored.light_novel, defaultOptimizerSettings.light_novel),
+    remove_fonts: booleanOrDefault(stored.remove_fonts, defaultOptimizerSettings.remove_fonts),
+    remove_css: booleanOrDefault(stored.remove_css, defaultOptimizerSettings.remove_css),
+    text_cleanup: booleanOrDefault(stored.text_cleanup, defaultOptimizerSettings.text_cleanup)
+  };
+}
+
+function booleanOrDefault(value: unknown, fallback: boolean) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
 }
 
 function getInitialLocalSourceIndex() {
