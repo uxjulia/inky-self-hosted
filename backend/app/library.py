@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import posixpath
+import time
 import uuid
 import zipfile
 import json
@@ -26,8 +27,10 @@ LOCAL_LIBRARY_EXTENSIONS = {".epub", ".txt", ".xtc", ".xtch"}
 IMAGE_LIBRARY_EXTENSIONS = {".bmp", ".png"}
 SENDABLE_LIBRARY_EXTENSIONS = LOCAL_LIBRARY_EXTENSIONS | IMAGE_LIBRARY_EXTENSIONS
 EPUB_EXTENSION = ".epub"
+EMPTY_MOUNTED_SCAN_GRACE_SECONDS = 30
 CONTAINER_NS = {"container": "urn:oasis:names:tc:opendocument:xmlns:container"}
 OPF_NS = {"dc": "http://purl.org/dc/elements/1.1/"}
+_last_empty_synced_scan_at: float | None = None
 
 
 @dataclass(frozen=True)
@@ -151,6 +154,8 @@ def copy_uploaded_file(db: Session, source_path: Path, filename: str) -> Library
 
 
 def sync_mounted_library(db: Session) -> None:
+    global _last_empty_synced_scan_at
+
     current_source_urls: set[str] = set()
     mounted_dir = get_settings().mounted_library_dir
     if mounted_dir.exists() and mounted_dir.is_dir():
@@ -164,6 +169,17 @@ def sync_mounted_library(db: Session) -> None:
         LibraryItem.source_url.like(f"{MOUNTED_LIBRARY_SOURCE_PREFIX}%")
         | LibraryItem.source_url.like(f"{DESKTOP_LIBRARY_SOURCE_PREFIX}%")
     ).all()
+    if folder_items and not current_source_urls:
+        now = time.monotonic()
+        if _last_empty_synced_scan_at is None or now - _last_empty_synced_scan_at < EMPTY_MOUNTED_SCAN_GRACE_SECONDS:
+            if _last_empty_synced_scan_at is None:
+                _last_empty_synced_scan_at = now
+            print("Mounted library scan returned no files; preserving existing synced library records.", flush=True)
+            db.commit()
+            return
+    else:
+        _last_empty_synced_scan_at = None
+
     for item in folder_items:
         if item.source_url not in current_source_urls:
             db.query(Job).filter(Job.item_id == item.id).update({Job.item_id: None})
@@ -380,6 +396,13 @@ def _is_readable_library_path(path: Path) -> bool:
     return any(resolved.is_relative_to(root) for root in roots)
 
 
+def _is_synced_library_item(item: LibraryItem) -> bool:
+    return bool(
+        item.source_url
+        and (item.source_url.startswith(MOUNTED_LIBRARY_SOURCE_PREFIX) or item.source_url.startswith(DESKTOP_LIBRARY_SOURCE_PREFIX))
+    )
+
+
 def _desktop_library_folders_path() -> Path:
     return get_settings().data_dir / "library-folders.json"
 
@@ -408,6 +431,9 @@ def _save_desktop_library_folders(folders: list[Path]) -> None:
 
 
 def delete_library_item(db: Session, item: LibraryItem) -> None:
+    if _is_synced_library_item(item):
+        raise ValueError("Synced library items must be removed from the mounted library folder.")
+
     for file_path in (item.original_path, item.optimized_path):
         if file_path:
             _unlink_data_file(Path(file_path))

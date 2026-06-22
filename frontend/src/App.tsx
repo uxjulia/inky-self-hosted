@@ -29,7 +29,7 @@ import {
   Wifi,
   X
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, FormEvent } from "react";
 import { probeStandaloneDevice, sendBlobToDevice } from "./deviceTransfer";
 import { HelpPage } from "./HelpPage";
@@ -184,6 +184,7 @@ const defaultOptimizerSettings: OptimizerSettings = {
 };
 
 export default function App() {
+  const libraryLoadSeq = useRef(0);
   const [view, setView] = useState<AppView>(() => getInitialView());
   const [authChecked, setAuthChecked] = useState(false);
   const [authEnabled, setAuthEnabled] = useState(false);
@@ -510,12 +511,15 @@ export default function App() {
   }
 
   async function loadLibrary() {
+    const loadSeq = ++libraryLoadSeq.current;
     if (standaloneMode) {
-      setLibrary((await loadStandaloneLibrary()).map(standaloneRecordToLibraryItem));
+      const data = (await loadStandaloneLibrary()).map(standaloneRecordToLibraryItem);
+      if (loadSeq === libraryLoadSeq.current) setLibrary(data);
       return;
     }
 
-    setLibrary(await api<LibraryItem[]>("/api/library"));
+    const data = await api<LibraryItem[]>("/api/library");
+    if (loadSeq === libraryLoadSeq.current) setLibrary(data);
   }
 
   async function loadVisibleJob(jobId: string) {

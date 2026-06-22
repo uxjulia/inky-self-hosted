@@ -275,7 +275,10 @@ def remove_library_item(item_id: int, db: Session = Depends(get_db)) -> dict:
     item = db.get(LibraryItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="library item not found")
-    delete_library_item(db, item)
+    try:
+        delete_library_item(db, item)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"ok": True}
 
 
