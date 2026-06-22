@@ -43,8 +43,15 @@ export async function probeSerialDevice(): Promise<Record<string, unknown>> {
   const connection = await openSerialConnection();
   try {
     await connection.write(new Uint8Array([...commandMagic, 0x53]));
-    const status = await readUntil(connection, (line) => line.startsWith("STATUS:"), 3000);
+    const status = await readUntil(connection, (line) => line.startsWith("STATUS:"), 3000, "USB serial status");
     return { device: "USB Serial", ip: status.replace(/^STATUS:/, "") || "USB" };
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("Timed out")) {
+      throw new Error(
+        "USB serial opened, but the reader did not answer Inky's serial transfer protocol. Install CrossInk firmware with USB serial transfer support."
+      );
+    }
+    throw error;
   } finally {
     await connection.close();
   }
@@ -191,7 +198,7 @@ async function ensureSerialFolder(connection: SerialConnection, destinationPath:
 async function serialMkdir(connection: SerialConnection, path: string) {
   const pathBytes = textEncoder.encode(path);
   await connection.write(new Uint8Array([...commandMagic, 0x4b, ...u16le(pathBytes.length), ...pathBytes]));
-  const response = await readUntil(connection, (line) => line === "OK" || line.startsWith("ERR:"), 5000);
+  const response = await readUntil(connection, (line) => line === "OK" || line.startsWith("ERR:"), 5000, `mkdir ${path}`);
   if (response !== "OK" && response !== "ERR:mkdir_failed") throw new Error(response);
 }
 
@@ -210,7 +217,7 @@ async function writeSerialFile(
   await readUntil(connection, (line) => {
     if (line.startsWith("ERR:")) throw new Error(line);
     return line === "READY";
-  }, 10000);
+  }, 10000, `write ${fullPath}`);
 
   const chunkSize = 2048;
   for (let sent = 0; sent < data.length;) {
@@ -223,16 +230,16 @@ async function writeSerialFile(
   }
 
   await connection.write(new Uint8Array(u32le(checksum)));
-  const response = await readUntil(connection, (line) => line === "OK" || line.startsWith("ERR:"), 30000);
+  const response = await readUntil(connection, (line) => line === "OK" || line.startsWith("ERR:"), 30000, `finish ${fullPath}`);
   if (response !== "OK") throw new Error(response);
 }
 
-async function readUntil(connection: SerialConnection, predicate: (line: string) => boolean, timeoutMs: number) {
+async function readUntil(connection: SerialConnection, predicate: (line: string) => boolean, timeoutMs: number, label: string) {
   const deadline = Date.now() + timeoutMs;
 
   while (true) {
     const remaining = deadline - Date.now();
-    if (remaining <= 0) throw new Error("Timed out waiting for device response.");
+    if (remaining <= 0) throw new Error(`Timed out waiting for ${label} response.`);
     const line = await connection.readLine(remaining);
     if (!line || isEspLog(line)) continue;
     if (predicate(line)) return line;

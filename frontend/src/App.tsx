@@ -2060,7 +2060,7 @@ function readableError(message: string) {
 
 function readableDeviceError(message: string) {
   const detail = readableError(message);
-  if (!detail || detail === message) {
+  if (!detail) {
     return "Unable to connect to device.";
   }
   return `Unable to connect to device. ${detail}`;
