@@ -25,6 +25,7 @@ import {
   TabletSmartphone,
   Sun,
   Trash2,
+  Usb,
   Wifi,
   X
 } from "lucide-react";
@@ -32,6 +33,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DragEvent, FormEvent } from "react";
 import { probeStandaloneDevice, sendBlobToDevice } from "./deviceTransfer";
 import { HelpPage } from "./HelpPage";
+import { probeSerialDevice, sendBlobToSerialDevice, serialTransferSupported } from "./serialTransfer";
 import {
   addStandaloneFile,
   deleteStandaloneFile,
@@ -59,6 +61,7 @@ const themeStorageKey = "inky-theme";
 const localSourceIndexStorageKey = "inky-local-source-index";
 const optimizerSettingsStorageKey = "inky-optimizer-settings";
 const deviceStorageKey = "inky-device-target";
+const transferModeStorageKey = "inky-transfer-mode";
 const apiBaseUrlStorageKey = "inky-api-base-url";
 const authStorageKey = "inky-basic-auth";
 const localSourceId = -1;
@@ -68,6 +71,7 @@ type RemoteSourceType = "opds" | "webdav" | "feed" | "local_folder";
 type SourceType = "local" | RemoteSourceType;
 type Theme = "light" | "dark";
 type DeviceTarget = "x4" | "x3";
+type TransferMode = "wifi" | "usb";
 type SortMode = "source" | "title_asc" | "title_desc" | "type";
 type ToastState = { message: string; tone: "success" | "error" };
 type PendingBrowseAction = { key: string; action: "save" | "send" };
@@ -199,6 +203,7 @@ export default function App() {
   const [deviceUrl, setDeviceUrl] = useState("crosspoint.local");
   const [destinationPath, setDestinationPath] = useState("/");
   const [device, setDevice] = useState<DeviceTarget>(() => getInitialDevice());
+  const [transferMode, setTransferMode] = useState<TransferMode>(() => getInitialTransferMode());
   const [optimizerSettings, setOptimizerSettings] = useState<OptimizerSettings>(() => getInitialOptimizerSettings());
   const [apiBaseUrlDraft, setApiBaseUrlDraft] = useState(() => getInitialApiBaseUrl());
   const [standaloneMode, setStandaloneMode] = useState(initialStandaloneMode);
@@ -324,6 +329,10 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(deviceStorageKey, device);
   }, [device]);
+
+  useEffect(() => {
+    window.localStorage.setItem(transferModeStorageKey, transferMode);
+  }, [transferMode]);
 
   useEffect(() => {
     const clampedIndex = clampLocalSourceIndex(localSourceIndex, sources.length);
@@ -808,6 +817,14 @@ export default function App() {
     setBusy(true);
     try {
       await runAction(async () => {
+        if (transferMode === "usb") {
+          const imported = await importBrowseItem(item);
+          if (!imported) return;
+          await sendLibraryItemViaUsb(imported);
+          await loadLibrary();
+          return;
+        }
+
         if (selectedSource?.type === "local_folder" && item.path) {
           const job = await api<Job>(`/api/sources/${selectedSourceId}/send-local-file`, {
             method: "POST",
@@ -928,15 +945,31 @@ export default function App() {
 
   async function sendToDevice(item: LibraryItem) {
     await runAction(async () => {
+      if (transferMode === "usb") {
+        if (standaloneMode) {
+          const { record, blob } = await getStandaloneFile(item.id);
+          await sendBlobViaUsb(blob, record.filename, item.id);
+          await markStandaloneFileSent(item.id);
+          showToast("Sent to device");
+          await loadLibrary();
+          return;
+        }
+
+        await sendLibraryItemViaUsb(item);
+        showToast("Sent to device");
+        await loadLibrary();
+        return;
+      }
+
       if (standaloneMode) {
         const { record, blob } = await getStandaloneFile(item.id);
         const jobId = crypto.randomUUID();
-        updateStandaloneJob(jobId, item.id, 0, "Preparing upload", "running");
+        updateBrowserSendJob(jobId, item.id, 0, "Preparing upload", "running");
         await sendBlobToDevice(blob, record.filename, record.mediaType, deviceUrl, destinationPath, (progress, message) => {
-          updateStandaloneJob(jobId, item.id, progress, message, "running");
+          updateBrowserSendJob(jobId, item.id, progress, message, "running");
         });
         await markStandaloneFileSent(item.id);
-        updateStandaloneJob(jobId, item.id, 100, "Sent to device", "succeeded");
+        updateBrowserSendJob(jobId, item.id, 100, "Sent to device", "succeeded");
         showToast("Sent to device");
         await loadLibrary();
         return;
@@ -956,18 +989,74 @@ export default function App() {
     });
   }
 
+  async function sendLibraryItemViaUsb(item: LibraryItem) {
+    if (!serialTransferSupported()) {
+      throw new Error("USB serial is not available in this browser. Use Chrome, Edge, or the Inky desktop app.");
+    }
+
+    if (canOptimizeLibraryItem(item)) {
+      const job = await api<Job>(`/api/library/${item.id}/optimize`, {
+        method: "POST",
+        body: JSON.stringify(defaultOptimizePayload())
+      });
+      await waitForJobCompletion(job);
+    }
+
+    const { blob, filename } = await downloadLibraryItemFile(item);
+    await sendBlobViaUsb(blob, filename || libraryItemFilename(item), item.id);
+  }
+
+  async function sendBlobViaUsb(blob: Blob, filename: string, itemId: number) {
+    const jobId = crypto.randomUUID();
+    updateBrowserSendJob(jobId, itemId, 0, "Preparing USB upload", "running");
+    await sendBlobToSerialDevice(blob, filename, destinationPath, (progress, message) => {
+      updateBrowserSendJob(jobId, itemId, progress, message, "running");
+    });
+    updateBrowserSendJob(jobId, itemId, 100, "Sent to device over USB", "succeeded");
+  }
+
+  async function waitForJobCompletion(job: Job) {
+    setActiveJobId(null);
+    setJobs([job]);
+
+    for (let attempts = 0; attempts < 240; attempts += 1) {
+      const current = await loadVisibleJob(job.id);
+      if (current.status === "failed") {
+        throw new Error(current.error || current.message || "Job failed");
+      }
+      if (current.status === "succeeded") {
+        await loadLibrary();
+        return current;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 750));
+    }
+
+    throw new Error("Timed out waiting for optimization to finish.");
+  }
+
+  async function downloadLibraryItemFile(item: LibraryItem) {
+    const response = await apiFetch(`/api/library/${item.id}/download`);
+    const blob = await response.blob();
+    return {
+      blob,
+      filename: filenameFromContentDisposition(response.headers.get("content-disposition")) || libraryItemFilename(item)
+    };
+  }
+
   async function probeDevice() {
     setDeviceError("");
     setDeviceStatus("");
     setTestingDevice(true);
     try {
-      const status = standaloneMode
+      const status = transferMode === "usb"
+        ? await probeSerialDevice()
+        : standaloneMode
         ? await probeStandaloneDevice(deviceUrl)
         : await api<Record<string, unknown>>("/api/devices/probe", {
             method: "POST",
             body: JSON.stringify({ device_url: deviceUrl })
           });
-      setDeviceStatus(`Successfully connected to: ${status.device || "Device"} at ${status.ip || deviceUrl}`);
+      setDeviceStatus(`Successfully connected to: ${status.device || "Device"} at ${transferMode === "usb" ? "USB" : status.ip || deviceUrl}`);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
       setDeviceError(readableDeviceError(message));
@@ -995,7 +1084,7 @@ export default function App() {
     };
   }
 
-  function updateStandaloneJob(jobId: string, itemId: number, progress: number, message: string, status: Job["status"]) {
+  function updateBrowserSendJob(jobId: string, itemId: number, progress: number, message: string, status: Job["status"]) {
     setJobs([
       {
         id: jobId,
@@ -1153,7 +1242,7 @@ export default function App() {
                 <h2>Device</h2>
               </div>
               <button type="button" onClick={probeDevice} title="Test Connection" disabled={testingDevice}>
-                {testingDevice ? <RefreshCw className="spin" size={15} /> : <Wifi size={15} />}
+                {testingDevice ? <RefreshCw className="spin" size={15} /> : transferMode === "usb" ? <Usb size={15} /> : <Wifi size={15} />}
                 {testingDevice ? "Searching" : "Test Connection"}
               </button>
             </div>
@@ -1179,6 +1268,20 @@ export default function App() {
               </div>
             )}
             <label className="field">
+              <span>Transfer method</span>
+              <div className="segmented transfer-mode-segmented">
+                <button type="button" className={transferMode === "wifi" ? "active" : ""} onClick={() => setTransferMode("wifi")}>
+                  <Wifi size={14} />
+                  Wi-Fi
+                </button>
+                <button type="button" className={transferMode === "usb" ? "active" : ""} onClick={() => setTransferMode("usb")}>
+                  <Usb size={14} />
+                  USB
+                </button>
+              </div>
+            </label>
+            {transferMode === "wifi" && (
+            <label className="field">
               <span>Device host</span>
               <input
                 value={deviceUrl}
@@ -1190,6 +1293,7 @@ export default function App() {
                 placeholder="crosspoint.local"
               />
             </label>
+            )}
             <label className="field">
               <span>Destination folder (created if needed)</span>
               <input value={destinationPath} onChange={(event) => setDestinationPath(event.target.value)} placeholder="/" />
@@ -1873,6 +1977,27 @@ function librarySortType(item: LibraryItem) {
   return libraryFileType(item) || item.original_path.split(/[?#]/, 1)[0].split(".").pop()?.toLowerCase() || "";
 }
 
+function libraryItemFilename(item: LibraryItem) {
+  const path = item.optimized_path || item.original_path;
+  return path.split(/[\\/]/).pop() || `${item.title || "book"}.${libraryFileType(item) || "epub"}`;
+}
+
+function filenameFromContentDisposition(value: string | null) {
+  if (!value) return "";
+  const encodedMatch = value.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encodedMatch) {
+    try {
+      return decodeURIComponent(encodedMatch[1]);
+    } catch {
+      return encodedMatch[1];
+    }
+  }
+  const quotedMatch = value.match(/filename="([^"]+)"/i);
+  if (quotedMatch) return quotedMatch[1];
+  const plainMatch = value.match(/filename=([^;]+)/i);
+  return plainMatch?.[1]?.trim() || "";
+}
+
 function isMountedLibraryItem(item: LibraryItem) {
   return item.source_url?.startsWith("mounted-library://") || item.source_url?.startsWith("desktop-folder://") || false;
 }
@@ -1950,6 +2075,11 @@ function getInitialTheme(): Theme {
 function getInitialDevice(): DeviceTarget {
   const stored = window.localStorage.getItem(deviceStorageKey);
   return stored === "x3" || stored === "x4" ? stored : "x4";
+}
+
+function getInitialTransferMode(): TransferMode {
+  const stored = window.localStorage.getItem(transferModeStorageKey);
+  return stored === "usb" ? "usb" : "wifi";
 }
 
 function getInitialView(): AppView {
@@ -2103,6 +2233,21 @@ async function api<T = unknown>(path: string, init: RequestInit & { rawBody?: bo
     return response.json();
   }
   return undefined as T;
+}
+
+async function apiFetch(path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  const authHeader = window.sessionStorage.getItem(authStorageKey);
+  if (authHeader) headers.set("Authorization", authHeader);
+  const response = await fetch(`${getApiBaseUrl()}${path}`, { ...init, headers });
+  if (response.status === 401) {
+    window.sessionStorage.removeItem(authStorageKey);
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || response.statusText);
+  }
+  return response;
 }
 
 async function publicApi<T = unknown>(path: string): Promise<T> {

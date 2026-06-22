@@ -159,12 +159,13 @@ Python dependencies match that platform.
 ## Device Send Flow
 
 1. On the reader, open **File Transfer**.
-2. Use **Join Network** or **Create Hotspot**.
-3. Put the shown host/IP in Inky's Device field.
+2. For Wi-Fi, use **Join Network** or **Create Hotspot**, then put the shown
+   host/IP in Inky's Device field.
+3. For USB, connect the reader by cable and select **USB** in the Device panel.
 4. Import an item, then send it from the Library panel.
 
-The current transport uses CrossInk's HTTP `/upload` endpoint. WebSocket upload
-and BLE can be added as alternate transports behind the same backend route.
+Wi-Fi sends use CrossInk's HTTP `/upload` endpoint. USB sends use the browser
+Web Serial API and the reader's `CMND` serial file-write protocol.
 
 ## Architecture Notes
 

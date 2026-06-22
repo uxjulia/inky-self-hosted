@@ -26,9 +26,10 @@ export function HelpPage({ isDesktopApp, standaloneMode, onOpenApp }: HelpPagePr
           <span className="help-step">1</span>
           <div>
             <h3>Connect Your Device</h3>
-            <p>On the reader, open File Transfer and join the same network as this app.</p>
+            <p>On the reader, open File Transfer for Wi-Fi sends, or connect USB for serial sends.</p>
             <ul>
-              <li>Use the device host shown by CrossInk, usually <code>crosspoint.local</code> or an IP address.</li>
+              <li>For Wi-Fi, use the device host shown by CrossInk, usually <code>crosspoint.local</code> or an IP address.</li>
+              <li>For USB, connect the reader by cable and select USB as the transfer method.</li>
               <li>Keep the destination folder as <code>/</code> or enter a folder such as <code>/Books</code>. Inky creates missing folders before upload.</li>
               {!standaloneMode && <li>Select X3 or X4 before sending EPUBs so the optimizer uses the right screen target.</li>}
               <li>Use Test Connection to confirm the app can reach the reader.</li>

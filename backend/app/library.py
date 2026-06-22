@@ -245,6 +245,14 @@ def get_library_item_cover(item: LibraryItem) -> tuple[bytes, str]:
     return _epub_cover_bytes(path)
 
 
+def get_library_item_file_path(item: LibraryItem, prefer_optimized: bool = True) -> Path:
+    selected = item.optimized_path if prefer_optimized and item.optimized_path else item.original_path
+    path = Path(selected)
+    if not _is_readable_library_path(path) or not path.is_file():
+        raise FileNotFoundError("library file not found")
+    return path
+
+
 def _epub_metadata(path: Path) -> EpubMetadata:
     try:
         with zipfile.ZipFile(path) as archive:

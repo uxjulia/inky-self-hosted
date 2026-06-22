@@ -152,6 +152,17 @@ async function createWindow() {
     }
   });
 
+  mainWindow.webContents.session.setPermissionCheckHandler((_webContents, permission) => {
+    if (permission === "serial") return true;
+    return false;
+  });
+
+  mainWindow.webContents.session.on("select-serial-port", (event, portList, _webContents, callback) => {
+    event.preventDefault();
+    const esp32Port = portList.find((port) => isEsp32SerialPort(port));
+    callback(esp32Port?.portId || "");
+  });
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };
@@ -162,6 +173,19 @@ async function createWindow() {
   } else {
     await mainWindow.loadFile(frontendIndexPath());
   }
+}
+
+function isEsp32SerialPort(port) {
+  const vendorId = normalizeDeviceId(port.vendorId);
+  const productId = normalizeDeviceId(port.productId);
+  return vendorId === 0x303a && productId === 0x1001;
+}
+
+function normalizeDeviceId(value) {
+  if (typeof value !== "string") return Number(value);
+  if (value.startsWith("0x")) return Number(value);
+  const decimal = Number(value);
+  return Number.isNaN(decimal) ? parseInt(value, 16) : decimal;
 }
 
 app.whenReady().then(async () => {

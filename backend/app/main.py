@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 import httpx
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -18,6 +19,7 @@ from .library import (
     copy_uploaded_file,
     delete_library_item,
     get_library_item_cover,
+    get_library_item_file_path,
     import_article,
     import_local_source_file,
     import_url,
@@ -248,6 +250,18 @@ def library_cover(item_id: int, db: Session = Depends(get_db)) -> Response:
     return Response(content=content, media_type=media_type)
 
 
+@app.get("/api/library/{item_id}/download")
+def library_download(item_id: int, db: Session = Depends(get_db)) -> FileResponse:
+    item = db.get(LibraryItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="library item not found")
+    try:
+        path = get_library_item_file_path(item)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="library file not found") from exc
+    return FileResponse(path, media_type=_media_type_for_download(path), filename=path.name)
+
+
 @app.delete("/api/library/{item_id}")
 def remove_library_item(item_id: int, db: Session = Depends(get_db)) -> dict:
     item = db.get(LibraryItem, item_id)
@@ -317,3 +331,16 @@ def get_job(job_id: str, db: Session = Depends(get_db)) -> Job:
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
     return job
+
+
+def _media_type_for_download(path: Path) -> str:
+    extension = path.suffix.lower()
+    if extension == ".epub":
+        return "application/epub+zip"
+    if extension == ".txt":
+        return "text/plain"
+    if extension == ".bmp":
+        return "image/bmp"
+    if extension == ".png":
+        return "image/png"
+    return "application/octet-stream"
