@@ -135,6 +135,8 @@ type LibraryItem = {
   source_url?: string | null;
   cover_url?: string | null;
   sent_at?: string | null;
+  is_missing?: boolean;
+  last_scan_at?: string | null;
 };
 
 type Job = {
@@ -218,6 +220,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [pendingBrowseAction, setPendingBrowseAction] = useState<PendingBrowseAction | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [rescanningLibrary, setRescanningLibrary] = useState(false);
   const [searching, setSearching] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [error, setError] = useState("");
@@ -520,6 +523,21 @@ export default function App() {
 
     const data = await api<LibraryItem[]>("/api/library");
     if (loadSeq === libraryLoadSeq.current) setLibrary(data);
+  }
+
+  async function rescanLibrary() {
+    if (standaloneMode) return;
+    const loadSeq = ++libraryLoadSeq.current;
+    setRescanningLibrary(true);
+    try {
+      const refreshed = await runAction(async () => {
+        const data = await api<LibraryItem[]>("/api/library/rescan", { method: "POST" });
+        if (loadSeq === libraryLoadSeq.current) setLibrary(data);
+      }, { toastOnError: true });
+      if (refreshed !== undefined) showToast("Library rescan complete");
+    } finally {
+      setRescanningLibrary(false);
+    }
   }
 
   async function loadVisibleJob(jobId: string) {
@@ -1509,6 +1527,12 @@ export default function App() {
               )}
               {isLocalSource && (
                 <>
+                  {!standaloneMode && (
+                    <button type="button" onClick={rescanLibrary} disabled={rescanningLibrary} title="Rescan mounted library">
+                      <RefreshCw className={rescanningLibrary ? "spin" : ""} size={15} />
+                      {rescanningLibrary ? "Rescanning" : "Rescan"}
+                    </button>
+                  )}
                   <label className="file-button border-0" title="Upload file" aria-label="Upload file">
                     <Plus size={16} />
                     <input type="file" accept=".epub,.txt,.xtc,.xtch,.bmp,.png" onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)} />
@@ -1582,12 +1606,18 @@ export default function App() {
               paginatedLibrary.map((item) => {
                 const itemMeta = formatLibraryItemMeta(item);
                 const canRemoveItem = !isMountedLibraryItem(item);
-                const sendTitle = !standaloneMode && canOptimizeLibraryItem(item) ? `Optimize for ${deviceLabel} & Send` : "Send to device";
+                const canSendItem = !item.is_missing;
+                const sendTitle = item.is_missing
+                  ? "File is missing from the mounted library folder"
+                  : !standaloneMode && canOptimizeLibraryItem(item)
+                  ? `Optimize for ${deviceLabel} & Send`
+                  : "Send to device";
                 const fileType = libraryFileType(item);
+                const coverUrl = item.is_missing ? null : item.cover_url;
                 return (
-                  <div className="item-row local-library-row" key={item.id}>
-                    <div className={item.cover_url ? "item-cover" : "item-icon"}>
-                      {item.cover_url ? <img src={mediaUrl(item.cover_url)} alt="" loading="lazy" /> : <BookOpen size={16} />}
+                  <div className={`item-row local-library-row ${item.is_missing ? "missing-library-row" : ""}`} key={item.id}>
+                    <div className={coverUrl ? "item-cover" : "item-icon"}>
+                      {coverUrl ? <img src={mediaUrl(coverUrl)} alt="" loading="lazy" /> : <BookOpen size={16} />}
                     </div>
                     <div className="item-main">
                       <div className="item-title-line">
@@ -1598,7 +1628,7 @@ export default function App() {
 
                     <div className="row-actions">
                       {fileType && <span className={`file-type-tag file-type-${fileType}`}>{fileType}</span>}
-                      <button type="button" onClick={() => sendToDevice(item)} title={sendTitle}>
+                      <button type="button" onClick={() => sendToDevice(item)} title={sendTitle} disabled={!canSendItem}>
                         <Send size={16} />
                       </button>
                       {canRemoveItem && (
@@ -1979,7 +2009,9 @@ function standaloneRecordToLibraryItem(record: StandaloneFileRecord): LibraryIte
     title: record.title,
     original_path: record.filename,
     source_url: `standalone://library/${record.id}`,
-    sent_at: record.sentAt || null
+    sent_at: record.sentAt || null,
+    is_missing: false,
+    last_scan_at: null
   };
 }
 
@@ -1994,7 +2026,11 @@ function formatSentDate(value: string) {
 }
 
 function formatLibraryItemMeta(item: LibraryItem) {
-  return [item.author, item.sent_at ? `Sent on ${formatSentDate(item.sent_at)}` : null].filter(Boolean).join(" · ");
+  return [
+    item.author,
+    item.is_missing ? "Missing from mounted folder" : null,
+    item.sent_at ? `Sent on ${formatSentDate(item.sent_at)}` : null
+  ].filter(Boolean).join(" · ");
 }
 
 function libraryFileType(item: LibraryItem) {

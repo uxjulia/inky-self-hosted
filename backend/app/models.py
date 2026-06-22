@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -61,6 +61,8 @@ class LibraryItem(Base):
     source_url = Column(Text, nullable=True)
     cover_url = Column(Text, nullable=True)
     sent_at = Column(DateTime(timezone=True), nullable=True)
+    is_missing = Column(Boolean, default=False, nullable=False)
+    last_scan_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 

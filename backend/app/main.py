@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Response, UploadFile
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 from .auth import require_basic_auth
 from .config import ensure_data_dirs, get_settings
 from .connectors import browse_source, search_source
-from .db import get_db, init_db
+from .db import SessionLocal, get_db, init_db
 from .jobs import create_job, run_optimize_job, run_send_job, run_send_path_job
 from .library import (
     copy_uploaded_file,
@@ -65,6 +66,15 @@ app.add_middleware(
 def startup() -> None:
     ensure_data_dirs()
     init_db()
+    threading.Thread(target=sync_mounted_library_on_startup, daemon=True).start()
+
+
+def sync_mounted_library_on_startup() -> None:
+    try:
+        with SessionLocal() as db:
+            sync_mounted_library(db, force=True)
+    except Exception as exc:
+        print(f"Mounted library startup scan failed: {exc}", flush=True)
 
 
 @app.get("/api/health")
@@ -178,7 +188,12 @@ async def search(source_id: int, q: str, target: str | None = None, db: Session 
 
 @app.get("/api/library", response_model=list[LibraryItemRead])
 def list_library(db: Session = Depends(get_db)) -> list[LibraryItem]:
-    sync_mounted_library(db)
+    return db.query(LibraryItem).order_by(LibraryItem.updated_at.desc()).all()
+
+
+@app.post("/api/library/rescan", response_model=list[LibraryItemRead])
+def rescan_library(db: Session = Depends(get_db)) -> list[LibraryItem]:
+    sync_mounted_library(db, force=True)
     return db.query(LibraryItem).order_by(LibraryItem.updated_at.desc()).all()
 
 

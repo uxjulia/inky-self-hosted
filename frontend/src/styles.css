@@ -700,6 +700,11 @@ h2 {
   grid-template-columns: 42px minmax(0, 1fr) 130px;
 }
 
+.missing-library-row {
+  border-style: dashed;
+  background: var(--color-panel-muted);
+}
+
 .clickable-row {
   cursor: pointer;
 }

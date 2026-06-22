@@ -107,6 +107,8 @@ class LibraryItemRead(BaseModel):
     source_url: str | None
     cover_url: str | None
     sent_at: datetime | None
+    is_missing: bool
+    last_scan_at: datetime | None
     created_at: datetime
     updated_at: datetime
 

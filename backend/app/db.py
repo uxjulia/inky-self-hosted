@@ -54,6 +54,10 @@ def _ensure_library_columns() -> None:
             connection.execute(text("ALTER TABLE library_items ADD COLUMN sent_at DATETIME"))
         if "cover_url" not in columns:
             connection.execute(text("ALTER TABLE library_items ADD COLUMN cover_url TEXT"))
+        if "is_missing" not in columns:
+            connection.execute(text("ALTER TABLE library_items ADD COLUMN is_missing BOOLEAN NOT NULL DEFAULT 0"))
+        if "last_scan_at" not in columns:
+            connection.execute(text("ALTER TABLE library_items ADD COLUMN last_scan_at DATETIME"))
 
 
 def _seed_default_sources() -> None:

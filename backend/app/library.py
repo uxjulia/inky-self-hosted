@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from .article_epub import fetch_article_as_epub
 from .config import get_settings
-from .models import Job, LibraryItem, Source
+from .models import Job, LibraryItem, Source, utc_now
 from .utils import display_title_from_url, extension_from_url, join_remote, normalize_device_url, safe_filename
 
 
@@ -163,7 +163,7 @@ def sync_mounted_library(db: Session, *, force: bool = False) -> None:
     now = time.monotonic()
     if not force and _last_mounted_library_sync_at is not None and now - _last_mounted_library_sync_at < MOUNTED_LIBRARY_SYNC_INTERVAL_SECONDS:
         return
-    if not _mounted_library_sync_lock.acquire(blocking=False):
+    if not _mounted_library_sync_lock.acquire(blocking=force):
         return
     _last_mounted_library_sync_at = now
     try:
@@ -175,14 +175,29 @@ def sync_mounted_library(db: Session, *, force: bool = False) -> None:
 def _sync_mounted_library_now(db: Session) -> None:
     global _last_empty_synced_scan_at
 
+    scan_time = utc_now()
     current_source_urls: set[str] = set()
     mounted_dir = get_settings().mounted_library_dir
     if mounted_dir.exists() and mounted_dir.is_dir():
-        _sync_library_root(db, mounted_dir.resolve(), MOUNTED_LIBRARY_SOURCE_PREFIX, current_source_urls, include_root_in_source_url=False)
+        _sync_library_root(
+            db,
+            mounted_dir.resolve(),
+            MOUNTED_LIBRARY_SOURCE_PREFIX,
+            current_source_urls,
+            include_root_in_source_url=False,
+            scan_time=scan_time,
+        )
 
     for folder in _registered_desktop_library_folders():
         if folder.exists() and folder.is_dir():
-            _sync_library_root(db, folder.resolve(), DESKTOP_LIBRARY_SOURCE_PREFIX, current_source_urls, include_root_in_source_url=True)
+            _sync_library_root(
+                db,
+                folder.resolve(),
+                DESKTOP_LIBRARY_SOURCE_PREFIX,
+                current_source_urls,
+                include_root_in_source_url=True,
+                scan_time=scan_time,
+            )
 
     folder_items = db.query(LibraryItem).filter(
         LibraryItem.source_url.like(f"{MOUNTED_LIBRARY_SOURCE_PREFIX}%")
@@ -201,8 +216,8 @@ def _sync_mounted_library_now(db: Session) -> None:
 
     for item in folder_items:
         if item.source_url not in current_source_urls:
-            db.query(Job).filter(Job.item_id == item.id).update({Job.item_id: None})
-            db.delete(item)
+            item.is_missing = True
+            item.last_scan_at = scan_time
     db.commit()
 
 
@@ -242,6 +257,7 @@ def _sync_library_root(
     current_source_urls: set[str],
     *,
     include_root_in_source_url: bool,
+    scan_time,
 ) -> None:
     for file_path in sorted(root.rglob("*")):
         if not file_path.is_file() or file_path.suffix.lower() not in SENDABLE_LIBRARY_EXTENSIONS:
@@ -259,6 +275,8 @@ def _sync_library_root(
             item.author = metadata.author
             item.original_path = str(resolved_path)
             item.cover_url = _library_cover_url(item.id) if metadata.cover_path else None
+            item.is_missing = False
+            item.last_scan_at = scan_time
             continue
         item = LibraryItem(
             kind=_library_kind_for_path(resolved_path),
@@ -266,6 +284,8 @@ def _sync_library_root(
             author=metadata.author,
             original_path=str(resolved_path),
             source_url=source_url,
+            is_missing=False,
+            last_scan_at=scan_time,
         )
         db.add(item)
         db.flush()
