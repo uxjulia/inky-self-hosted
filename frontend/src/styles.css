@@ -181,6 +181,12 @@ h2 {
   font-size: 13px;
 }
 
+.server-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
 .topbar {
   min-height: 58px;
   padding: 10px 16px;
@@ -821,6 +827,14 @@ h2 {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.job-log-line-success {
+  color: var(--color-success);
+}
+
+.job-log-line-error {
+  color: var(--color-danger);
 }
 
 .help-card code {

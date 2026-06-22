@@ -87,6 +87,47 @@ backend Python virtualenv at `backend/.venv`. The API runs on
 If Docker Compose is running, stop it first with `docker compose down` so the
 local API can use port `8000`.
 
+## iOS App For Local Testing
+
+The iOS target wraps the React frontend with Capacitor. When no Inky server URL
+is configured, the iOS app runs in standalone mode: it stores local files on the
+phone and sends them directly to a CrossInk device in File Transfer mode.
+
+Open the iOS project:
+
+```bash
+npm run ios:open
+```
+
+In Xcode, choose your personal Apple Account as the signing team, select your
+iPhone, and run the app.
+
+Standalone mode currently supports local file import and direct device sends.
+Backend-backed catalog sources, RSS article conversion, WebDAV browsing, and
+EPUB optimization still require the FastAPI backend.
+
+To use the iOS app with a backend instead of standalone mode, start the backend
+on your LAN:
+
+```bash
+npm run dev:api:lan
+```
+
+Find your Mac's Wi-Fi IP address:
+
+```bash
+ipconfig getifaddr en0
+```
+
+Then use the Server button in the iOS app and set the Inky server URL to:
+
+```text
+http://YOUR_MAC_IP:8000
+```
+
+The iOS build uses local-network HTTP so it can talk to CrossInk device transfer
+endpoints and, optionally, a development backend.
+
 ## Desktop App
 
 Run the desktop app in development:

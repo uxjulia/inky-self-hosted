@@ -30,7 +30,16 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { DragEvent, FormEvent } from "react";
+import { probeStandaloneDevice, sendBlobToDevice } from "./deviceTransfer";
 import { HelpPage } from "./HelpPage";
+import {
+  addStandaloneFile,
+  deleteStandaloneFile,
+  getStandaloneFile,
+  loadStandaloneLibrary,
+  markStandaloneFileSent,
+  type StandaloneFileRecord
+} from "./standaloneLibrary";
 
 declare global {
   interface Window {
@@ -38,13 +47,19 @@ declare global {
       apiBaseUrl?: string;
       selectLibraryFolder?: () => Promise<string | null>;
     };
+    Capacitor?: {
+      isNativePlatform?: () => boolean;
+      getPlatform?: () => string;
+    };
   }
 }
 
-const API = window.inkyDesktop?.apiBaseUrl || import.meta.env.VITE_API_BASE_URL || "";
+const bundledApiBaseUrl = window.inkyDesktop?.apiBaseUrl || import.meta.env.VITE_API_BASE_URL || "";
 const themeStorageKey = "inky-theme";
 const localSourceIndexStorageKey = "inky-local-source-index";
 const optimizerSettingsStorageKey = "inky-optimizer-settings";
+const deviceStorageKey = "inky-device-target";
+const apiBaseUrlStorageKey = "inky-api-base-url";
 const authStorageKey = "inky-basic-auth";
 const localSourceId = -1;
 
@@ -52,6 +67,7 @@ type AppView = "app" | "help";
 type RemoteSourceType = "opds" | "webdav" | "feed" | "local_folder";
 type SourceType = "local" | RemoteSourceType;
 type Theme = "light" | "dark";
+type DeviceTarget = "x4" | "x3";
 type SortMode = "source" | "title_asc" | "title_desc" | "type";
 type ToastState = { message: string; tone: "success" | "error" };
 type PendingBrowseAction = { key: string; action: "save" | "send" };
@@ -139,6 +155,9 @@ const emptySourceForm: SourceForm = { type: "opds", name: "", url: "", username:
 const localSource: Source = { id: localSourceId, type: "local", name: "Local Library", url: "local://library" };
 const sourceTypes: RemoteSourceType[] = ["opds", "webdav", "feed", "local_folder"];
 const isDesktopApp = Boolean(window.inkyDesktop?.selectLibraryFolder);
+const canConfigureApiBaseUrl = !window.inkyDesktop?.apiBaseUrl;
+const isNativeApp = Boolean(window.Capacitor?.isNativePlatform?.());
+const initialStandaloneMode = isNativeApp && !getInitialApiBaseUrl();
 const browsePageSize = 25;
 const defaultOptimizerSettings: OptimizerSettings = {
   filename_render_first: "Book Title",
@@ -179,8 +198,10 @@ export default function App() {
   const [form, setForm] = useState<SourceForm>(emptySourceForm);
   const [deviceUrl, setDeviceUrl] = useState("crosspoint.local");
   const [destinationPath, setDestinationPath] = useState("/");
-  const [device, setDevice] = useState<"x4" | "x3">("x4");
+  const [device, setDevice] = useState<DeviceTarget>(() => getInitialDevice());
   const [optimizerSettings, setOptimizerSettings] = useState<OptimizerSettings>(() => getInitialOptimizerSettings());
+  const [apiBaseUrlDraft, setApiBaseUrlDraft] = useState(() => getInitialApiBaseUrl());
+  const [standaloneMode, setStandaloneMode] = useState(initialStandaloneMode);
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
   const [localSourceIndex, setLocalSourceIndex] = useState(() => getInitialLocalSourceIndex());
   const [busy, setBusy] = useState(false);
@@ -189,11 +210,13 @@ export default function App() {
   const [searching, setSearching] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [error, setError] = useState("");
+  const [apiConnectionError, setApiConnectionError] = useState("");
   const [deviceError, setDeviceError] = useState("");
   const [deviceStatus, setDeviceStatus] = useState("");
   const [testingDevice, setTestingDevice] = useState(false);
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
   const [optimizerModalOpen, setOptimizerModalOpen] = useState(false);
+  const [serverModalOpen, setServerModalOpen] = useState(false);
   const [editingSource, setEditingSource] = useState<Source | null>(null);
   const [draggedSourceId, setDraggedSourceId] = useState<number | null>(null);
   const [dragOverSourceId, setDragOverSourceId] = useState<number | null>(null);
@@ -243,11 +266,12 @@ export default function App() {
     if (!authChecked || !isAuthenticated) return;
 
     refreshAll(false);
+    if (standaloneMode) return;
     const interval = window.setInterval(() => {
       loadLibrary();
     }, 2500);
     return () => window.clearInterval(interval);
-  }, [authChecked, isAuthenticated]);
+  }, [authChecked, isAuthenticated, standaloneMode]);
 
   useEffect(() => {
     const updateViewFromHash = () => setView(getInitialView());
@@ -298,6 +322,10 @@ export default function App() {
   }, [optimizerSettings]);
 
   useEffect(() => {
+    window.localStorage.setItem(deviceStorageKey, device);
+  }, [device]);
+
+  useEffect(() => {
     const clampedIndex = clampLocalSourceIndex(localSourceIndex, sources.length);
     if (clampedIndex === localSourceIndex) return;
     setLocalSourceIndex(clampedIndex);
@@ -325,27 +353,44 @@ export default function App() {
     return <BookOpen size={16} />;
   }, [selectedSource]);
 
-  async function checkAuth() {
+  async function checkAuth(forceStandaloneMode = standaloneMode) {
+    if (forceStandaloneMode) {
+      setApiConnectionError("");
+      setAuthEnabled(false);
+      setIsAuthenticated(true);
+      setAuthChecked(true);
+      return true;
+    }
+
+    setApiConnectionError("");
     try {
       const status = await publicApi<{ enabled: boolean }>("/api/auth/status");
+      setApiBaseUrlDraft(getApiBaseUrl());
       setAuthEnabled(status.enabled);
       if (!status.enabled) {
         setIsAuthenticated(true);
-        return;
+        return true;
       }
 
       if (!window.sessionStorage.getItem(authStorageKey)) {
         setIsAuthenticated(false);
-        return;
+        return true;
       }
 
       try {
         await api("/api/auth/login");
         setIsAuthenticated(true);
+        return true;
       } catch {
         window.sessionStorage.removeItem(authStorageKey);
         setIsAuthenticated(false);
+        return true;
       }
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      setApiConnectionError(message);
+      setIsAuthenticated(false);
+      return false;
     } finally {
       setAuthChecked(true);
     }
@@ -376,10 +421,43 @@ export default function App() {
     setSelectedSourceId(null);
   }
 
+  async function saveServerSettings(event: FormEvent) {
+    event.preventDefault();
+    const nextApiBaseUrl = persistApiBaseUrl(apiBaseUrlDraft);
+    setApiBaseUrlDraft(nextApiBaseUrl);
+    const nextStandaloneMode = isNativeApp && !nextApiBaseUrl;
+    setStandaloneMode(nextStandaloneMode);
+    if (nextStandaloneMode) {
+      setSources([]);
+      setSelectedSourceId(localSourceId);
+      setBrowseResult(null);
+      setSearchResult(null);
+      setJobs([]);
+      setActiveJobId(null);
+    }
+    setAuthChecked(false);
+    const connected = await checkAuth(nextStandaloneMode);
+    if (connected) {
+      setServerModalOpen(false);
+      await refreshAll(false);
+      showToast("Server updated");
+    }
+  }
+
+  function openServerSettings() {
+    setApiBaseUrlDraft(getApiBaseUrl());
+    setServerModalOpen(true);
+  }
+
   async function refreshAll(showFeedback = true) {
     setRefreshing(true);
     try {
       const refreshed = await runAction(async () => {
+        if (standaloneMode) {
+          await loadLibrary();
+          return;
+        }
+
         await Promise.all([loadSources(), loadLibrary(), activeJobId ? loadVisibleJob(activeJobId) : Promise.resolve()]);
 
         if (selectedSourceId && selectedSourceId !== localSourceId) {
@@ -405,12 +483,23 @@ export default function App() {
   }
 
   async function loadSources() {
+    if (standaloneMode) {
+      setSources([]);
+      if (!selectedSourceId) setSelectedSourceId(localSourceId);
+      return;
+    }
+
     const data = await api<Source[]>("/api/sources");
     setSources(data);
     if (!selectedSourceId) setSelectedSourceId(localSourceId);
   }
 
   async function loadLibrary() {
+    if (standaloneMode) {
+      setLibrary((await loadStandaloneLibrary()).map(standaloneRecordToLibraryItem));
+      return;
+    }
+
     setLibrary(await api<LibraryItem[]>("/api/library"));
   }
 
@@ -805,6 +894,13 @@ export default function App() {
   async function uploadLocalFile(file: File | null) {
     if (!file) return;
     await runAction(async () => {
+      if (standaloneMode) {
+        await addStandaloneFile(file);
+        showToast("Saved");
+        await loadLibrary();
+        return;
+      }
+
       const formData = new FormData();
       formData.append("file", file);
       await api("/api/library/upload", { method: "POST", body: formData, rawBody: true });
@@ -817,6 +913,13 @@ export default function App() {
     const confirmed = window.confirm(`Remove "${item.title}" from the local library?`);
     if (!confirmed) return;
     await runAction(async () => {
+      if (standaloneMode) {
+        await deleteStandaloneFile(item.id);
+        showToast("Removed");
+        await loadLibrary();
+        return;
+      }
+
       await api(`/api/library/${item.id}`, { method: "DELETE" });
       showToast("Removed");
       await loadLibrary();
@@ -825,6 +928,20 @@ export default function App() {
 
   async function sendToDevice(item: LibraryItem) {
     await runAction(async () => {
+      if (standaloneMode) {
+        const { record, blob } = await getStandaloneFile(item.id);
+        const jobId = crypto.randomUUID();
+        updateStandaloneJob(jobId, item.id, 0, "Preparing upload", "running");
+        await sendBlobToDevice(blob, record.filename, record.mediaType, deviceUrl, destinationPath, (progress, message) => {
+          updateStandaloneJob(jobId, item.id, progress, message, "running");
+        });
+        await markStandaloneFileSent(item.id);
+        updateStandaloneJob(jobId, item.id, 100, "Sent to device", "succeeded");
+        showToast("Sent to device");
+        await loadLibrary();
+        return;
+      }
+
       const job = await api<Job>(`/api/library/${item.id}/send`, {
         method: "POST",
         body: JSON.stringify({
@@ -844,10 +961,12 @@ export default function App() {
     setDeviceStatus("");
     setTestingDevice(true);
     try {
-      const status = await api<Record<string, unknown>>("/api/devices/probe", {
-        method: "POST",
-        body: JSON.stringify({ device_url: deviceUrl })
-      });
+      const status = standaloneMode
+        ? await probeStandaloneDevice(deviceUrl)
+        : await api<Record<string, unknown>>("/api/devices/probe", {
+            method: "POST",
+            body: JSON.stringify({ device_url: deviceUrl })
+          });
       setDeviceStatus(`Successfully connected to: ${status.device || "Device"} at ${status.ip || deviceUrl}`);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
@@ -876,6 +995,19 @@ export default function App() {
     };
   }
 
+  function updateStandaloneJob(jobId: string, itemId: number, progress: number, message: string, status: Job["status"]) {
+    setJobs([
+      {
+        id: jobId,
+        type: "send",
+        status,
+        progress,
+        message,
+        item_id: itemId
+      }
+    ]);
+  }
+
   function openHelp() {
     if (window.location.hash !== "#help") {
       window.location.hash = "help";
@@ -898,6 +1030,38 @@ export default function App() {
           <h1>Inky</h1>
           <p>Starting up...</p>
         </section>
+      </main>
+    );
+  }
+
+  if (apiConnectionError && canConfigureApiBaseUrl) {
+    return (
+      <main className="app-shell auth-shell">
+        <form className="auth-card" onSubmit={saveServerSettings}>
+          <span className="brand-logo" aria-hidden="true" />
+          <h1>Inky</h1>
+          <p>{isNativeApp ? "Connect to your Inky server." : "Connect to the Inky API."}</p>
+          <div className="auth-error">{readableError(apiConnectionError)}</div>
+          <label className="field">
+            <span>{isNativeApp ? "Inky server URL" : "API server URL"}</span>
+            <input
+              value={apiBaseUrlDraft}
+              onChange={(event) => setApiBaseUrlDraft(event.target.value)}
+              placeholder="http://192.168.1.25:8000"
+              inputMode="url"
+              autoCapitalize="none"
+            />
+          </label>
+          <div className="server-actions">
+            <button type="button" onClick={() => setApiBaseUrlDraft("")}>
+              Clear
+            </button>
+            <button className="primary" type="submit">
+              <Server size={16} />
+              Connect
+            </button>
+          </div>
+        </form>
       </main>
     );
   }
@@ -963,6 +1127,12 @@ export default function App() {
               {refreshing ? "Refreshing" : "Refresh"}
             </button>
           )}
+          {canConfigureApiBaseUrl && (
+            <button className="icon-text" type="button" onClick={openServerSettings} title="Server">
+              <Server size={16} />
+              Server
+            </button>
+          )}
           {authEnabled && (
             <button type="button" onClick={logout} title="Sign out" aria-label="Sign out">
               <LogOut size={16} />
@@ -972,7 +1142,7 @@ export default function App() {
       </header>
 
       {view === "help" ? (
-        <HelpPage onOpenApp={openApp} isDesktopApp={isDesktopApp} />
+        <HelpPage onOpenApp={openApp} isDesktopApp={isDesktopApp} standaloneMode={standaloneMode} />
       ) : (
       <section className="layout">
         <aside className="sidebar">
@@ -1024,24 +1194,32 @@ export default function App() {
               <span>Destination folder (created if needed)</span>
               <input value={destinationPath} onChange={(event) => setDestinationPath(event.target.value)} placeholder="/" />
             </label>
-            <label className="field">
-              <span>Optimize for</span>
-              <div className="segmented">
-                <button type="button" className={device === "x4" ? "active" : ""} onClick={() => setDevice("x4")}>
-                  X4
+            {!standaloneMode && (
+              <>
+                <label className="field">
+                  <span>Optimize for</span>
+                  <div className="segmented">
+                    <button type="button" className={device === "x4" ? "active" : ""} onClick={() => setDevice("x4")}>
+                      X4
+                    </button>
+                    <button type="button" className={device === "x3" ? "active" : ""} onClick={() => setDevice("x3")}>
+                      X3
+                    </button>
+                  </div>
+                </label>
+                <button className="icon-text optimizer-settings-button" type="button" onClick={() => setOptimizerModalOpen(true)} title="EPUB Optimizer Settings">
+                  <SlidersHorizontal size={16} />
+                  EPUB Optimizer Settings
                 </button>
-                <button type="button" className={device === "x3" ? "active" : ""} onClick={() => setDevice("x3")}>
-                  X3
-                </button>
-              </div>
-            </label>
-            <button className="icon-text optimizer-settings-button" type="button" onClick={() => setOptimizerModalOpen(true)} title="EPUB Optimizer Settings">
-              <SlidersHorizontal size={16} />
-              EPUB Optimizer Settings
-            </button>
+              </>
+            )}
             {jobs.length > 0 && (
               <pre className="job-log" aria-label="Latest device job">
-                <code>{jobs.map(formatJobLog).join("\n")}</code>
+                {jobs.map((job) => (
+                  <code key={job.id} className={jobLogClassName(job)}>
+                    {formatJobLog(job)}
+                  </code>
+                ))}
               </pre>
             )}
           </section>
@@ -1052,15 +1230,17 @@ export default function App() {
               <Library size={16} />
               <h2>Sources</h2>
               </div>
-              <button
-                className="border-0"
-                type="button"
-                onClick={openAddSourceModal}
-                title="Add source"
-                aria-label="Add source"
-              >
-                <Plus size={16} />
-              </button>
+              {!standaloneMode && (
+                <button
+                  className="border-0"
+                  type="button"
+                  onClick={openAddSourceModal}
+                  title="Add source"
+                  aria-label="Add source"
+                >
+                  <Plus size={16} />
+                </button>
+              )}
             </div>
             <div className="source-list">
               {allSources.map((source, index) => (
@@ -1264,7 +1444,7 @@ export default function App() {
               paginatedLibrary.map((item) => {
                 const itemMeta = formatLibraryItemMeta(item);
                 const canRemoveItem = !isMountedLibraryItem(item);
-                const sendTitle = canOptimizeLibraryItem(item) ? `Optimize for ${deviceLabel} & Send` : "Send to device";
+                const sendTitle = !standaloneMode && canOptimizeLibraryItem(item) ? `Optimize for ${deviceLabel} & Send` : "Send to device";
                 const fileType = libraryFileType(item);
                 return (
                   <div className="item-row local-library-row" key={item.id}>
@@ -1596,6 +1776,39 @@ export default function App() {
         </div>
       )}
 
+      {serverModalOpen && (
+        <div className="modal-backdrop" role="presentation">
+          <form className="panel form-panel modal-card" onSubmit={saveServerSettings} role="dialog" aria-modal="true" aria-labelledby="server-modal-title">
+            <div className="panel-header">
+              <h2 id="server-modal-title">Server</h2>
+              <button type="button" onClick={() => setServerModalOpen(false)} title="Close" aria-label="Close server settings">
+                <X size={16} />
+              </button>
+            </div>
+            <label className="field">
+              <span>{isNativeApp ? "Inky server URL" : "API server URL"}</span>
+              <input
+                value={apiBaseUrlDraft}
+                onChange={(event) => setApiBaseUrlDraft(event.target.value)}
+                placeholder="http://192.168.1.25:8000"
+                inputMode="url"
+                autoCapitalize="none"
+              />
+            </label>
+            {apiConnectionError && <div className="auth-error">{readableError(apiConnectionError)}</div>}
+            <div className="modal-actions">
+              <button type="button" onClick={() => setApiBaseUrlDraft("")}>
+                Clear
+              </button>
+              <button className="primary" type="submit">
+                <Save size={16} />
+                Save Server
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {toast && (
         <div className={`toast ${toast.tone === "error" ? "error-toast" : "success-toast"}`} role={toast.tone === "error" ? "alert" : "status"}>
           <span>{toast.message}</span>
@@ -1613,6 +1826,27 @@ function formatJobLog(job: Job) {
   const message = job.error || job.message || job.status;
   const progress = message.startsWith("Uploading to device (") ? ` ${job.progress}%` : "";
   return `[${status}] ${job.type}${progress}${message ? ` - ${message}` : ""}`;
+}
+
+function jobLogClassName(job: Job) {
+  if (job.error || job.status === "failed") return "job-log-line job-log-line-error";
+  if (job.type === "send" && job.status === "succeeded") return "job-log-line job-log-line-success";
+  return "job-log-line";
+}
+
+function standaloneRecordToLibraryItem(record: StandaloneFileRecord): LibraryItem {
+  return {
+    id: record.id,
+    kind: libraryKindForFilename(record.filename),
+    title: record.title,
+    original_path: record.filename,
+    source_url: `standalone://library/${record.id}`,
+    sent_at: record.sentAt || null
+  };
+}
+
+function libraryKindForFilename(filename: string): LibraryItem["kind"] {
+  return filename.toLowerCase().endsWith(".epub") ? "epub" : "file";
 }
 
 function formatSentDate(value: string) {
@@ -1661,7 +1895,30 @@ function browseItemKey(item: BrowseItem) {
 }
 
 function mediaUrl(url: string) {
-  return API && url.startsWith("/api/") ? `${API}${url}` : url;
+  const apiBaseUrl = getApiBaseUrl();
+  return apiBaseUrl && url.startsWith("/api/") ? `${apiBaseUrl}${url}` : url;
+}
+
+function getInitialApiBaseUrl() {
+  return normalizeApiBaseUrl(window.inkyDesktop?.apiBaseUrl || window.localStorage.getItem(apiBaseUrlStorageKey) || bundledApiBaseUrl);
+}
+
+function getApiBaseUrl() {
+  return normalizeApiBaseUrl(window.inkyDesktop?.apiBaseUrl || window.localStorage.getItem(apiBaseUrlStorageKey) || bundledApiBaseUrl);
+}
+
+function persistApiBaseUrl(value: string) {
+  const apiBaseUrl = normalizeApiBaseUrl(value);
+  if (apiBaseUrl) {
+    window.localStorage.setItem(apiBaseUrlStorageKey, apiBaseUrl);
+  } else {
+    window.localStorage.removeItem(apiBaseUrlStorageKey);
+  }
+  return apiBaseUrl;
+}
+
+function normalizeApiBaseUrl(value: string | null | undefined) {
+  return (value || "").trim().replace(/\/+$/, "");
 }
 
 function readableError(message: string) {
@@ -1688,6 +1945,11 @@ function getInitialTheme(): Theme {
     return stored;
   }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function getInitialDevice(): DeviceTarget {
+  const stored = window.localStorage.getItem(deviceStorageKey);
+  return stored === "x3" || stored === "x4" ? stored : "x4";
 }
 
 function getInitialView(): AppView {
@@ -1828,7 +2090,7 @@ async function api<T = unknown>(path: string, init: RequestInit & { rawBody?: bo
   if (!init.rawBody) headers.set("Content-Type", "application/json");
   const authHeader = window.sessionStorage.getItem(authStorageKey);
   if (authHeader) headers.set("Authorization", authHeader);
-  const response = await fetch(`${API}${path}`, { ...init, headers });
+  const response = await fetch(`${getApiBaseUrl()}${path}`, { ...init, headers });
   if (response.status === 401) {
     window.sessionStorage.removeItem(authStorageKey);
   }
@@ -1844,7 +2106,7 @@ async function api<T = unknown>(path: string, init: RequestInit & { rawBody?: bo
 }
 
 async function publicApi<T = unknown>(path: string): Promise<T> {
-  const response = await fetch(`${API}${path}`);
+  const response = await fetch(`${getApiBaseUrl()}${path}`);
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || response.statusText);

@@ -1,0 +1,13 @@
+{
+  "appId": "app.inky.reader",
+  "appName": "Inky",
+  "webDir": "frontend/dist",
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  },
+  "ios": {
+    "scheme": "Inky"
+  }
+}
