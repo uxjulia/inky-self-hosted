@@ -31,7 +31,7 @@ from epub_structure import (
     build_rename_map, update_opf, update_opf_remove_fonts,
     update_xhtml_references, update_css_references,
     fix_svg_covers, fix_toc, find_content_files, add_image_to_opf,
-    write_crossink_location_manifest
+    write_x_location_manifest
 )
 from section_splitter import split_long_spine_sections
 
@@ -55,8 +55,10 @@ class ProcessingOptions:
     text_cleanup: bool = True
     normalize_quotes: bool = True
     split_long_sections: bool = False
-    section_split_word_threshold: int = 8000
+    section_split_word_threshold: int = 2000
     filename_format: str = 'author-title'
+    filename_render_first: str = 'Book Title'
+    filename_render_second: str = 'Author'
     # Metadata edits (applied if non-empty)
     metadata_edits: dict = field(default_factory=dict)
 
@@ -87,8 +89,8 @@ class ProcessingReport:
     section_links_rewritten: int = 0
     os_artifacts_removed: int = 0
     cover_generated: bool = False
-    crossink_locations: int = 0
-    crossink_reference_pages: int = 0
+    x_locations: int = 0
+    x_reference_pages: int = 0
     # Details
     image_details: list = field(default_factory=list)
 
@@ -134,10 +136,10 @@ class ProcessingReport:
         if self.os_artifacts_removed > 0:
             parts.append(f"Removed {self.os_artifacts_removed} OS artifacts")
 
-        if self.crossink_locations > 0:
+        if self.x_locations > 0:
             parts.append(
-                f"Generated {self.crossink_locations} CrossInk locations"
-                f" and {self.crossink_reference_pages} reference pages"
+                f"Generated {self.x_locations} X locations"
+                f" and {self.x_reference_pages} reference pages"
             )
 
         if self.original_size > 0 and self.optimized_size > 0:
@@ -145,6 +147,25 @@ class ProcessingReport:
             parts.append(f"Size: {_fmt_size(self.original_size)} → {_fmt_size(self.optimized_size)} ({reduction:.1f}% reduction)")
 
         return "; ".join(parts) if parts else "No changes needed"
+
+
+def _format_rendered_filename(metadata: dict, first: str, second: str) -> str:
+    first_value = _resolve_filename_render_value(first, metadata)
+    second_value = _resolve_filename_render_value(second, metadata)
+    return format_filename(first_value, second_value, 'title-author')
+
+
+def _resolve_filename_render_value(template: str, metadata: dict) -> str:
+    value = (template or '').strip()
+    if not value:
+        return ''
+    replacements = {
+        'Book Title': metadata.get('title', ''),
+        'Author': metadata.get('author', ''),
+    }
+    for token, replacement in replacements.items():
+        value = value.replace(token, replacement or '')
+    return ' '.join(value.split())
 
 
 ProgressCallback = Callable[[int, str], None]
@@ -269,8 +290,8 @@ def process_epub(input_path: str, output_path: str,
             opf_tree = etree.parse(opf_path)
             meta = extract_metadata(opf_tree)
             if not meta['cover_href']:
-                title = options.metadata_edits.get('title', meta['title']) or 'Untitled'
-                author = options.metadata_edits.get('author', meta['author']) or ''
+                title = meta['title'] or 'Untitled'
+                author = meta['author'] or ''
                 cover_bytes = generate_cover_image(title, author)
                 opf_dir = str(Path(opf_path).parent)
                 # Determine images directory
@@ -421,9 +442,9 @@ def process_epub(input_path: str, output_path: str,
         toc_fixed, toc_msg = fix_toc(work_dir, opf_path)
         report.toc_status = toc_msg
 
-        # Step 19: Generate CrossInk location sidecar (92%)
-        _progress(92, "Generating CrossInk locations...")
-        report.crossink_locations, report.crossink_reference_pages = write_crossink_location_manifest(
+        # Step 19: Generate X location sidecar (92%)
+        _progress(92, "Generating X locations...")
+        report.x_locations, report.x_reference_pages = write_x_location_manifest(
             work_dir, opf_path
         )
 
@@ -438,9 +459,11 @@ def process_epub(input_path: str, output_path: str,
         # Step 22: Generate output filename
         opf_tree = etree.parse(opf_path)
         final_metadata = extract_metadata(opf_tree)
-        title = options.metadata_edits.get('title', final_metadata['title']) or final_metadata['title']
-        author = options.metadata_edits.get('author', final_metadata['author']) or final_metadata['author']
-        report.output_filename = format_filename(title, author, options.filename_format)
+        report.output_filename = _format_rendered_filename(
+            final_metadata,
+            options.filename_render_first,
+            options.filename_render_second,
+        )
 
         # Done
         report.optimized_size = os.path.getsize(output_path)

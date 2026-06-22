@@ -932,6 +932,37 @@ progress {
   gap: 12px;
 }
 
+.filename-render-field {
+  grid-column: 1 / -1;
+}
+
+.filename-render-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.filename-render-control button {
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
+}
+
+.filename-render-value {
+  min-width: 0;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 3px;
+  background: var(--color-panel-muted);
+  color: var(--color-text);
+  font-size: 15px;
+  line-height: 1.2;
+}
+
 .range-field {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 72px;

@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
@@ -54,7 +55,10 @@ type Theme = "light" | "dark";
 type SortMode = "source" | "title_asc" | "title_desc" | "type";
 type ToastState = { message: string; tone: "success" | "error" };
 type PendingBrowseAction = { key: string; action: "save" | "send" };
+type FilenameRenderToken = "Book Title" | "Author";
 type OptimizerSettings = {
+  filename_render_first: FilenameRenderToken;
+  filename_render_second: FilenameRenderToken;
   quality: number;
   grayscale: boolean;
   contrast_boost: boolean;
@@ -137,6 +141,8 @@ const sourceTypes: RemoteSourceType[] = ["opds", "webdav", "feed", "local_folder
 const isDesktopApp = Boolean(window.inkyDesktop?.selectLibraryFolder);
 const browsePageSize = 25;
 const defaultOptimizerSettings: OptimizerSettings = {
+  filename_render_first: "Book Title",
+  filename_render_second: "Author",
   quality: 70,
   grayscale: true,
   contrast_boost: true,
@@ -662,6 +668,14 @@ export default function App() {
 
   function resetOptimizerSettings() {
     setOptimizerSettings(defaultOptimizerSettings);
+  }
+
+  function swapFilenameRenderFields() {
+    setOptimizerSettings((current) => ({
+      ...current,
+      filename_render_first: current.filename_render_second,
+      filename_render_second: current.filename_render_first
+    }));
   }
 
   function showToast(message: string, tone: ToastState["tone"] = "success") {
@@ -1449,6 +1463,16 @@ export default function App() {
               </button>
             </div>
             <div className="settings-grid">
+              <label className="field filename-render-field">
+                <span>Filename render</span>
+                <div className="filename-render-control">
+                  <span className="filename-render-value">{optimizerSettings.filename_render_first}</span>
+                  <button type="button" onClick={swapFilenameRenderFields} title="Swap filename fields" aria-label="Swap filename fields">
+                    <ArrowLeftRight size={16} />
+                  </button>
+                  <span className="filename-render-value">{optimizerSettings.filename_render_second}</span>
+                </div>
+              </label>
               <label className="field">
                 <span>JPEG quality</span>
                 <div className="range-field">
@@ -1684,6 +1708,8 @@ function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
   if (!value || typeof value !== "object") return defaultOptimizerSettings;
   const stored = value as Partial<OptimizerSettings>;
   return {
+    filename_render_first: filenameRenderTokenOrDefault(stored.filename_render_first, defaultOptimizerSettings.filename_render_first),
+    filename_render_second: filenameRenderTokenOrDefault(stored.filename_render_second, defaultOptimizerSettings.filename_render_second),
     quality: clampNumber(Number(stored.quality ?? defaultOptimizerSettings.quality), 1, 100),
     grayscale: booleanOrDefault(stored.grayscale, defaultOptimizerSettings.grayscale),
     contrast_boost: booleanOrDefault(stored.contrast_boost, defaultOptimizerSettings.contrast_boost),
@@ -1695,6 +1721,10 @@ function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
     remove_css: booleanOrDefault(stored.remove_css, defaultOptimizerSettings.remove_css),
     text_cleanup: booleanOrDefault(stored.text_cleanup, defaultOptimizerSettings.text_cleanup)
   };
+}
+
+function filenameRenderTokenOrDefault(value: unknown, fallback: FilenameRenderToken): FilenameRenderToken {
+  return value === "Book Title" || value === "Author" ? value : fallback;
 }
 
 function booleanOrDefault(value: unknown, fallback: boolean) {
