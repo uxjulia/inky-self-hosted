@@ -14,5 +14,4 @@
 - Help content explaining CrossInk-specific EPUB enhancements such as stable locations and reference pages.
 
 ### Changed
-- Optimized EPUBs now keep stylesheet files instead of flattening supported CSS into XHTML.
-- Local Folder source controls are now shown only in the desktop app.
+- EPUB optimization now tree-shakes unused CSS rules and removes unreachable stylesheet files.
