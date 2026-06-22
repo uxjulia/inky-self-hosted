@@ -34,6 +34,7 @@ def optimize_epub(input_path: Path, output_dir: Path, request: OptimizeRequest, 
             remove_fonts=request.remove_fonts,
             remove_unused_css=request.remove_css,
             light_novel_mode=request.light_novel,
+            split_long_sections=request.split_long_sections,
             text_cleanup=request.text_cleanup,
         )
         report = process_epub(str(input_path), str(temp_path), options, progress)

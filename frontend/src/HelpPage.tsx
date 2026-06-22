@@ -88,6 +88,7 @@ export function HelpPage({ isDesktopApp, onOpenApp }: HelpPageProps) {
               <li>Page locations let CrossInk jump and resume using stable word-based positions instead of fragile screen pages.</li>
               <li>Reference pages give a consistent page-style number that stays useful even when font size, margins, or orientation change.</li>
               <li>TOC, cover, image, and metadata cleanup help books open cleaner and use less device memory.</li>
+              <li>Optional long-section splitting can break EPUB sections over 8,000 visible words into smaller reader sections.</li>
               <li>Images are prepared for the selected X3 or X4 screen so covers and illustrations fit the target display better.</li>
             </ul>
           </div>

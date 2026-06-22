@@ -61,6 +61,7 @@ type OptimizerSettings = {
   contrast_factor: number;
   eink_quantize: boolean;
   light_novel: boolean;
+  split_long_sections: boolean;
   remove_fonts: boolean;
   remove_css: boolean;
   text_cleanup: boolean;
@@ -142,6 +143,7 @@ const defaultOptimizerSettings: OptimizerSettings = {
   contrast_factor: 1.1,
   eink_quantize: true,
   light_novel: false,
+  split_long_sections: false,
   remove_fonts: true,
   remove_css: true,
   text_cleanup: true
@@ -1527,6 +1529,14 @@ export default function App() {
               <label className="toggle-field">
                 <input
                   type="checkbox"
+                  checked={optimizerSettings.split_long_sections}
+                  onChange={(event) => updateOptimizerSetting("split_long_sections", event.target.checked)}
+                />
+                <span>Split long EPUB sections</span>
+              </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
                   checked={optimizerSettings.remove_fonts}
                   onChange={(event) => updateOptimizerSetting("remove_fonts", event.target.checked)}
                 />
@@ -1680,6 +1690,7 @@ function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
     contrast_factor: clampNumber(Number(stored.contrast_factor ?? defaultOptimizerSettings.contrast_factor), 0.5, 3),
     eink_quantize: booleanOrDefault(stored.eink_quantize, defaultOptimizerSettings.eink_quantize),
     light_novel: booleanOrDefault(stored.light_novel, defaultOptimizerSettings.light_novel),
+    split_long_sections: booleanOrDefault(stored.split_long_sections, defaultOptimizerSettings.split_long_sections),
     remove_fonts: booleanOrDefault(stored.remove_fonts, defaultOptimizerSettings.remove_fonts),
     remove_css: booleanOrDefault(stored.remove_css, defaultOptimizerSettings.remove_css),
     text_cleanup: booleanOrDefault(stored.text_cleanup, defaultOptimizerSettings.text_cleanup)
