@@ -71,8 +71,6 @@ SMART_QUOTE_MAP = {
     '\u2019': "'",   # right single quote
     '\u201c': '"',   # left double quote
     '\u201d': '"',   # right double quote
-    '\u2014': '--',  # em dash
-    '\u2013': '-',   # en dash
     '\u2026': '...', # ellipsis character
     '\u00a0': ' ',   # non-breaking space
     '\u201a': ',',   # low-9 quote (often misread comma)
@@ -130,7 +128,7 @@ def _fix_ocr_artifacts(text: str, normalize_quotes: bool = True) -> tuple[str, i
             text = text.replace(old, new)
             lig_count += n
 
-    # Normalize smart quotes/dashes
+    # Normalize smart quotes.
     if normalize_quotes:
         for old, new in SMART_QUOTE_MAP.items():
             if old in text:
