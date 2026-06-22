@@ -33,6 +33,7 @@ from .models import Job, LibraryItem, Source
 from .schemas import (
     ArticleImportRequest,
     BrowseResult,
+    ClientLogRequest,
     DeviceProbeRequest,
     DeviceSendRequest,
     ImportUrlRequest,
@@ -78,6 +79,13 @@ def auth_status() -> dict:
 
 @app.get("/api/auth/login")
 def auth_login() -> dict:
+    return {"ok": True}
+
+
+@app.post("/api/client-log")
+def client_log(payload: ClientLogRequest) -> dict:
+    safe_scope = "".join(char if char.isalnum() or char in ".:-_" else "_" for char in payload.scope)[:40] or "client"
+    print(f"[client:{safe_scope}] {payload.level.upper()}: {payload.message}", flush=True)
     return {"ok": True}
 
 

@@ -1,4 +1,5 @@
 export type SerialTransferProgress = (percent: number, message: string) => void;
+export type SerialTransferDiagnostic = (message: string) => void;
 
 export type SerialTransferResult = {
   destination_path: string;
@@ -12,7 +13,7 @@ type SerialPortInfo = {
 };
 
 type SerialPort = {
-  open(options: { baudRate: number }): Promise<void>;
+  open(options: { baudRate: number; bufferSize?: number }): Promise<void>;
   close(): Promise<void>;
   readable: ReadableStream<Uint8Array> | null;
   writable: WritableStream<Uint8Array> | null;
@@ -34,70 +35,99 @@ const esp32SerialFilters = [{ usbVendorId: 0x303a, usbProductId: 0x1001 }];
 const commandMagic = new Uint8Array([0x43, 0x4d, 0x4e, 0x44]);
 const textEncoder = new TextEncoder();
 const crcTable = createCrcTable();
+const serialAckTimeoutMs = 45000;
+const serialWriteTimeoutMs = 45000;
+const serialOpenDrainMs = 200;
+const serialCloseTimeoutMs = 1500;
+let activeSerialOperation: Promise<unknown> | null = null;
 
 export function serialTransferSupported() {
   return Boolean(navigator.serial);
 }
 
 export async function probeSerialDevice(): Promise<Record<string, unknown>> {
-  const connection = await openSerialConnection();
-  try {
-    await connection.write(new Uint8Array([...commandMagic, 0x53]));
-    const status = await readUntil(connection, (line) => line.startsWith("STATUS:"), 3000, "USB serial status");
-    return { device: "USB Serial", ip: status.replace(/^STATUS:/, "") || "USB" };
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("Timed out")) {
-      throw new Error(
-        "USB serial opened, but the reader did not answer Inky's serial transfer protocol. Install CrossInk firmware with USB serial transfer support."
-      );
+  return withSerialOperation(async () => {
+    const connection = await openSerialConnection();
+    try {
+      await connection.write(new Uint8Array([...commandMagic, 0x53]));
+      const status = await readUntil(connection, (line) => line.startsWith("STATUS:"), 3000, "USB serial status");
+      return { device: "USB Serial", ip: status.replace(/^STATUS:/, "") || "USB" };
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("Timed out")) {
+        throw new Error(
+          "USB serial opened, but the reader did not answer Inky's serial transfer protocol. Install CrossInk firmware with USB serial transfer support."
+        );
+      }
+      throw error;
+    } finally {
+      await connection.close();
     }
-    throw error;
-  } finally {
-    await connection.close();
-  }
+  });
 }
 
 export async function sendBlobToSerialDevice(
   blob: Blob,
   filename: string,
   destinationPath: string,
-  progress?: SerialTransferProgress
+  progress?: SerialTransferProgress,
+  diagnostic?: SerialTransferDiagnostic
 ): Promise<SerialTransferResult> {
-  const connection = await openSerialConnection();
-  const finalName = deviceFilename(filename);
-  const devicePath = joinSerialPath(destinationPath, finalName);
+  return withSerialOperation(async () => {
+    const connection = await openSerialConnection();
+    const finalName = deviceFilename(filename);
+    const devicePath = joinSerialPath(destinationPath, finalName);
 
-  try {
-    progress?.(2, "Connected over USB");
-    await ensureSerialFolder(connection, destinationPath, progress);
-    await writeSerialFile(connection, devicePath, blob, progress);
-    progress?.(100, "Sent to device");
-    return {
-      destination_path: normalizeSerialDestinationPath(destinationPath),
-      filename: finalName,
-      response: "OK"
-    };
-  } finally {
-    await connection.close();
-  }
+    try {
+      progress?.(2, "Connected over USB");
+      await ensureSerialFolder(connection, destinationPath, progress);
+      await writeSerialFile(connection, devicePath, blob, progress, diagnostic);
+      progress?.(100, "Sent to device");
+      return {
+        destination_path: normalizeSerialDestinationPath(destinationPath),
+        filename: finalName,
+        response: "OK"
+      };
+    } finally {
+      await connection.close();
+    }
+  });
 }
 
 class SerialConnection {
   private buffer: number[] = [];
   private waiters: ((value: number) => void)[] = [];
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  private readonly pumpPromise: Promise<void>;
 
   constructor(private readonly port: SerialPort) {
-    this.pump();
+    this.pumpPromise = this.pump();
   }
 
-  async write(data: Uint8Array) {
+  async write(data: Uint8Array, timeoutMs = serialWriteTimeoutMs, label = "serial write", onStillWaiting?: () => void) {
     if (!this.port.writable) throw new Error("Serial port is not writable.");
     const writer = this.port.writable.getWriter();
+    let didTimeout = false;
+    const waitTimer = window.setTimeout(() => onStillWaiting?.(), 3000);
     try {
-      await writer.write(data);
+      await withTimeout(writer.write(data), timeoutMs, label, () => {
+        didTimeout = true;
+      });
+    } catch (error) {
+      if (didTimeout) {
+        try {
+          await writer.abort(error);
+        } catch {
+          // The port is already going to be closed by the caller.
+        }
+      }
+      throw error;
     } finally {
-      writer.releaseLock();
+      window.clearTimeout(waitTimer);
+      try {
+        writer.releaseLock();
+      } catch {
+        // Releasing after an aborted write can race with stream shutdown.
+      }
     }
   }
 
@@ -144,6 +174,11 @@ class SerialConnection {
       // Ignore close races.
     }
     try {
+      await withTimeout(this.pumpPromise, serialCloseTimeoutMs, "serial reader shutdown");
+    } catch {
+      // The pump handles normal shutdown internally.
+    }
+    try {
       await this.port.close();
     } catch {
       // Ignore close races.
@@ -171,6 +206,25 @@ class SerialConnection {
       for (const waiter of this.waiters.splice(0)) waiter(-1);
     }
   }
+
+  async drainInput(timeoutMs = serialOpenDrainMs) {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      if (this.buffer.length > 0) {
+        this.buffer.length = 0;
+        continue;
+      }
+
+      try {
+        await this.readByte(Math.max(1, deadline - Date.now()));
+      } catch (error) {
+        if (error instanceof Error && error.message === "Serial read timed out.") return;
+        if (error instanceof Error && error.message === "Serial port closed.") return;
+        throw error;
+      }
+    }
+  }
 }
 
 async function openSerialConnection() {
@@ -180,8 +234,23 @@ async function openSerialConnection() {
 
   const grantedPorts = await navigator.serial.getPorts();
   const port = grantedPorts.find(isEsp32SerialPort) || await navigator.serial.requestPort({ filters: esp32SerialFilters });
-  await port.open({ baudRate: 115200 });
-  return new SerialConnection(port);
+  try {
+    await port.open({ baudRate: 115200, bufferSize: 8192 });
+  } catch (error) {
+    if (error instanceof Error && /busy|already open|access denied|in use/i.test(error.message)) {
+      throw new Error("USB serial port is busy. Close any serial monitor or other Inky window using the reader, then try again.");
+    }
+    throw error;
+  }
+
+  const connection = new SerialConnection(port);
+  try {
+    await connection.drainInput();
+    return connection;
+  } catch (error) {
+    await connection.close();
+    throw error;
+  }
 }
 
 async function ensureSerialFolder(connection: SerialConnection, destinationPath: string, progress?: SerialTransferProgress) {
@@ -206,7 +275,8 @@ async function writeSerialFile(
   connection: SerialConnection,
   fullPath: string,
   blob: Blob,
-  progress?: SerialTransferProgress
+  progress?: SerialTransferProgress,
+  diagnostic?: SerialTransferDiagnostic
 ) {
   const data = new Uint8Array(await blob.arrayBuffer());
   const pathBytes = textEncoder.encode(fullPath);
@@ -219,19 +289,90 @@ async function writeSerialFile(
     return line === "READY";
   }, 10000, `write ${fullPath}`);
 
-  const chunkSize = 2048;
+  const chunkSize = 256;
   for (let sent = 0; sent < data.length;) {
     const end = Math.min(sent + chunkSize, data.length);
-    await connection.write(data.slice(sent, end));
+    await connection.write(data.slice(sent, end), serialWriteTimeoutMs, `serial write at ${formatBytes(sent)} of ${formatBytes(data.length)}`, () => {
+      diagnostic?.(`Waiting for browser to write ${formatBytes(sent)} of ${formatBytes(data.length)}`);
+    });
     sent = end;
     progress?.(10 + Math.floor((sent / Math.max(1, data.length)) * 85), `Uploading ${formatBytes(sent)} of ${formatBytes(data.length)}`);
-    const ack = await connection.readByte(30000);
-    if (ack !== 0x06) throw new Error(`Device returned unexpected ACK 0x${ack.toString(16)}.`);
+    await readAck(
+      connection,
+      serialAckTimeoutMs,
+      `upload ACK after ${formatBytes(sent)} of ${formatBytes(data.length)}`,
+      () => {
+        diagnostic?.(`Waiting for device to confirm ${formatBytes(sent)} of ${formatBytes(data.length)}`);
+      },
+      (line) => {
+        if (line.startsWith("BUSY:write:")) {
+          diagnostic?.(`Device writing to SD (${formatBytes(sent)} of ${formatBytes(data.length)}): ${line}`);
+        } else if (line.startsWith("BUSY:read:")) {
+          diagnostic?.(`Device waiting for serial bytes (${formatBytes(sent)} of ${formatBytes(data.length)}): ${line}`);
+        }
+      }
+    );
   }
 
   await connection.write(new Uint8Array(u32le(checksum)));
   const response = await readUntil(connection, (line) => line === "OK" || line.startsWith("ERR:"), 30000, `finish ${fullPath}`);
   if (response !== "OK") throw new Error(response);
+}
+
+async function readAck(
+  connection: SerialConnection,
+  timeoutMs: number,
+  label: string,
+  onStillWaiting?: () => void,
+  onDeviceStatus?: (line: string) => void
+) {
+  let deadline = Date.now() + timeoutMs;
+  let waitTimer = window.setTimeout(() => onStillWaiting?.(), 3000);
+
+  try {
+    while (true) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new Error(`Timed out waiting for ${label}.`);
+
+      let byte: number;
+      try {
+        byte = await connection.readByte(remaining);
+      } catch (error) {
+        if (error instanceof Error && error.message === "Serial read timed out.") {
+          throw new Error(`Timed out waiting for ${label}.`);
+        }
+        throw error;
+      }
+      if (byte === 0x06) return;
+
+      const line = await readLineAfterFirstByte(connection, byte, Math.max(1, deadline - Date.now()));
+      if (line.startsWith("BUSY:")) {
+        onDeviceStatus?.(line);
+        deadline = Date.now() + timeoutMs;
+        continue;
+      }
+      if (!line || isSerialLog(line)) continue;
+      if (line.startsWith("ERR:")) throw new Error(`${line} while waiting for ${label}.`);
+      throw new Error(`Device returned unexpected serial response while waiting for ${label}: ${line}`);
+    }
+  } finally {
+    window.clearTimeout(waitTimer);
+  }
+}
+
+async function readLineAfterFirstByte(connection: SerialConnection, firstByte: number, timeoutMs: number) {
+  if (firstByte === 0x0a) return "";
+
+  const deadline = Date.now() + timeoutMs;
+  let line = firstByte === 0x0d ? "" : String.fromCharCode(firstByte);
+  while (true) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return line;
+
+    const byte = await connection.readByte(remaining);
+    if (byte === 0x0a) return line;
+    if (byte !== 0x0d) line += String.fromCharCode(byte);
+  }
 }
 
 async function readUntil(connection: SerialConnection, predicate: (line: string) => boolean, timeoutMs: number, label: string) {
@@ -241,7 +382,7 @@ async function readUntil(connection: SerialConnection, predicate: (line: string)
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new Error(`Timed out waiting for ${label} response.`);
     const line = await connection.readLine(remaining);
-    if (!line || isEspLog(line)) continue;
+    if (!line || isSerialLog(line)) continue;
     if (predicate(line)) return line;
   }
 }
@@ -251,8 +392,35 @@ function isEsp32SerialPort(port: SerialPort) {
   return usbVendorId === 0x303a && usbProductId === 0x1001;
 }
 
-function isEspLog(line: string) {
-  return /^[IWED] \(\d+\)/.test(line);
+function isSerialLog(line: string) {
+  return /^[IWED] \(\d+\)/.test(line) || /^\[\d+\] \[[^\]]+\]/.test(line);
+}
+
+async function withSerialOperation<T>(operation: () => Promise<T>): Promise<T> {
+  if (activeSerialOperation) {
+    throw new Error("Another USB serial operation is already in progress. Wait for it to finish, then try again.");
+  }
+
+  const promise = operation();
+  activeSerialOperation = promise;
+  try {
+    return await promise;
+  } finally {
+    if (activeSerialOperation === promise) activeSerialOperation = null;
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string, onTimeout?: () => void): Promise<T> {
+  let timeout = 0;
+  return Promise.race([
+    promise,
+    new Promise<T>((_resolve, reject) => {
+      timeout = window.setTimeout(() => {
+        onTimeout?.();
+        reject(new Error(`Timed out during ${label}.`));
+      }, timeoutMs);
+    })
+  ]).finally(() => window.clearTimeout(timeout));
 }
 
 function joinSerialPath(destinationPath: string, filename: string) {

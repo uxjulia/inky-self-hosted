@@ -966,10 +966,19 @@ export default function App() {
       if (standaloneMode) {
         const { record, blob } = await getStandaloneFile(item.id);
         const jobId = crypto.randomUUID();
+        const transferLog = createTransferLogger("wifi", record.filename);
         updateBrowserSendJob(jobId, item.id, 0, "Preparing upload", "running");
-        await sendBlobToDevice(blob, record.filename, record.mediaType, deviceUrl, destinationPath, (progress, message) => {
-          updateBrowserSendJob(jobId, item.id, progress, message, "running");
-        });
+        transferLog(0, `Starting Wi-Fi upload to ${destinationPath || "/"}`);
+        try {
+          await sendBlobToDevice(blob, record.filename, record.mediaType, deviceUrl, destinationPath, (progress, message) => {
+            updateBrowserSendJob(jobId, item.id, progress, message, "running");
+            transferLog(progress, message);
+          });
+          transferLog(100, "Wi-Fi upload complete");
+        } catch (error) {
+          transferLog(null, `Wi-Fi upload failed: ${messageFromUnknown(error)}`, "error");
+          throw error;
+        }
         await markStandaloneFileSent(item.id);
         updateBrowserSendJob(jobId, item.id, 100, "Sent to device", "succeeded");
         showToast("Sent to device");
@@ -1010,10 +1019,25 @@ export default function App() {
 
   async function sendBlobViaUsb(blob: Blob, filename: string, itemId: number) {
     const jobId = crypto.randomUUID();
+    const transferLog = createTransferLogger("usb", filename);
+    let lastProgress = 0;
+    let lastMessage = "Preparing USB upload";
     updateBrowserSendJob(jobId, itemId, 0, "Preparing USB upload", "running");
-    await sendBlobToSerialDevice(blob, filename, destinationPath, (progress, message) => {
-      updateBrowserSendJob(jobId, itemId, progress, message, "running");
-    });
+    transferLog(0, `Starting USB upload to ${destinationPath || "/"}`);
+    try {
+      await sendBlobToSerialDevice(blob, filename, destinationPath, (progress, message) => {
+        lastProgress = progress;
+        lastMessage = message;
+        updateBrowserSendJob(jobId, itemId, progress, message, "running");
+        transferLog(progress, message);
+      }, (message) => transferLog(null, message));
+      transferLog(100, "USB upload complete");
+    } catch (error) {
+      const message = messageFromUnknown(error);
+      updateBrowserSendJob(jobId, itemId, lastProgress, message, "failed");
+      transferLog(null, `USB upload failed after ${lastMessage}: ${message}`, "error");
+      throw error;
+    }
     updateBrowserSendJob(jobId, itemId, 100, "Sent to device over USB", "succeeded");
   }
 
@@ -2215,6 +2239,47 @@ function formatBytes(size: number) {
     unit += 1;
   }
   return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+type ClientLogLevel = "info" | "warning" | "error";
+
+function createTransferLogger(transport: "usb" | "wifi", filename: string) {
+  let lastLoggedPercent = -10;
+  let lastLoggedAt = 0;
+
+  return (percent: number | null, message: string, level: ClientLogLevel = "info") => {
+    const now = Date.now();
+    const shouldLog =
+      level !== "info" ||
+      percent === null ||
+      percent <= 0 ||
+      percent >= 100 ||
+      percent - lastLoggedPercent >= 10 ||
+      now - lastLoggedAt >= 10000;
+
+    if (!shouldLog) return;
+    if (typeof percent === "number") lastLoggedPercent = percent;
+    lastLoggedAt = now;
+
+    const progress = typeof percent === "number" ? `[${percent}%] ` : "";
+    void logClientEvent("transfer", `${transport} ${filename}: ${progress}${message}`, level);
+  };
+}
+
+async function logClientEvent(scope: string, message: string, level: ClientLogLevel = "info") {
+  console[level === "error" ? "error" : level === "warning" ? "warn" : "info"](`[client:${scope}] ${message}`);
+  try {
+    await api("/api/client-log", {
+      method: "POST",
+      body: JSON.stringify({ scope, message, level })
+    });
+  } catch {
+    // Logging should never make a transfer fail.
+  }
+}
+
+function messageFromUnknown(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function api<T = unknown>(path: string, init: RequestInit & { rawBody?: boolean } = {}): Promise<T> {

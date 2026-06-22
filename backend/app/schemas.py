@@ -148,6 +148,12 @@ class DeviceProbeRequest(BaseModel):
     device_url: str
 
 
+class ClientLogRequest(BaseModel):
+    scope: str = Field(default="client", max_length=40)
+    message: str = Field(min_length=1, max_length=500)
+    level: Literal["info", "warning", "error"] = "info"
+
+
 class DeviceSendRequest(OptimizeRequest):
     device_url: str
     destination_path: str = "/"

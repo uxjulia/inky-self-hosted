@@ -66,7 +66,7 @@ function backendCommand(port, dataDir, mountedLibraryDir) {
 
   return {
     command: pythonExecutable(),
-    args: ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)],
+    args: ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port), "--no-access-log"],
     cwd: backendDir(),
     env: {
       INKY_DATABASE_URL: `sqlite:///${path.join(dataDir, "inky.db")}`,
