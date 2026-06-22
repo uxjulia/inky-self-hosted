@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import posixpath
+import threading
 import time
 import uuid
 import zipfile
@@ -28,9 +29,12 @@ IMAGE_LIBRARY_EXTENSIONS = {".bmp", ".png"}
 SENDABLE_LIBRARY_EXTENSIONS = LOCAL_LIBRARY_EXTENSIONS | IMAGE_LIBRARY_EXTENSIONS
 EPUB_EXTENSION = ".epub"
 EMPTY_MOUNTED_SCAN_GRACE_SECONDS = 30
+MOUNTED_LIBRARY_SYNC_INTERVAL_SECONDS = 30
 CONTAINER_NS = {"container": "urn:oasis:names:tc:opendocument:xmlns:container"}
 OPF_NS = {"dc": "http://purl.org/dc/elements/1.1/"}
 _last_empty_synced_scan_at: float | None = None
+_last_mounted_library_sync_at: float | None = None
+_mounted_library_sync_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -153,7 +157,22 @@ def copy_uploaded_file(db: Session, source_path: Path, filename: str) -> Library
     return item
 
 
-def sync_mounted_library(db: Session) -> None:
+def sync_mounted_library(db: Session, *, force: bool = False) -> None:
+    global _last_empty_synced_scan_at, _last_mounted_library_sync_at
+
+    now = time.monotonic()
+    if not force and _last_mounted_library_sync_at is not None and now - _last_mounted_library_sync_at < MOUNTED_LIBRARY_SYNC_INTERVAL_SECONDS:
+        return
+    if not _mounted_library_sync_lock.acquire(blocking=False):
+        return
+    _last_mounted_library_sync_at = now
+    try:
+        _sync_mounted_library_now(db)
+    finally:
+        _mounted_library_sync_lock.release()
+
+
+def _sync_mounted_library_now(db: Session) -> None:
     global _last_empty_synced_scan_at
 
     current_source_urls: set[str] = set()
@@ -197,7 +216,7 @@ def register_desktop_library_folder(db: Session, folder_path: Path) -> list[Libr
         folders.append(folder)
         _save_desktop_library_folders(folders)
 
-    sync_mounted_library(db)
+    sync_mounted_library(db, force=True)
     return db.query(LibraryItem).order_by(LibraryItem.updated_at.desc()).all()
 
 

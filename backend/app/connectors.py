@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from time import perf_counter
 from urllib.parse import quote, unquote, urljoin, urlparse
 from xml.etree import ElementTree as ET
 
@@ -61,16 +62,24 @@ async def search_source(db: Session, source_id: int, query: str, target: str | N
 
 
 async def _fetch_text(url: str, source: Source) -> str:
+    started = perf_counter()
     async with httpx.AsyncClient(timeout=get_settings().http_timeout_seconds, follow_redirects=True) as client:
         response = await client.get(url, auth=_auth(source))
         response.raise_for_status()
-        return response.text
+        text = response.text
+    elapsed_ms = int((perf_counter() - started) * 1000)
+    print(f"[opds] fetched {source.name} {url} in {elapsed_ms}ms ({len(text)} chars)", flush=True)
+    return text
 
 
 async def browse_opds(source: Source, target: str | None = None) -> BrowseResult:
     url = join_remote(source.url, target)
+    started = perf_counter()
     xml_text = await _fetch_text(url, source)
-    return _parse_opds(xml_text, source, url)
+    result = _parse_opds(xml_text, source, url)
+    elapsed_ms = int((perf_counter() - started) * 1000)
+    print(f"[opds] browsed {source.name} {url} in {elapsed_ms}ms ({len(result.items)} items)", flush=True)
+    return result
 
 
 async def search_opds(source: Source, query: str, target: str | None = None) -> BrowseResult:
