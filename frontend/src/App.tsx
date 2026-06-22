@@ -164,7 +164,10 @@ const isIosApp = window.Capacitor?.getPlatform?.() === "ios";
 const iosServerSettingsEnabled = isIosApp && import.meta.env.VITE_INKY_IOS_SERVER_SETTINGS === "1";
 const canConfigureApiBaseUrl = !window.inkyDesktop?.apiBaseUrl && iosServerSettingsEnabled;
 const initialStandaloneMode = isNativeApp && !getInitialApiBaseUrl();
+const isSelfHostedBrowser = !isDesktopApp && !isNativeApp;
 const browsePageSize = 25;
+const defaultDeviceHost = isSelfHostedBrowser ? "" : "crosspoint.local";
+const deviceHostPlaceholder = isSelfHostedBrowser ? "192.168." : "crosspoint.local";
 const defaultOptimizerSettings: OptimizerSettings = {
   filename_render_first: "Book Title",
   filename_render_second: "Author",
@@ -202,7 +205,7 @@ export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [form, setForm] = useState<SourceForm>(emptySourceForm);
-  const [deviceUrl, setDeviceUrl] = useState("crosspoint.local");
+  const [deviceUrl, setDeviceUrl] = useState(defaultDeviceHost);
   const [destinationPath, setDestinationPath] = useState("/");
   const [device, setDevice] = useState<DeviceTarget>(() => getInitialDevice());
   const [transferMode, setTransferMode] = useState<TransferMode>(() => getInitialTransferMode());
@@ -232,6 +235,7 @@ export default function App() {
   const selectedSource = allSources.find((source) => source.id === selectedSourceId) || null;
   const isLocalSource = selectedSourceId === localSourceId;
   const deviceLabel = device.toUpperCase();
+  const resolvedDeviceUrl = resolveDeviceHostInput(deviceUrl);
   const trimmedSearchQuery = searchQuery.trim();
   const activeBrowseResult = searchResult || browseResult;
   const displayedLibrary = useMemo(() => {
@@ -833,7 +837,7 @@ export default function App() {
             body: JSON.stringify({
               ...defaultOptimizePayload(),
               path: item.path,
-              device_url: deviceUrl,
+              device_url: resolvedDeviceUrl,
               destination_path: destinationPath,
               optimize_first: true
             })
@@ -849,7 +853,7 @@ export default function App() {
           method: "POST",
           body: JSON.stringify({
             ...defaultOptimizePayload(),
-            device_url: deviceUrl,
+            device_url: resolvedDeviceUrl,
             destination_path: destinationPath,
             optimize_first: true
           })
@@ -970,7 +974,7 @@ export default function App() {
         updateBrowserSendJob(jobId, item.id, 0, "Preparing upload", "running");
         transferLog(0, `Starting Wi-Fi upload to ${destinationPath || "/"}`);
         try {
-          await sendBlobToDevice(blob, record.filename, record.mediaType, deviceUrl, destinationPath, (progress, message) => {
+          await sendBlobToDevice(blob, record.filename, record.mediaType, resolvedDeviceUrl, destinationPath, (progress, message) => {
             updateBrowserSendJob(jobId, item.id, progress, message, "running");
             transferLog(progress, message);
           });
@@ -990,7 +994,7 @@ export default function App() {
         method: "POST",
         body: JSON.stringify({
           ...defaultOptimizePayload(),
-          device_url: deviceUrl,
+          device_url: resolvedDeviceUrl,
           destination_path: destinationPath,
           optimize_first: true
         })
@@ -1077,12 +1081,12 @@ export default function App() {
       const status = transferMode === "usb"
         ? await probeSerialDevice()
         : standaloneMode
-        ? await probeStandaloneDevice(deviceUrl)
+        ? await probeStandaloneDevice(resolvedDeviceUrl)
         : await api<Record<string, unknown>>("/api/devices/probe", {
             method: "POST",
-            body: JSON.stringify({ device_url: deviceUrl })
+            body: JSON.stringify({ device_url: resolvedDeviceUrl })
           });
-      setDeviceStatus(`Successfully connected to: ${status.device || "Device"} at ${transferMode === "usb" ? "USB" : status.ip || deviceUrl}`);
+      setDeviceStatus(`Successfully connected to: ${status.device || "Device"} at ${transferMode === "usb" ? "USB" : status.ip || resolvedDeviceUrl}`);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
       setDeviceError(readableDeviceError(message));
@@ -1257,7 +1261,7 @@ export default function App() {
       </header>
 
       {view === "help" ? (
-        <HelpPage onOpenApp={openApp} isDesktopApp={isDesktopApp} standaloneMode={standaloneMode} />
+        <HelpPage onOpenApp={openApp} isDesktopApp={isDesktopApp} isSelfHostedBrowser={isSelfHostedBrowser} standaloneMode={standaloneMode} />
       ) : (
       <section className="layout">
         <aside className="sidebar">
@@ -1316,7 +1320,7 @@ export default function App() {
                   setDeviceStatus("");
                   setDeviceUrl(event.target.value);
                 }}
-                placeholder="crosspoint.local"
+                placeholder={deviceHostPlaceholder}
               />
             </label>
             )}
@@ -2106,6 +2110,19 @@ function getInitialDevice(): DeviceTarget {
 function getInitialTransferMode(): TransferMode {
   const stored = window.localStorage.getItem(transferModeStorageKey);
   return stored === "usb" ? "usb" : "wifi";
+}
+
+function resolveDeviceHostInput(value: string) {
+  const trimmed = value.trim();
+  if (!isSelfHostedBrowser) return trimmed;
+
+  const partialPrivateIp = /^(\d{1,3})\.(\d{1,3})$/.exec(trimmed);
+  if (!partialPrivateIp) return trimmed;
+
+  const thirdOctet = Number(partialPrivateIp[1]);
+  const fourthOctet = Number(partialPrivateIp[2]);
+  if (thirdOctet > 255 || fourthOctet > 255) return trimmed;
+  return `192.168.${thirdOctet}.${fourthOctet}`;
 }
 
 function getInitialView(): AppView {

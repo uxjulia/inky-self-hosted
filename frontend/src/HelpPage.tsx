@@ -2,11 +2,12 @@ import { Home } from "lucide-react";
 
 type HelpPageProps = {
   isDesktopApp: boolean;
+  isSelfHostedBrowser: boolean;
   standaloneMode: boolean;
   onOpenApp: () => void;
 };
 
-export function HelpPage({ isDesktopApp, standaloneMode, onOpenApp }: HelpPageProps) {
+export function HelpPage({ isDesktopApp, isSelfHostedBrowser, standaloneMode, onOpenApp }: HelpPageProps) {
   return (
     <section className="help-page">
       <div className="help-hero">
@@ -29,6 +30,7 @@ export function HelpPage({ isDesktopApp, standaloneMode, onOpenApp }: HelpPagePr
             <p>On the reader, open File Transfer for Wi-Fi sends, or connect USB for serial sends.</p>
             <ul>
               <li>For Wi-Fi, use the device host shown by CrossInk, usually <code>crosspoint.local</code> or an IP address.</li>
+              {isSelfHostedBrowser && <li>For local <code>192.168.x.x</code> addresses, you can enter just the last two octets, such as <code>0.41</code>.</li>}
               <li>For USB, connect the reader by cable and select USB as the transfer method.</li>
               <li>Keep the destination folder as <code>/</code> or enter a folder such as <code>/Books</code>. Inky creates missing folders before upload.</li>
               {!standaloneMode && <li>Select X3 or X4 before sending EPUBs so the optimizer uses the right screen target.</li>}
