@@ -99,6 +99,13 @@ Open the iOS project:
 npm run ios:open
 ```
 
+To show the development-only Server button for testing against a LAN backend,
+sync the iOS build with:
+
+```bash
+VITE_INKY_IOS_SERVER_SETTINGS=1 npm run ios:open
+```
+
 In Xcode, choose your personal Apple Account as the signing team, select your
 iPhone, and run the app.
 
@@ -119,7 +126,8 @@ Find your Mac's Wi-Fi IP address:
 ipconfig getifaddr en0
 ```
 
-Then use the Server button in the iOS app and set the Inky server URL to:
+Then use the development Server button in the iOS app and set the Inky server
+URL to:
 
 ```text
 http://YOUR_MAC_IP:8000

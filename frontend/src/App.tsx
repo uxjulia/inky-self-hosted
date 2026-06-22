@@ -159,8 +159,10 @@ const emptySourceForm: SourceForm = { type: "opds", name: "", url: "", username:
 const localSource: Source = { id: localSourceId, type: "local", name: "Local Library", url: "local://library" };
 const sourceTypes: RemoteSourceType[] = ["opds", "webdav", "feed", "local_folder"];
 const isDesktopApp = Boolean(window.inkyDesktop?.selectLibraryFolder);
-const canConfigureApiBaseUrl = !window.inkyDesktop?.apiBaseUrl;
 const isNativeApp = Boolean(window.Capacitor?.isNativePlatform?.());
+const isIosApp = window.Capacitor?.getPlatform?.() === "ios";
+const iosServerSettingsEnabled = isIosApp && import.meta.env.VITE_INKY_IOS_SERVER_SETTINGS === "1";
+const canConfigureApiBaseUrl = !window.inkyDesktop?.apiBaseUrl && iosServerSettingsEnabled;
 const initialStandaloneMode = isNativeApp && !getInitialApiBaseUrl();
 const browsePageSize = 25;
 const defaultOptimizerSettings: OptimizerSettings = {
