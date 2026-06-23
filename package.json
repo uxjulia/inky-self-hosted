@@ -14,6 +14,7 @@
     "dev:api:lan": "mkdir -p backend/storage && cd backend && INKY_DATABASE_URL=${INKY_DATABASE_URL:-sqlite:///./storage/inky.db} INKY_DATA_DIR=${INKY_DATA_DIR:-./storage} .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port ${INKY_API_PORT:-8001} --no-access-log",
     "dev:web": "npm run dev --prefix frontend",
     "build": "npm run build --prefix frontend && backend/.venv/bin/python -m compileall backend/app",
+    "build:hosted": "VITE_INKY_APP_MODE=hosted npm run build --prefix frontend",
     "ios:sync": "npm run build && npx cap sync ios",
     "ios:open": "npm run ios:sync && npx cap open ios",
     "desktop:backend": "node scripts/build-backend-desktop.mjs",

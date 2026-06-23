@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, FormEvent } from "react";
+import { optimizeEpubInBrowser } from "./browserEpubOptimizer";
 import { probeStandaloneDevice, sendBlobToDevice } from "./deviceTransfer";
 import { HelpPage } from "./HelpPage";
 import { probeSerialDevice, sendBlobToSerialDevice, serialTransferSupported } from "./serialTransfer";
@@ -57,6 +58,8 @@ declare global {
 }
 
 const bundledApiBaseUrl = window.inkyDesktop?.apiBaseUrl || import.meta.env.VITE_API_BASE_URL || "";
+const appMode = import.meta.env.VITE_INKY_APP_MODE || "self-hosted";
+const isHostedApp = appMode === "hosted";
 const themeStorageKey = "inky-theme";
 const localSourceIndexStorageKey = "inky-local-source-index";
 const optimizerSettingsStorageKey = "inky-optimizer-settings";
@@ -165,8 +168,9 @@ const isNativeApp = Boolean(window.Capacitor?.isNativePlatform?.());
 const isIosApp = window.Capacitor?.getPlatform?.() === "ios";
 const iosServerSettingsEnabled = isIosApp && import.meta.env.VITE_INKY_IOS_SERVER_SETTINGS === "1";
 const canConfigureApiBaseUrl = !window.inkyDesktop?.apiBaseUrl && iosServerSettingsEnabled;
-const initialStandaloneMode = isNativeApp && !getInitialApiBaseUrl();
-const isSelfHostedBrowser = !isDesktopApp && !isNativeApp;
+const initialStandaloneMode = (isNativeApp || isHostedApp) && !getInitialApiBaseUrl();
+const isSelfHostedBrowser = !isDesktopApp && !isNativeApp && !isHostedApp;
+const canUseWifiTransfer = !isHostedApp;
 const browsePageSize = 25;
 const defaultDeviceHost = isSelfHostedBrowser ? "" : "crosspoint.local";
 const deviceHostPlaceholder = isSelfHostedBrowser ? "192.168." : "crosspoint.local";
@@ -976,7 +980,8 @@ export default function App() {
       if (transferMode === "usb") {
         if (standaloneMode) {
           const { record, blob } = await getStandaloneFile(item.id);
-          await sendBlobViaUsb(blob, record.filename, item.id);
+          const prepared = await prepareStandaloneBlobForSend(blob, record.filename, item.id);
+          await sendBlobViaUsb(prepared.blob, prepared.filename, item.id);
           await markStandaloneFileSent(item.id);
           showToast("Sent to device");
           await loadLibrary();
@@ -991,12 +996,13 @@ export default function App() {
 
       if (standaloneMode) {
         const { record, blob } = await getStandaloneFile(item.id);
+        const prepared = await prepareStandaloneBlobForSend(blob, record.filename, item.id);
         const jobId = crypto.randomUUID();
-        const transferLog = createTransferLogger("wifi", record.filename);
+        const transferLog = createTransferLogger("wifi", prepared.filename);
         updateBrowserSendJob(jobId, item.id, 0, "Preparing upload", "running");
         transferLog(0, `Starting Wi-Fi upload to ${destinationPath || "/"}`);
         try {
-          await sendBlobToDevice(blob, record.filename, record.mediaType, resolvedDeviceUrl, destinationPath, (progress, message) => {
+          await sendBlobToDevice(prepared.blob, prepared.filename, record.mediaType, resolvedDeviceUrl, destinationPath, (progress, message) => {
             updateBrowserSendJob(jobId, item.id, progress, message, "running");
             transferLog(progress, message);
           });
@@ -1024,6 +1030,17 @@ export default function App() {
       trackJob(job);
       showToast("Send queued");
     });
+  }
+
+  async function prepareStandaloneBlobForSend(blob: Blob, filename: string, itemId: number) {
+    if (!hasEpubExtension(filename)) return { blob, filename };
+    const jobId = crypto.randomUUID();
+    updateBrowserSendJob(jobId, itemId, 0, "Optimizing EPUB in browser", "running");
+    const result = await optimizeEpubInBrowser(blob, filename, device, optimizerSettings, (progress, message) => {
+      updateBrowserSendJob(jobId, itemId, progress, message, "running");
+    });
+    updateBrowserSendJob(jobId, itemId, 100, "EPUB optimized in browser", "succeeded");
+    return result;
   }
 
   async function sendLibraryItemViaUsb(item: LibraryItem) {
@@ -1283,7 +1300,7 @@ export default function App() {
       </header>
 
       {view === "help" ? (
-        <HelpPage onOpenApp={openApp} isDesktopApp={isDesktopApp} isSelfHostedBrowser={isSelfHostedBrowser} standaloneMode={standaloneMode} />
+        <HelpPage onOpenApp={openApp} isDesktopApp={isDesktopApp} isSelfHostedBrowser={isSelfHostedBrowser} standaloneMode={standaloneMode} isHostedApp={isHostedApp} />
       ) : (
       <section className="layout">
         <aside className="sidebar">
@@ -1321,16 +1338,25 @@ export default function App() {
             )}
             <label className="field">
               <span>Transfer method</span>
-              <div className="segmented transfer-mode-segmented">
-                <button type="button" className={transferMode === "wifi" ? "active" : ""} onClick={() => setTransferMode("wifi")}>
-                  <Wifi size={14} />
-                  Wi-Fi
-                </button>
-                <button type="button" className={transferMode === "usb" ? "active" : ""} onClick={() => setTransferMode("usb")}>
-                  <Usb size={14} />
-                  USB
-                </button>
-              </div>
+              {canUseWifiTransfer ? (
+                <div className="segmented transfer-mode-segmented">
+                  <button type="button" className={transferMode === "wifi" ? "active" : ""} onClick={() => setTransferMode("wifi")}>
+                    <Wifi size={14} />
+                    Wi-Fi
+                  </button>
+                  <button type="button" className={transferMode === "usb" ? "active" : ""} onClick={() => setTransferMode("usb")}>
+                    <Usb size={14} />
+                    USB
+                  </button>
+                </div>
+              ) : (
+                <div className="segmented transfer-mode-segmented">
+                  <button type="button" className="active" disabled>
+                    <Usb size={14} />
+                    USB
+                  </button>
+                </div>
+              )}
             </label>
             {transferMode === "wifi" && (
             <label className="field">
@@ -1350,25 +1376,21 @@ export default function App() {
               <span>Destination folder (created if needed)</span>
               <input value={destinationPath} onChange={(event) => setDestinationPath(event.target.value)} placeholder="/" />
             </label>
-            {!standaloneMode && (
-              <>
-                <label className="field">
-                  <span>Optimize for</span>
-                  <div className="segmented">
-                    <button type="button" className={device === "x4" ? "active" : ""} onClick={() => setDevice("x4")}>
-                      X4
-                    </button>
-                    <button type="button" className={device === "x3" ? "active" : ""} onClick={() => setDevice("x3")}>
-                      X3
-                    </button>
-                  </div>
-                </label>
-                <button className="icon-text optimizer-settings-button" type="button" onClick={() => setOptimizerModalOpen(true)} title="EPUB Optimizer Settings">
-                  <SlidersHorizontal size={16} />
-                  EPUB Optimizer Settings
+            <label className="field">
+              <span>Optimize for</span>
+              <div className="segmented">
+                <button type="button" className={device === "x4" ? "active" : ""} onClick={() => setDevice("x4")}>
+                  X4
                 </button>
-              </>
-            )}
+                <button type="button" className={device === "x3" ? "active" : ""} onClick={() => setDevice("x3")}>
+                  X3
+                </button>
+              </div>
+            </label>
+            <button className="icon-text optimizer-settings-button" type="button" onClick={() => setOptimizerModalOpen(true)} title="EPUB Optimizer Settings">
+              <SlidersHorizontal size={16} />
+              EPUB Optimizer Settings
+            </button>
             {jobs.length > 0 && (
               <pre className="job-log" aria-label="Latest device job">
                 {jobs.map((job) => (
@@ -1535,7 +1557,7 @@ export default function App() {
                   )}
                   <label className="file-button border-0" title="Upload file" aria-label="Upload file">
                     <Plus size={16} />
-                    <input type="file" accept=".epub,.txt,.xtc,.xtch,.bmp,.png" onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)} />
+                    <input type="file" accept={isHostedApp ? ".epub" : ".epub,.txt,.xtc,.xtch,.bmp,.png"} onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)} />
                   </label>
                 </>
               )}
@@ -1609,7 +1631,7 @@ export default function App() {
                 const canSendItem = !item.is_missing;
                 const sendTitle = item.is_missing
                   ? "File is missing from the mounted library folder"
-                  : !standaloneMode && canOptimizeLibraryItem(item)
+                  : canOptimizeLibraryItem(item)
                   ? `Optimize for ${deviceLabel} & Send`
                   : "Send to device";
                 const fileType = libraryFileType(item);
@@ -1890,22 +1912,26 @@ export default function App() {
                 />
                 <span>Use 4-level e-ink grayscale</span>
               </label>
-              <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={optimizerSettings.light_novel}
-                  onChange={(event) => updateOptimizerSetting("light_novel", event.target.checked)}
-                />
-                <span>Rotate and split landscape images</span>
-              </label>
-              <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={optimizerSettings.split_long_sections}
-                  onChange={(event) => updateOptimizerSetting("split_long_sections", event.target.checked)}
-                />
-                <span>Split long EPUB sections</span>
-              </label>
+              {!standaloneMode && (
+                <>
+                  <label className="toggle-field">
+                    <input
+                      type="checkbox"
+                      checked={optimizerSettings.light_novel}
+                      onChange={(event) => updateOptimizerSetting("light_novel", event.target.checked)}
+                    />
+                    <span>Rotate and split landscape images</span>
+                  </label>
+                  <label className="toggle-field">
+                    <input
+                      type="checkbox"
+                      checked={optimizerSettings.split_long_sections}
+                      onChange={(event) => updateOptimizerSetting("split_long_sections", event.target.checked)}
+                    />
+                    <span>Split long EPUB sections</span>
+                  </label>
+                </>
+              )}
               <label className="toggle-field">
                 <input
                   type="checkbox"
@@ -2148,6 +2174,7 @@ function getInitialDevice(): DeviceTarget {
 }
 
 function getInitialTransferMode(): TransferMode {
+  if (isHostedApp) return "usb";
   const stored = window.localStorage.getItem(transferModeStorageKey);
   return stored === "usb" ? "usb" : "wifi";
 }

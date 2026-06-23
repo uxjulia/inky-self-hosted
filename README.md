@@ -57,8 +57,28 @@ Docker mounts that folder read-only at `/library`. Inky scans `.epub`, `.txt`,
 so they can be sent to a device without importing or copying them into Inky
 storage. Only EPUBs are optimized before sending.
 
-Set `VITE_INKY_APP_MODE=hosted` when building a future public hosted frontend.
-The current self-hosted default is `VITE_INKY_APP_MODE=self-hosted`.
+## Hosted Browser Build
+
+Use the hosted build for a public static frontend where users add an EPUB,
+optimize it locally in their browser, and send it to a CrossInk device over USB.
+This mode does not use the FastAPI backend, and files are not uploaded to an
+Inky server.
+
+```bash
+npm run build:hosted
+```
+
+Deploy the generated `frontend/dist` folder to any static host. The hosted build:
+
+- Starts in local-file mode and stores selected EPUBs in that browser's local
+  storage until the user removes them.
+- Uses the browser-side EPUB optimizer before USB sends.
+- Uses Web Serial for USB transfer, so users need Chrome or Edge on desktop and
+  the site must be served over HTTPS.
+- Does not include OPDS, WebDAV, RSS/Atom, local folder browsing, or backend
+  article conversion.
+
+The current self-hosted default remains `VITE_INKY_APP_MODE=self-hosted`.
 
 ## Local Development
 
