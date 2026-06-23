@@ -31,9 +31,8 @@ def require_basic_auth(request: Request, credentials: HTTPBasicCredentials | Non
         raise_auth_required(settings.auth_realm)
 
 
-def raise_auth_required(realm: str) -> None:
+def raise_auth_required(_realm: str) -> None:
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Authentication required",
-        headers={"WWW-Authenticate": f'Basic realm="{realm}"'},
     )
