@@ -62,11 +62,15 @@ def _ensure_library_columns() -> None:
 
 def _seed_default_sources() -> None:
     with Session(engine) as db:
-        if db.query(Source.id).first():
-            return
+        existing_urls = {url for (url,) in db.query(Source.url).all()}
+        current_order = db.query(Source.display_order).order_by(Source.display_order.desc()).first()
+        next_order = 0 if current_order is None else current_order[0] + 1
 
-        for index, source_data in enumerate(DEFAULT_SOURCES):
-            db.add(Source(**source_data, display_order=index))
+        for source_data in DEFAULT_SOURCES:
+            if source_data["url"] in existing_urls:
+                continue
+            db.add(Source(**source_data, display_order=next_order))
+            next_order += 1
         db.commit()
 
 
