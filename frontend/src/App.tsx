@@ -1351,10 +1351,10 @@ export default function App() {
                 </div>
               ) : (
                 <div className="segmented transfer-mode-segmented">
-                  <button type="button" className="active" disabled>
+                  <span className="active selected-option">
                     <Usb size={14} />
                     USB
-                  </button>
+                  </span>
                 </div>
               )}
             </label>
