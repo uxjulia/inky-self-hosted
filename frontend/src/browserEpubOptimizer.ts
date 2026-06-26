@@ -8,6 +8,7 @@ export type BrowserOptimizerSettings = {
   contrast_boost: boolean;
   contrast_factor: number;
   eink_quantize: boolean;
+  split_long_sections: boolean;
   remove_fonts: boolean;
   remove_css: boolean;
   text_cleanup: boolean;
@@ -40,6 +41,7 @@ const crossInkLocationManifestPath = "META-INF/crossink-locations.json";
 const crossInkOptimizerManifestPath = "META-INF/crossink/optimizer-v1.json";
 const wordsPerLocation = 64;
 const wordsPerReferencePage = 250;
+const sectionSplitWordThreshold = 2000;
 
 export async function optimizeEpubInBrowser(
   file: Blob,
@@ -125,7 +127,20 @@ export async function optimizeEpubInBrowser(
   }
 
   progress?.(72, "Updating EPUB metadata");
-  const updatedOpf = processOpf(opfText, opfPath, imageRenameMap, settings);
+  let updatedOpf = processOpf(opfText, opfPath, imageRenameMap, settings);
+  if (settings.split_long_sections) {
+    progress?.(78, "Splitting long EPUB sections");
+    const splitResult = splitLongSpineSections(updatedOpf, opfPath, xhtmlFiles, sectionSplitWordThreshold);
+    updatedOpf = splitResult.opfText;
+    for (const [path, text] of Object.entries(splitResult.xhtmlFiles)) {
+      xhtmlFiles[path] = text;
+      out.file(path, text, {
+        compression: "DEFLATE",
+        compressionOptions: { level: 8 },
+        createFolders: false
+      });
+    }
+  }
   out.file(opfPath, updatedOpf, {
     compression: "DEFLATE",
     compressionOptions: { level: 8 },
@@ -331,6 +346,281 @@ function processOpfRegex(opfText: string, imageRenameMap: Map<string, string>, s
   return next;
 }
 
+type SplitPart = {
+  path: string;
+  text: string;
+  anchors: Set<string>;
+};
+
+function splitLongSpineSections(
+  opfText: string,
+  opfPath: string,
+  xhtmlFiles: Record<string, string>,
+  wordThreshold: number
+) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(opfText, "application/xml");
+  if (doc.getElementsByTagName("parsererror").length > 0 || wordThreshold <= 0) {
+    return { opfText, xhtmlFiles };
+  }
+
+  const manifest = firstElementByLocalName(doc, "manifest");
+  const spine = firstElementByLocalName(doc, "spine");
+  if (!manifest || !spine) return { opfText, xhtmlFiles };
+
+  const idToItem = new Map<string, Element>();
+  const existingIds = new Set<string>();
+  for (const item of childElements(manifest)) {
+    const id = item.getAttribute("id") || "";
+    if (id) {
+      idToItem.set(id, item);
+      existingIds.add(id);
+    }
+  }
+
+  const relocationMap = new Map<string, string>();
+  const nextXhtmlFiles = { ...xhtmlFiles };
+  const originalItemrefs = childElements(spine);
+
+  for (const itemref of originalItemrefs) {
+    const idref = itemref.getAttribute("idref") || "";
+    const item = idToItem.get(idref);
+    if (!item) continue;
+    const mediaType = (item.getAttribute("media-type") || "").toLowerCase();
+    if (mediaType && mediaType !== "application/xhtml+xml" && mediaType !== "text/html") continue;
+
+    const href = item.getAttribute("href") || "";
+    const sectionPath = resolvePath(opfPath, safeDecodeURIComponent(href));
+    const sectionText = nextXhtmlFiles[sectionPath];
+    if (!sectionText) continue;
+
+    const parts = splitXhtmlSection(sectionText, sectionPath, wordThreshold);
+    if (parts.length <= 1) continue;
+
+    for (const part of parts) {
+      nextXhtmlFiles[part.path] = part.text;
+      for (const anchor of part.anchors) {
+        relocationMap.set(`${sectionPath}#${anchor}`, part.path);
+      }
+    }
+
+    let previousRef = itemref;
+    for (const [index, part] of parts.slice(1).entries()) {
+      const newId = uniqueId(`${idref}-ci-section-${index + 2}`, existingIds);
+      const newItem = createElementLike(doc, item);
+      for (const attr of Array.from(item.attributes)) {
+        if (attr.name !== "id" && attr.name !== "href") newItem.setAttribute(attr.name, attr.value);
+      }
+      newItem.setAttribute("id", newId);
+      newItem.setAttribute("href", relativePath(opfPath, part.path));
+      newItem.setAttribute("media-type", item.getAttribute("media-type") || "application/xhtml+xml");
+      manifest.appendChild(newItem);
+
+      const newItemref = createElementLike(doc, itemref);
+      for (const attr of Array.from(itemref.attributes)) {
+        if (attr.name !== "idref") newItemref.setAttribute(attr.name, attr.value);
+      }
+      newItemref.setAttribute("idref", newId);
+      spine.insertBefore(newItemref, previousRef.nextSibling);
+      previousRef = newItemref;
+    }
+  }
+
+  if (relocationMap.size === 0) {
+    return { opfText, xhtmlFiles };
+  }
+
+  for (const [path, text] of Object.entries(nextXhtmlFiles)) {
+    nextXhtmlFiles[path] = rewriteRelocatedAnchorRefs(text, path, relocationMap);
+  }
+
+  return {
+    opfText: rewriteRelocatedAnchorRefs(new XMLSerializer().serializeToString(doc), opfPath, relocationMap),
+    xhtmlFiles: nextXhtmlFiles
+  };
+}
+
+function splitXhtmlSection(text: string, path: string, wordThreshold: number): SplitPart[] {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(text, "application/xhtml+xml");
+  if (doc.getElementsByTagName("parsererror").length > 0) return [{ path, text, anchors: new Set() }];
+
+  const body = firstElementByLocalName(doc, "body");
+  if (!body || nodeWordCount(body) <= wordThreshold) return [{ path, text, anchors: new Set() }];
+
+  const splitChain = body.children.length <= 1 ? findSplitChain(body, wordThreshold) : [];
+  const splitTarget = splitChain.length > 0 ? splitChain[splitChain.length - 1] : body;
+  const nodes = childElements(splitTarget);
+  if (nodes.length <= 1) return [{ path, text, anchors: new Set() }];
+
+  const chunks: Element[][] = [];
+  let current: Element[] = [];
+  let currentWords = 0;
+  for (const node of nodes) {
+    const words = nodeWordCount(node);
+    if (current.length > 0 && currentWords + words > wordThreshold) {
+      chunks.push(current);
+      current = [];
+      currentWords = 0;
+    }
+    current.push(node);
+    currentWords += words;
+  }
+  if (current.length > 0) chunks.push(current);
+  if (chunks.length <= 1) return [{ path, text, anchors: new Set() }];
+
+  return chunks.map((chunk, index) => {
+    const partPath = index === 0 ? path : sectionPartPath(path, index + 1);
+    return {
+      path: partPath,
+      text: buildSplitPart(doc, body, splitChain, chunk, index === 0),
+      anchors: anchorsInNodes(chunk)
+    };
+  });
+}
+
+function buildSplitPart(originalDoc: Document, originalBody: Element, splitChain: Element[], chunk: Element[], includePrecedingSiblings: boolean) {
+  const root = originalDoc.documentElement;
+  const nextDoc = document.implementation.createDocument(root.namespaceURI, root.tagName);
+  const nextRoot = nextDoc.documentElement;
+  copyAttributes(root, nextRoot);
+
+  const head = firstElementByLocalName(originalDoc, "head");
+  if (head) nextRoot.appendChild(nextDoc.importNode(head, true));
+
+  const nextBody = createElementLike(nextDoc, originalBody);
+  copyAttributes(originalBody, nextBody);
+  if (includePrecedingSiblings) nextBody.textContent = originalBody.childNodes[0]?.nodeType === Node.TEXT_NODE ? originalBody.childNodes[0].textContent : "";
+  nextRoot.appendChild(nextBody);
+
+  let container = nextBody;
+  for (const wrapper of splitChain) {
+    if (includePrecedingSiblings) {
+      for (const sibling of Array.from(wrapper.parentElement?.children || [])) {
+        if (sibling === wrapper) break;
+        container.appendChild(nextDoc.importNode(sibling, true));
+      }
+    }
+    const nextWrapper = createElementLike(nextDoc, wrapper);
+    copyAttributes(wrapper, nextWrapper);
+    container.appendChild(nextWrapper);
+    container = nextWrapper;
+  }
+
+  for (const node of chunk) {
+    container.appendChild(nextDoc.importNode(node, true));
+  }
+
+  return new XMLSerializer().serializeToString(nextDoc);
+}
+
+function findSplitChain(body: Element, wordThreshold: number) {
+  let best: Element | null = null;
+  let bestChildCount = 0;
+  for (const node of Array.from(body.querySelectorAll("*"))) {
+    if (node.children.length <= bestChildCount || nodeWordCount(node) <= wordThreshold) continue;
+    best = node;
+    bestChildCount = node.children.length;
+  }
+  if (!best) return [];
+
+  const chain: Element[] = [];
+  let node: Element | null = best;
+  while (node && node !== body) {
+    chain.unshift(node);
+    node = node.parentElement;
+  }
+  return chain;
+}
+
+function rewriteRelocatedAnchorRefs(text: string, sourcePath: string, relocationMap: Map<string, string>) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(text, sourcePath.toLowerCase().endsWith(".opf") ? "application/xml" : "application/xhtml+xml");
+  if (doc.getElementsByTagName("parsererror").length > 0) return text;
+  let updated = false;
+
+  for (const element of Array.from(doc.querySelectorAll("*"))) {
+    for (const attr of Array.from(element.attributes)) {
+      if (!["href", "src", "xlink:href"].includes(attr.name) || !attr.value.includes("#")) continue;
+      const relocated = relocatedAnchorRef(attr.value, sourcePath, relocationMap);
+      if (relocated !== attr.value) {
+        element.setAttribute(attr.name, relocated);
+        updated = true;
+      }
+    }
+  }
+
+  return updated ? new XMLSerializer().serializeToString(doc) : text;
+}
+
+function relocatedAnchorRef(value: string, sourcePath: string, relocationMap: Map<string, string>) {
+  const [base, anchor] = value.split("#", 2);
+  if (!anchor || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(base)) return value;
+  const targetPath = base ? resolvePath(sourcePath, safeDecodeURIComponent(base)) : sourcePath;
+  const relocatedPath = relocationMap.get(`${targetPath}#${safeDecodeURIComponent(anchor)}`);
+  if (!relocatedPath || relocatedPath === targetPath) return value;
+  return `${relativePath(sourcePath, relocatedPath)}#${anchor}`;
+}
+
+function childElements(element: Element) {
+  return Array.from(element.children);
+}
+
+function firstElementByLocalName(root: ParentNode, localName: string) {
+  return Array.from(root.querySelectorAll("*")).find((element) => element.localName.toLowerCase() === localName) || null;
+}
+
+function nodeWordCount(node: Element) {
+  if (["script", "style"].includes(node.localName.toLowerCase())) return 0;
+  return countWords(node.textContent || "");
+}
+
+function anchorsInNodes(nodes: Element[]) {
+  const anchors = new Set<string>();
+  for (const node of nodes) {
+    for (const element of [node, ...Array.from(node.querySelectorAll("*"))]) {
+      for (const attr of ["id", "name"]) {
+        const value = element.getAttribute(attr);
+        if (value) anchors.add(value);
+      }
+    }
+  }
+  return anchors;
+}
+
+function copyAttributes(from: Element, to: Element) {
+  for (const attr of Array.from(from.attributes)) {
+    to.setAttribute(attr.name, attr.value);
+  }
+}
+
+function createElementLike(doc: Document, element: Element) {
+  return element.namespaceURI ? doc.createElementNS(element.namespaceURI, element.tagName) : doc.createElement(element.tagName);
+}
+
+function sectionPartPath(path: string, index: number) {
+  const slash = path.lastIndexOf("/");
+  const dir = slash >= 0 ? `${path.slice(0, slash + 1)}` : "";
+  const basename = slash >= 0 ? path.slice(slash + 1) : path;
+  const dot = basename.lastIndexOf(".");
+  const stem = dot > 0 ? basename.slice(0, dot) : basename;
+  const ext = dot > 0 ? basename.slice(dot) : "";
+  return `${dir}${stem}__ci_section_${index}${ext}`;
+}
+
+function uniqueId(base: string, existingIds: Set<string>) {
+  const safeBase = base.replace(/[^A-Za-z0-9_.-]/g, "-") || "ci-section";
+  if (!existingIds.has(safeBase)) {
+    existingIds.add(safeBase);
+    return safeBase;
+  }
+  let index = 2;
+  while (existingIds.has(`${safeBase}-${index}`)) index += 1;
+  const value = `${safeBase}-${index}`;
+  existingIds.add(value);
+  return value;
+}
+
 function buildCrossInkLocationManifest(opfText: string, opfPath: string, xhtmlFiles: Record<string, string>) {
   const spine = parseSpineHrefs(opfText, opfPath);
   if (spine.length === 0) return null;
@@ -482,4 +772,12 @@ function escapeXml(value: string) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function safeDecodeURIComponent(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }

@@ -1913,25 +1913,23 @@ export default function App() {
                 <span>Use 4-level e-ink grayscale</span>
               </label>
               {!standaloneMode && (
-                <>
-                  <label className="toggle-field">
-                    <input
-                      type="checkbox"
-                      checked={optimizerSettings.light_novel}
-                      onChange={(event) => updateOptimizerSetting("light_novel", event.target.checked)}
-                    />
-                    <span>Rotate and split landscape images</span>
-                  </label>
-                  <label className="toggle-field">
-                    <input
-                      type="checkbox"
-                      checked={optimizerSettings.split_long_sections}
-                      onChange={(event) => updateOptimizerSetting("split_long_sections", event.target.checked)}
-                    />
-                    <span>Split long EPUB sections</span>
-                  </label>
-                </>
+                <label className="toggle-field">
+                  <input
+                    type="checkbox"
+                    checked={optimizerSettings.light_novel}
+                    onChange={(event) => updateOptimizerSetting("light_novel", event.target.checked)}
+                  />
+                  <span>Rotate and split landscape images</span>
+                </label>
               )}
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={optimizerSettings.split_long_sections}
+                  onChange={(event) => updateOptimizerSetting("split_long_sections", event.target.checked)}
+                />
+                <span>Split long EPUB sections</span>
+              </label>
               <label className="toggle-field">
                 <input
                   type="checkbox"
