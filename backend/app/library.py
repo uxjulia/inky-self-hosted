@@ -178,7 +178,7 @@ def _sync_mounted_library_now(db: Session) -> None:
     scan_time = utc_now()
     current_source_urls: set[str] = set()
     mounted_dir = get_settings().mounted_library_dir
-    if mounted_dir.exists() and mounted_dir.is_dir():
+    if mounted_dir and mounted_dir.exists() and mounted_dir.is_dir():
         _sync_library_root(
             db,
             mounted_dir.resolve(),
@@ -428,7 +428,7 @@ def _library_cover_url(item_id: int) -> str:
 def _is_readable_library_path(path: Path) -> bool:
     settings = get_settings()
     roots = [settings.data_dir.resolve()]
-    if settings.mounted_library_dir.exists():
+    if settings.mounted_library_dir and settings.mounted_library_dir.exists():
         roots.append(settings.mounted_library_dir.resolve())
     roots.extend(_registered_desktop_library_folders())
     resolved = path.resolve()

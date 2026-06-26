@@ -86,6 +86,12 @@ Railway should use the root `Dockerfile`, which builds the React frontend and
 runs it with the FastAPI backend in one web service. The included `railway.json`
 selects Dockerfile builds and checks `/api/health` after deploy.
 
+The Railway build keeps `VITE_INKY_APP_MODE=self-hosted` so the public app can
+read backend-seeded sources, but sets `VITE_INKY_LIBRARY_MODE=browser` so each
+visitor's Local Library stays in that browser instead of the shared Railway
+database. It also enables `INKY_PUBLIC_READ_ONLY=1` so public visitors can read
+and browse seeded sources without writing to the backend.
+
 Recommended Railway variables for an open public instance:
 
 ```bash

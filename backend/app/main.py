@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import threading
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 import httpx
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -62,11 +64,19 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def block_public_writes(request: Request, call_next):
+    if get_settings().public_read_only and request.method not in {"GET", "HEAD", "OPTIONS"}:
+        return JSONResponse({"detail": "This public Inky instance is read-only."}, status_code=403)
+    return await call_next(request)
+
+
 @app.on_event("startup")
 def startup() -> None:
     ensure_data_dirs()
     init_db()
-    threading.Thread(target=sync_mounted_library_on_startup, daemon=True).start()
+    if not get_settings().public_read_only:
+        threading.Thread(target=sync_mounted_library_on_startup, daemon=True).start()
 
 
 def sync_mounted_library_on_startup() -> None:
@@ -370,3 +380,8 @@ def _media_type_for_download(path: Path) -> str:
     if extension == ".png":
         return "image/png"
     return "application/octet-stream"
+
+
+static_dir = Path(os.environ.get("INKY_STATIC_DIR", "frontend/dist"))
+if static_dir.exists():
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="frontend")

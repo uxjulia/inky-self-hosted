@@ -60,6 +60,8 @@ declare global {
 const bundledApiBaseUrl = window.inkyDesktop?.apiBaseUrl || import.meta.env.VITE_API_BASE_URL || "";
 const appMode = import.meta.env.VITE_INKY_APP_MODE || "self-hosted";
 const isHostedApp = appMode === "hosted";
+const usesBrowserLibraryByDefault = import.meta.env.VITE_INKY_LIBRARY_MODE === "browser";
+const isPublicReadOnly = import.meta.env.VITE_INKY_PUBLIC_READ_ONLY === "1";
 const themeStorageKey = "inky-theme";
 const localSourceIndexStorageKey = "inky-local-source-index";
 const optimizerSettingsStorageKey = "inky-optimizer-settings";
@@ -218,6 +220,7 @@ export default function App() {
   const [optimizerSettings, setOptimizerSettings] = useState<OptimizerSettings>(() => getInitialOptimizerSettings());
   const [apiBaseUrlDraft, setApiBaseUrlDraft] = useState(() => getInitialApiBaseUrl());
   const [standaloneMode, setStandaloneMode] = useState(initialStandaloneMode);
+  const usesBrowserLibrary = standaloneMode || usesBrowserLibraryByDefault;
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
   const [localSourceIndex, setLocalSourceIndex] = useState(() => getInitialLocalSourceIndex());
   const [busy, setBusy] = useState(false);
@@ -284,12 +287,12 @@ export default function App() {
     if (!authChecked || !isAuthenticated) return;
 
     refreshAll(false);
-    if (standaloneMode) return;
+    if (usesBrowserLibrary) return;
     const interval = window.setInterval(() => {
       loadLibrary();
     }, 2500);
     return () => window.clearInterval(interval);
-  }, [authChecked, isAuthenticated, standaloneMode]);
+  }, [authChecked, isAuthenticated, usesBrowserLibrary]);
 
   useEffect(() => {
     const updateViewFromHash = () => setView(getInitialView());
@@ -518,7 +521,7 @@ export default function App() {
 
   async function loadLibrary() {
     const loadSeq = ++libraryLoadSeq.current;
-    if (standaloneMode) {
+    if (usesBrowserLibrary) {
       const data = (await loadStandaloneLibrary()).map(standaloneRecordToLibraryItem);
       if (loadSeq === libraryLoadSeq.current) setLibrary(data);
       return;
@@ -529,7 +532,7 @@ export default function App() {
   }
 
   async function rescanLibrary() {
-    if (standaloneMode) return;
+    if (usesBrowserLibrary) return;
     const loadSeq = ++libraryLoadSeq.current;
     setRescanningLibrary(true);
     try {
@@ -568,6 +571,7 @@ export default function App() {
   }
 
   function openAddSourceModal() {
+    if (isPublicReadOnly) return;
     setSourceMenuId(null);
     setEditingSource(null);
     setForm(emptySourceForm);
@@ -575,6 +579,7 @@ export default function App() {
   }
 
   function openEditSource(source: Source) {
+    if (isPublicReadOnly) return;
     if (source.type === "local") return;
     setSourceMenuId(null);
     setEditingSource(source);
@@ -620,6 +625,7 @@ export default function App() {
 
   async function saveSource(event: FormEvent) {
     event.preventDefault();
+    if (isPublicReadOnly) return;
     setBusy(true);
     try {
       await runAction(async () => {
@@ -664,6 +670,7 @@ export default function App() {
   }
 
   async function deleteSource(sourceId: number) {
+    if (isPublicReadOnly) return;
     if (sourceId === localSourceId) return;
     setSourceMenuId(null);
     await runAction(async () => {
@@ -674,6 +681,7 @@ export default function App() {
   }
 
   async function reorderSources(nextAllSources: Source[]) {
+    if (isPublicReadOnly) return;
     const previousSources = sources;
     const previousLocalSourceIndex = localSourceIndex;
     const nextSources = nextAllSources.filter((source) => source.id !== localSourceId);
@@ -827,6 +835,10 @@ export default function App() {
 
   async function importItem(item: BrowseItem) {
     if (!selectedSourceId || selectedSourceId === localSourceId) return;
+    if (usesBrowserLibrary) {
+      showToast("Public mode keeps Local Library in this browser. Add local files from the Local Library panel.", "error");
+      return;
+    }
     setPendingBrowseAction({ key: browseItemKey(item), action: "save" });
     setBusy(true);
     try {
@@ -844,6 +856,10 @@ export default function App() {
 
   async function sendBrowseItem(item: BrowseItem) {
     if (!selectedSourceId || selectedSourceId === localSourceId) return;
+    if (usesBrowserLibrary) {
+      showToast("Public mode can send files added to this browser's Local Library.", "error");
+      return;
+    }
     setPendingBrowseAction({ key: browseItemKey(item), action: "send" });
     setBusy(true);
     try {
@@ -942,7 +958,7 @@ export default function App() {
   async function uploadLocalFile(file: File | null) {
     if (!file) return;
     await runAction(async () => {
-      if (standaloneMode) {
+      if (usesBrowserLibrary) {
         await addStandaloneFile(file);
         showToast("Saved");
         await loadLibrary();
@@ -961,7 +977,7 @@ export default function App() {
     const confirmed = window.confirm(`Remove "${item.title}" from the local library?`);
     if (!confirmed) return;
     await runAction(async () => {
-      if (standaloneMode) {
+      if (usesBrowserLibrary) {
         await deleteStandaloneFile(item.id);
         showToast("Removed");
         await loadLibrary();
@@ -977,7 +993,7 @@ export default function App() {
   async function sendToDevice(item: LibraryItem) {
     await runAction(async () => {
       if (transferMode === "usb") {
-        if (standaloneMode) {
+        if (usesBrowserLibrary) {
           const { record, blob } = await getStandaloneFile(item.id);
           const prepared = await prepareStandaloneBlobForSend(blob, record.filename, item.id);
           await sendBlobViaUsb(prepared.blob, prepared.filename, item.id);
@@ -993,7 +1009,7 @@ export default function App() {
         return;
       }
 
-      if (standaloneMode) {
+      if (usesBrowserLibrary) {
         const { record, blob } = await getStandaloneFile(item.id);
         const prepared = await prepareStandaloneBlobForSend(blob, record.filename, item.id);
         const jobId = crypto.randomUUID();
@@ -1118,7 +1134,7 @@ export default function App() {
     try {
       const status = transferMode === "usb"
         ? await probeSerialDevice()
-        : standaloneMode
+        : usesBrowserLibrary
         ? await probeStandaloneDevice(resolvedDeviceUrl)
         : await api<Record<string, unknown>>("/api/devices/probe", {
             method: "POST",
@@ -1398,7 +1414,7 @@ export default function App() {
               <Library size={16} />
               <h2>Sources</h2>
               </div>
-              {!standaloneMode && (
+              {!standaloneMode && !isPublicReadOnly && (
                 <button
                   className="border-0"
                   type="button"
@@ -1416,7 +1432,7 @@ export default function App() {
                   className={`source-row ${source.id === selectedSourceId ? "selected" : ""} ${
                     source.id === draggedSourceId ? "dragging" : ""
                   } ${source.id === dragOverSourceId ? "drag-over" : ""}`}
-                  draggable
+                  draggable={!isPublicReadOnly}
                   key={source.id}
                   onClick={() => {
                     setSourceMenuId(null);
@@ -1446,10 +1462,10 @@ export default function App() {
                     }
                   }}
                 >
-                  <GripVertical className="source-drag-icon" size={15} aria-hidden="true" />
+                  {!isPublicReadOnly && <GripVertical className="source-drag-icon" size={15} aria-hidden="true" />}
                   <span className="source-type">{sourceTypeShortLabel(source.type)}</span>
                   <span className="source-name">{source.name}</span>
-                  <div className="source-menu-wrap">
+                  {!isPublicReadOnly && <div className="source-menu-wrap">
                     <button
                       className="source-menu-button"
                       type="button"
@@ -1518,7 +1534,7 @@ export default function App() {
                         )}
                       </div>
                     )}
-                  </div>
+                  </div>}
                 </div>
               ))}
             </div>
@@ -1539,7 +1555,7 @@ export default function App() {
               )}
               {isLocalSource && (
                 <>
-                  {!standaloneMode && (
+                  {!usesBrowserLibrary && (
                     <button type="button" onClick={rescanLibrary} disabled={rescanningLibrary} title="Rescan mounted library">
                       <RefreshCw className={rescanningLibrary ? "spin" : ""} size={15} />
                       {rescanningLibrary ? "Rescanning" : "Rescan"}

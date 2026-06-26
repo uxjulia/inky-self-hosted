@@ -9,17 +9,27 @@ class Settings(BaseSettings):
     app_name: str = "Inky"
     database_url: str = "sqlite:////data/inky.db"
     data_dir: Path = Path("/data")
-    mounted_library_dir: Path = Path("/library")
+    mounted_library_dir: Path | None = None
     http_timeout_seconds: float = 30.0
     auth_username: str = ""
     auth_password: str = ""
     auth_realm: str = "Inky"
+    public_read_only: bool = False
 
     model_config = SettingsConfigDict(env_prefix="INKY_", env_file=(".env", "../.env"), extra="ignore")
 
+    @field_validator("mounted_library_dir", mode="before")
+    @classmethod
+    def empty_path_to_none(cls, value: object) -> object:
+        if value == "":
+            return None
+        return value
+
     @field_validator("data_dir", "mounted_library_dir")
     @classmethod
-    def expand_user_path(cls, value: Path) -> Path:
+    def expand_user_path(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
         return value.expanduser()
 
     @property
