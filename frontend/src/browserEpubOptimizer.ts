@@ -37,7 +37,7 @@ const imageExtensionPattern = /\.(png|gif|webp|bmp|jpe?g)$/i;
 const xhtmlExtensionPattern = /\.(xhtml|html|htm)$/i;
 const cssExtensionPattern = /\.css$/i;
 const fontExtensionPattern = /\.(ttf|otf|woff2?|eot)$/i;
-const crossInkLocationManifestPath = "META-INF/crossink-locations.json";
+const crossInkLocationManifestPath = "META-INF/x-locations.json";
 const crossInkOptimizerManifestPath = "META-INF/crossink/optimizer-v1.json";
 const wordsPerLocation = 64;
 const wordsPerReferencePage = 250;
@@ -645,7 +645,7 @@ function buildCrossInkLocationManifest(opfText: string, opfPath: string, xhtmlFi
   });
 
   return {
-    format: "crossink-locations",
+    format: "x-locations",
     version: 1,
     generator: "inky-browser-optimizer",
     wordsPerLocation,
