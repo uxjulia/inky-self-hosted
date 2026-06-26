@@ -30,9 +30,10 @@ export function HelpPage({ isDesktopApp, isSelfHostedBrowser, isHostedApp, stand
           <span className="help-step">1</span>
           <div>
             <h3>Connect Your Device</h3>
-            <p>{isHostedApp ? "On the reader, connect USB and open File Transfer." : "On the reader, open File Transfer for Wi-Fi sends, or connect USB for serial sends."}</p>
+            <p>On the reader, open File Transfer for Wi-Fi sends, or connect USB for serial sends.</p>
             <ul>
-              {!isHostedApp && <li>For Wi-Fi, use the device host shown by CrossInk, usually <code>crosspoint.local</code> or an IP address.</li>}
+              {isHostedApp && <li>For Wi-Fi, put the reader in hotspot mode and connect this browser's device to that hotspot so both sides are on the same network.</li>}
+              <li>For Wi-Fi, use the device host shown by CrossInk, usually <code>crosspoint.local</code> or an IP address.</li>
               {!isHostedApp && isSelfHostedBrowser && <li>For local <code>192.168.x.x</code> addresses, you can enter just the last two octets, such as <code>0.41</code>.</li>}
               <li>For USB, connect the reader by cable and select USB as the transfer method.</li>
               <li>Keep the destination folder as <code>/</code> or enter a folder such as <code>/Books</code>. Inky creates missing folders before upload.</li>

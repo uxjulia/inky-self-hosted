@@ -170,7 +170,6 @@ const iosServerSettingsEnabled = isIosApp && import.meta.env.VITE_INKY_IOS_SERVE
 const canConfigureApiBaseUrl = !window.inkyDesktop?.apiBaseUrl && iosServerSettingsEnabled;
 const initialStandaloneMode = (isNativeApp || isHostedApp) && !getInitialApiBaseUrl();
 const isSelfHostedBrowser = !isDesktopApp && !isNativeApp && !isHostedApp;
-const canUseWifiTransfer = !isHostedApp;
 const browsePageSize = 25;
 const defaultDeviceHost = isSelfHostedBrowser ? "" : "crosspoint.local";
 const deviceHostPlaceholder = isSelfHostedBrowser ? "192.168." : "crosspoint.local";
@@ -1338,39 +1337,30 @@ export default function App() {
             )}
             <label className="field">
               <span>Transfer method</span>
-              {canUseWifiTransfer ? (
-                <div className="segmented transfer-mode-segmented">
-                  <button type="button" className={transferMode === "wifi" ? "active" : ""} onClick={() => setTransferMode("wifi")}>
-                    <Wifi size={14} />
-                    Wi-Fi
-                  </button>
-                  <button type="button" className={transferMode === "usb" ? "active" : ""} onClick={() => setTransferMode("usb")}>
-                    <Usb size={14} />
-                    USB
-                  </button>
-                </div>
-              ) : (
-                <div className="segmented transfer-mode-segmented">
-                  <span className="active selected-option">
-                    <Usb size={14} />
-                    USB
-                  </span>
-                </div>
-              )}
+              <div className="segmented transfer-mode-segmented">
+                <button type="button" className={transferMode === "wifi" ? "active" : ""} onClick={() => setTransferMode("wifi")}>
+                  <Wifi size={14} />
+                  Wi-Fi
+                </button>
+                <button type="button" className={transferMode === "usb" ? "active" : ""} onClick={() => setTransferMode("usb")}>
+                  <Usb size={14} />
+                  USB
+                </button>
+              </div>
             </label>
             {transferMode === "wifi" && (
-            <label className="field">
-              <span>Device host</span>
-              <input
-                value={deviceUrl}
-                onChange={(event) => {
-                  setDeviceError("");
-                  setDeviceStatus("");
-                  setDeviceUrl(event.target.value);
-                }}
-                placeholder={deviceHostPlaceholder}
-              />
-            </label>
+              <label className="field">
+                <span>Device host</span>
+                <input
+                  value={deviceUrl}
+                  onChange={(event) => {
+                    setDeviceError("");
+                    setDeviceStatus("");
+                    setDeviceUrl(event.target.value);
+                  }}
+                  placeholder={deviceHostPlaceholder}
+                />
+              </label>
             )}
             <label className="field">
               <span>Destination folder (created if needed)</span>
@@ -2172,7 +2162,6 @@ function getInitialDevice(): DeviceTarget {
 }
 
 function getInitialTransferMode(): TransferMode {
-  if (isHostedApp) return "usb";
   const stored = window.localStorage.getItem(transferModeStorageKey);
   return stored === "usb" ? "usb" : "wifi";
 }
