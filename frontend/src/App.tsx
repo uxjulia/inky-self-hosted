@@ -184,7 +184,7 @@ const defaultOptimizerSettings: OptimizerSettings = {
   contrast_factor: 1.1,
   eink_quantize: true,
   light_novel: false,
-  split_long_sections: false,
+  split_long_sections: true,
   remove_fonts: true,
   remove_css: true,
   text_cleanup: true

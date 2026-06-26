@@ -140,7 +140,7 @@ class OptimizeRequest(BaseModel):
     contrast_factor: float = Field(default=1.5, ge=0.5, le=3.0)
     eink_quantize: bool = True
     light_novel: bool = False
-    split_long_sections: bool = False
+    split_long_sections: bool = True
     remove_fonts: bool = True
     remove_css: bool = True
     text_cleanup: bool = True
