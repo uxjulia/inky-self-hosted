@@ -625,22 +625,27 @@ function buildCrossInkLocationManifest(opfText: string, opfPath: string, xhtmlFi
   const spine = parseSpineHrefs(opfText, opfPath);
   if (spine.length === 0) return null;
   let nextLocation = 1;
-  let nextReferencePage = 1;
-  const sections = spine.map((href) => {
+  let totalWords = 0;
+  const chapterGroups = buildChapterGroups(spine, xhtmlFiles);
+  const entries = spine.map((href, index) => {
     const text = extractVisibleText(xhtmlFiles[href] || "");
     const words = countWords(text);
     const locationCount = Math.ceil(words / wordsPerLocation);
+    const startReferencePage = Math.floor(totalWords / wordsPerReferencePage) + 1;
     const referencePageCount = Math.max(1, Math.ceil(words / wordsPerReferencePage));
     const section = {
+      index,
       href,
-      words,
+      wordStart: totalWords,
+      wordCount: words,
       startLocation: locationCount > 0 ? nextLocation : 0,
       endLocation: locationCount > 0 ? nextLocation + locationCount - 1 : 0,
-      startReferencePage: nextReferencePage,
-      endReferencePage: nextReferencePage + referencePageCount - 1
+      startReferencePage: words > 0 ? startReferencePage : 0,
+      endReferencePage: words > 0 ? startReferencePage + referencePageCount - 1 : 0,
+      chapterGroup: chapterGroups.groupByHref.get(href) ?? index
     };
     nextLocation += locationCount;
-    nextReferencePage += referencePageCount;
+    totalWords += words;
     return section;
   });
 
@@ -650,10 +655,56 @@ function buildCrossInkLocationManifest(opfText: string, opfPath: string, xhtmlFi
     generator: "inky-browser-optimizer",
     wordsPerLocation,
     wordsPerReferencePage,
+    totalWords,
     totalLocations: Math.max(0, nextLocation - 1),
-    totalReferencePages: Math.max(0, nextReferencePage - 1),
-    sections
+    totalReferencePages: Math.ceil(totalWords / wordsPerReferencePage),
+    spine: entries,
+    chapterGroups: chapterGroups.groups
   };
+}
+
+function buildChapterGroups(spine: string[], xhtmlFiles: Record<string, string>) {
+  const byChapterHref = new Map<string, { href: string; startSpineIndex: number; endSpineIndex: number; wordStart: number; wordCount: number }>();
+  const groupByHref = new Map<string, number>();
+  let totalWords = 0;
+
+  spine.forEach((href, spineIndex) => {
+    const chapterHref = originalChapterHref(href);
+    const words = countWords(extractVisibleText(xhtmlFiles[href] || ""));
+    const group = byChapterHref.get(chapterHref) || {
+      href: chapterHref,
+      startSpineIndex: spineIndex,
+      endSpineIndex: spineIndex,
+      wordStart: totalWords,
+      wordCount: 0
+    };
+    group.endSpineIndex = spineIndex;
+    group.wordCount += words;
+    byChapterHref.set(chapterHref, group);
+    totalWords += words;
+  });
+
+  const groups = Array.from(byChapterHref.values()).map((group, index) => {
+    for (let spineIndex = group.startSpineIndex; spineIndex <= group.endSpineIndex; spineIndex += 1) {
+      groupByHref.set(spine[spineIndex], index);
+    }
+    return {
+      index,
+      href: group.href,
+      startSpineIndex: group.startSpineIndex,
+      endSpineIndex: group.endSpineIndex,
+      wordStart: group.wordStart,
+      wordCount: group.wordCount,
+      startReferencePage: group.wordCount > 0 ? Math.floor(group.wordStart / wordsPerReferencePage) + 1 : 0,
+      endReferencePage: group.wordCount > 0 ? Math.ceil((group.wordStart + group.wordCount) / wordsPerReferencePage) : 0
+    };
+  });
+
+  return { groups, groupByHref };
+}
+
+function originalChapterHref(href: string) {
+  return href.replace(/__ci_section_\d+(?=\.[^/.]+$)/, "");
 }
 
 function parseSpineHrefs(opfText: string, opfPath: string) {
