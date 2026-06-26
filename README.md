@@ -80,6 +80,24 @@ Deploy the generated `frontend/dist` folder to any static host. The hosted build
 
 The current self-hosted default remains `VITE_INKY_APP_MODE=self-hosted`.
 
+## Deploy On Railway
+
+Railway should use the root `Dockerfile`, which builds the React frontend and
+runs it with the FastAPI backend in one web service. The included `railway.json`
+selects Dockerfile builds and checks `/api/health` after deploy.
+
+Recommended Railway variables for an open public instance:
+
+```bash
+INKY_DATA_DIR=/data
+INKY_DATABASE_URL=sqlite:////data/inky.db
+```
+
+Attach a Railway volume mounted at `/data` if you want the library database and
+uploaded files to survive redeploys.
+
+Only set `INKY_AUTH_USERNAME` and `INKY_AUTH_PASSWORD` for a private instance.
+
 ## Local Development
 
 Install all frontend and backend dependencies:
