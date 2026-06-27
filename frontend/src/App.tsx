@@ -92,6 +92,7 @@ type OptimizerSettings = {
   grayscale: boolean;
   contrast_boost: boolean;
   contrast_factor: number;
+  eink_quantize: boolean;
   light_novel: boolean;
   split_long_sections: boolean;
   words_per_reference_page: number;
@@ -189,6 +190,7 @@ const defaultOptimizerSettings: OptimizerSettings = {
   grayscale: true,
   contrast_boost: true,
   contrast_factor: 1.1,
+  eink_quantize: true,
   light_novel: false,
   split_long_sections: true,
   words_per_reference_page: 275,
@@ -1181,15 +1183,9 @@ export default function App() {
     if (!hasEpubExtension(filename)) return { blob, filename };
     const jobId = crypto.randomUUID();
     updateBrowserSendJob(jobId, itemId, 0, "Optimizing EPUB in browser", "running");
-    const result = await optimizeEpubInBrowser(
-      blob,
-      filename,
-      device,
-      { ...optimizerSettings, eink_quantize: true },
-      (progress, message) => {
-        updateBrowserSendJob(jobId, itemId, progress, message, "running");
-      }
-    );
+    const result = await optimizeEpubInBrowser(blob, filename, device, optimizerSettings, (progress, message) => {
+      updateBrowserSendJob(jobId, itemId, progress, message, "running");
+    });
     updateBrowserSendJob(jobId, itemId, 100, "EPUB optimized in browser", "succeeded");
     return result;
   }
@@ -2183,6 +2179,14 @@ export default function App() {
                 />
                 <span>Boost image contrast</span>
               </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={optimizerSettings.eink_quantize}
+                  onChange={(event) => updateOptimizerSetting("eink_quantize", event.target.checked)}
+                />
+                <span>Use 4-level e-ink grayscale</span>
+              </label>
               {!standaloneMode && (
                 <label className="toggle-field">
                   <input
@@ -2584,6 +2588,7 @@ function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
     grayscale: booleanOrDefault(stored.grayscale, defaultOptimizerSettings.grayscale),
     contrast_boost: booleanOrDefault(stored.contrast_boost, defaultOptimizerSettings.contrast_boost),
     contrast_factor: clampNumber(Number(stored.contrast_factor ?? defaultOptimizerSettings.contrast_factor), 0.5, 3),
+    eink_quantize: booleanOrDefault(stored.eink_quantize, defaultOptimizerSettings.eink_quantize),
     light_novel: booleanOrDefault(stored.light_novel, defaultOptimizerSettings.light_novel),
     split_long_sections: booleanOrDefault(stored.split_long_sections, defaultOptimizerSettings.split_long_sections),
     words_per_reference_page: clampNumber(
