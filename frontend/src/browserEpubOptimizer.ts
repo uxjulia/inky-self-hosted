@@ -779,7 +779,11 @@ function buildCrossInkLocationManifest(
   };
 }
 
-function buildChapterGroups(spine: string[], xhtmlFiles: Record<string, string>, wordsPerReferencePage = defaultWordsPerReferencePage) {
+function buildChapterGroups(
+  spine: string[],
+  xhtmlFiles: Record<string, string>,
+  wordsPerReferencePage = defaultWordsPerReferencePage
+) {
   const byChapterHref = new Map<
     string,
     { href: string; startSpineIndex: number; endSpineIndex: number; wordStart: number; wordCount: number }

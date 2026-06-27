@@ -39,7 +39,9 @@ const serialAckTimeoutMs = 45000;
 const serialWriteTimeoutMs = 45000;
 const serialOpenDrainMs = 200;
 const serialCloseTimeoutMs = 1500;
+const maxIdleSerialBufferBytes = 8192;
 let activeSerialOperation: Promise<unknown> | null = null;
+let retainedSerialConnection: SerialConnection | null = null;
 
 export function serialTransferSupported() {
   return Boolean(navigator.serial);
@@ -53,14 +55,13 @@ export async function probeSerialDevice(): Promise<Record<string, unknown>> {
       const status = await readUntil(connection, (line) => line.startsWith("STATUS:"), 3000, "USB serial status");
       return { device: "USB Serial", ip: status.replace(/^STATUS:/, "") || "USB" };
     } catch (error) {
+      await closeSerialConnection(connection);
       if (error instanceof Error && error.message.includes("Timed out")) {
         throw new Error(
           "USB serial opened, but the reader did not answer Inky's serial transfer protocol. Install CrossInk firmware with USB serial transfer support."
         );
       }
       throw error;
-    } finally {
-      await connection.close();
     }
   });
 }
@@ -87,8 +88,9 @@ export async function sendBlobToSerialDevice(
         filename: finalName,
         response: "OK"
       };
-    } finally {
-      await connection.close();
+    } catch (error) {
+      await closeSerialConnection(connection);
+      throw error;
     }
   });
 }
@@ -98,9 +100,14 @@ class SerialConnection {
   private waiters: ((value: number) => void)[] = [];
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private readonly pumpPromise: Promise<void>;
+  private closed = false;
 
   constructor(private readonly port: SerialPort) {
     this.pumpPromise = this.pump();
+  }
+
+  get isOpen() {
+    return !this.closed && Boolean(this.port.readable && this.port.writable);
   }
 
   async write(data: Uint8Array, timeoutMs = serialWriteTimeoutMs, label = "serial write", onStillWaiting?: () => void) {
@@ -168,6 +175,7 @@ class SerialConnection {
   }
 
   async close() {
+    this.closed = true;
     try {
       await this.reader?.cancel();
     } catch {
@@ -195,16 +203,24 @@ class SerialConnection {
         for (const byte of value) {
           const waiter = this.waiters.shift();
           if (waiter) waiter(byte);
-          else this.buffer.push(byte);
+          else this.pushBufferedByte(byte);
         }
       }
     } catch {
       // The reader is normally cancelled during close.
     } finally {
+      this.closed = true;
       this.reader.releaseLock();
       this.reader = null;
       for (const waiter of this.waiters.splice(0)) waiter(-1);
     }
+  }
+
+  private pushBufferedByte(byte: number) {
+    if (this.buffer.length >= maxIdleSerialBufferBytes) {
+      this.buffer.splice(0, this.buffer.length - maxIdleSerialBufferBytes + 1);
+    }
+    this.buffer.push(byte);
   }
 
   async drainInput(timeoutMs = serialOpenDrainMs) {
@@ -232,6 +248,12 @@ async function openSerialConnection() {
     throw new Error("USB serial is not available in this browser. Use Chrome, Edge, or the Inky desktop app.");
   }
 
+  if (retainedSerialConnection?.isOpen) {
+    await retainedSerialConnection.drainInput();
+    return retainedSerialConnection;
+  }
+  retainedSerialConnection = null;
+
   const grantedPorts = await navigator.serial.getPorts();
   const port =
     grantedPorts.find(isEsp32SerialPort) || (await navigator.serial.requestPort({ filters: esp32SerialFilters }));
@@ -249,11 +271,17 @@ async function openSerialConnection() {
   const connection = new SerialConnection(port);
   try {
     await connection.drainInput();
+    retainedSerialConnection = connection;
     return connection;
   } catch (error) {
-    await connection.close();
+    await closeSerialConnection(connection);
     throw error;
   }
+}
+
+async function closeSerialConnection(connection: SerialConnection) {
+  if (retainedSerialConnection === connection) retainedSerialConnection = null;
+  await connection.close();
 }
 
 async function ensureSerialFolder(

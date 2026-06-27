@@ -1275,9 +1275,9 @@ export default function App() {
           : usesBrowserLibrary
             ? await probeStandaloneDevice(resolvedDeviceUrl)
             : await api<Record<string, unknown>>("/api/devices/probe", {
-              method: "POST",
-              body: JSON.stringify({ device_url: resolvedDeviceUrl })
-            });
+                method: "POST",
+                body: JSON.stringify({ device_url: resolvedDeviceUrl })
+              });
       setDeviceStatus(
         `Successfully connected to: ${status.device || "Device"} at ${transferMode === "usb" ? "USB" : status.ip || resolvedDeviceUrl}`
       );
@@ -1636,8 +1636,9 @@ export default function App() {
               <div className="source-list">
                 {allSources.map((source, index) => (
                   <div
-                    className={`source-row ${source.id === selectedSourceId ? "selected" : ""} ${source.id === draggedSourceId ? "dragging" : ""
-                      } ${source.id === dragOverSourceId ? "drag-over" : ""}`}
+                    className={`source-row ${source.id === selectedSourceId ? "selected" : ""} ${
+                      source.id === draggedSourceId ? "dragging" : ""
+                    } ${source.id === dragOverSourceId ? "drag-over" : ""}`}
                     draggable={!isPublicReadOnly}
                     key={source.id}
                     onClick={() => {
@@ -1922,11 +1923,11 @@ export default function App() {
                       onKeyDown={
                         opensBrowseTarget
                           ? (event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              openBrowseItem(item);
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                openBrowseItem(item);
+                              }
                             }
-                          }
                           : undefined
                       }
                       role={opensBrowseTarget ? "button" : undefined}
