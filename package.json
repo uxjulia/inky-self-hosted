@@ -15,6 +15,7 @@
     "dev:web": "npm run dev --prefix frontend",
     "build": "npm run build --prefix frontend && backend/.venv/bin/python -m compileall backend/app",
     "build:hosted": "VITE_INKY_APP_MODE=hosted npm run build --prefix frontend",
+    "build:public": "VITE_INKY_APP_MODE=public npm run build --prefix frontend",
     "ios:sync": "npm run build && npx cap sync ios",
     "ios:open": "npm run ios:sync && npx cap open ios",
     "desktop:backend": "node scripts/build-backend-desktop.mjs",

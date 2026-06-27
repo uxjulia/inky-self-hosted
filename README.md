@@ -57,9 +57,21 @@ Docker mounts that folder read-only at `/library`. Inky scans `.epub`, `.txt`,
 so they can be sent to a device without importing or copying them into Inky
 storage. Only EPUBs are optimized before sending.
 
+## Deployment Modes
+
+Inky has three frontend modes:
+
+- `self-hosted`: private backend-backed app. Sources, Local Library, optimizer
+  jobs, and sends use the local FastAPI backend.
+- `public`: public backend-backed app. Visitors can browse backend-seeded
+  sources, but their Local Library stays in their browser and sends use USB
+  only. Pair this with `INKY_PUBLIC_READ_ONLY=1` on the backend.
+- `hosted`: static browser-only app. No backend sources are used; visitors add
+  EPUBs in the browser, optimize locally, and send over USB.
+
 ## Hosted Browser Build
 
-Use the hosted build for a public static frontend where users add an EPUB,
+Use the `hosted` build for a public static frontend where users add an EPUB,
 optimize it locally in their browser, and send it to a CrossInk device over USB.
 This mode does not use the FastAPI backend, and files are not uploaded to an
 Inky server.
@@ -78,7 +90,8 @@ Deploy the generated `frontend/dist` folder to any static host. The hosted build
 - Does not include OPDS, WebDAV, RSS/Atom, local folder browsing, or backend
   article conversion.
 
-The current self-hosted default remains `VITE_INKY_APP_MODE=self-hosted`.
+The current private self-hosted default remains
+`VITE_INKY_APP_MODE=self-hosted`.
 
 ## Deploy On Railway
 
@@ -86,17 +99,19 @@ Railway should use the root `Dockerfile`, which builds the React frontend and
 runs it with the FastAPI backend in one web service. The included `railway.json`
 selects Dockerfile builds and checks `/api/health` after deploy.
 
-The Railway build keeps `VITE_INKY_APP_MODE=self-hosted` so the public app can
-read backend-seeded sources, but sets `VITE_INKY_LIBRARY_MODE=browser` so each
-visitor's Local Library stays in that browser instead of the shared Railway
-database. It also enables `INKY_PUBLIC_READ_ONLY=1` so public visitors can read
-and browse seeded sources without writing to the backend.
+The Railway build uses `VITE_INKY_APP_MODE=public` by default. That lets the
+public app read backend-seeded sources while keeping each visitor's Local
+Library in that browser instead of the shared Railway database. The backend
+still needs `INKY_PUBLIC_READ_ONLY=1` so public visitors can read and browse
+seeded sources without writing to the backend.
 
 Recommended Railway variables for an open public instance:
 
 ```bash
 INKY_DATA_DIR=/data
 INKY_DATABASE_URL=sqlite:////data/inky.db
+INKY_PUBLIC_READ_ONLY=1
+VITE_INKY_APP_MODE=public
 ```
 
 Attach a Railway volume mounted at `/data` if you want the library database and
@@ -124,12 +139,21 @@ Open:
 http://localhost:5173
 ```
 
+To test public backend-backed mode locally:
+
+```bash
+INKY_PUBLIC_READ_ONLY=1 VITE_INKY_APP_MODE=public npm run dev
+```
+
+To test the static hosted browser mode locally:
+
+```bash
+VITE_INKY_APP_MODE=hosted npm run dev --prefix frontend
+```
+
 The root `postinstall` script installs the frontend packages and creates the
 backend Python virtualenv at `backend/.venv`. The API runs on
-`http://localhost:8000`, and Vite proxies `/api` to it.
-
-If Docker Compose is running, stop it first with `docker compose down` so the
-local API can use port `8000`.
+`http://localhost:8001`, and Vite proxies `/api` to it.
 
 ## iOS App For Local Testing
 

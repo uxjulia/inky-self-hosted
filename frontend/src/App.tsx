@@ -58,10 +58,13 @@ declare global {
 }
 
 const bundledApiBaseUrl = window.inkyDesktop?.apiBaseUrl || import.meta.env.VITE_API_BASE_URL || "";
-const appMode = import.meta.env.VITE_INKY_APP_MODE || "self-hosted";
+type InkyAppMode = "self-hosted" | "public" | "hosted";
+
+const appMode = normalizeAppMode(import.meta.env.VITE_INKY_APP_MODE);
 const isHostedApp = appMode === "hosted";
-const usesBrowserLibraryByDefault = import.meta.env.VITE_INKY_LIBRARY_MODE === "browser";
-const isPublicReadOnly = import.meta.env.VITE_INKY_PUBLIC_READ_ONLY === "1";
+const isPublicApp = appMode === "public";
+const usesBrowserLibraryByDefault = isPublicApp || import.meta.env.VITE_INKY_LIBRARY_MODE === "browser";
+const isPublicReadOnly = isPublicApp || import.meta.env.VITE_INKY_PUBLIC_READ_ONLY === "1";
 const themeStorageKey = "inky-theme";
 const localSourceIndexStorageKey = "inky-local-source-index";
 const optimizerSettingsStorageKey = "inky-optimizer-settings";
@@ -172,7 +175,7 @@ const iosServerSettingsEnabled = isIosApp && import.meta.env.VITE_INKY_IOS_SERVE
 const canConfigureApiBaseUrl = !window.inkyDesktop?.apiBaseUrl && iosServerSettingsEnabled;
 const initialStandaloneMode = (isNativeApp || isHostedApp) && !getInitialApiBaseUrl();
 const isSelfHostedBrowser = !isDesktopApp && !isNativeApp && !isHostedApp;
-const canUseWifiTransfer = !isHostedApp;
+const canUseWifiTransfer = !isHostedApp && !isPublicReadOnly;
 const browsePageSize = 25;
 const defaultDeviceHost = isSelfHostedBrowser ? "" : "crosspoint.local";
 const deviceHostPlaceholder = isSelfHostedBrowser ? "192.168." : "crosspoint.local";
@@ -1316,7 +1319,14 @@ export default function App() {
       </header>
 
       {view === "help" ? (
-        <HelpPage onOpenApp={openApp} isDesktopApp={isDesktopApp} isSelfHostedBrowser={isSelfHostedBrowser} standaloneMode={standaloneMode} isHostedApp={isHostedApp} />
+        <HelpPage
+          onOpenApp={openApp}
+          isDesktopApp={isDesktopApp}
+          isSelfHostedBrowser={isSelfHostedBrowser}
+          standaloneMode={standaloneMode}
+          isHostedApp={isHostedApp}
+          isPublicReadOnly={isPublicReadOnly}
+        />
       ) : (
       <section className="layout">
         <aside className="sidebar">
@@ -2180,6 +2190,13 @@ function getInitialTheme(): Theme {
     return stored;
   }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function normalizeAppMode(value: unknown): InkyAppMode {
+  if (value === "public" || value === "hosted" || value === "self-hosted") {
+    return value;
+  }
+  return "self-hosted";
 }
 
 function getInitialDevice(): DeviceTarget {
