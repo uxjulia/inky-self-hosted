@@ -224,6 +224,8 @@ export default function App() {
   const [device, setDevice] = useState<DeviceTarget>(() => getInitialDevice());
   const [transferMode, setTransferMode] = useState<TransferMode>(() => getInitialTransferMode());
   const [optimizerSettings, setOptimizerSettings] = useState<OptimizerSettings>(() => getInitialOptimizerSettings());
+  const [qualityDraft, setQualityDraft] = useState(() => String(optimizerSettings.quality));
+  const [contrastFactorDraft, setContrastFactorDraft] = useState(() => String(optimizerSettings.contrast_factor));
   const [apiBaseUrlDraft, setApiBaseUrlDraft] = useState(() => getInitialApiBaseUrl());
   const [standaloneMode, setStandaloneMode] = useState(initialStandaloneMode);
   const usesBrowserLibrary = standaloneMode || usesBrowserLibraryByDefault;
@@ -813,8 +815,65 @@ export default function App() {
     setOptimizerSettings((current) => ({ ...current, [key]: value }));
   }
 
+  function updateQualityFromSlider(value: string) {
+    const nextValue = clampNumber(Number(value), 1, 100);
+    updateOptimizerSetting("quality", nextValue);
+    setQualityDraft(String(nextValue));
+  }
+
+  function updateQualityDraft(value: string) {
+    setQualityDraft(value);
+    commitOptimizerNumberDraft("quality", value, 1, 100, setQualityDraft);
+  }
+
+  function commitQualityDraft() {
+    commitOptimizerNumberDraft("quality", qualityDraft, 1, 100, setQualityDraft, true);
+  }
+
+  function updateContrastFactorFromSlider(value: string) {
+    const nextValue = clampNumber(Number(value), 0.5, 3);
+    updateOptimizerSetting("contrast_factor", nextValue);
+    setContrastFactorDraft(String(nextValue));
+  }
+
+  function updateContrastFactorDraft(value: string) {
+    setContrastFactorDraft(value);
+    commitOptimizerNumberDraft("contrast_factor", value, 0.5, 3, setContrastFactorDraft);
+  }
+
+  function commitContrastFactorDraft() {
+    commitOptimizerNumberDraft("contrast_factor", contrastFactorDraft, 0.5, 3, setContrastFactorDraft, true);
+  }
+
+  function commitOptimizerNumberDraft<K extends "quality" | "contrast_factor">(
+    key: K,
+    draft: string,
+    min: number,
+    max: number,
+    setDraft: (value: string) => void,
+    force = false
+  ) {
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === "." || trimmed.endsWith(".")) {
+      if (force) setDraft(String(optimizerSettings[key]));
+      return;
+    }
+
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      if (force) setDraft(String(optimizerSettings[key]));
+      return;
+    }
+
+    const nextValue = clampNumber(parsed, min, max);
+    updateOptimizerSetting(key, nextValue);
+    if (force || String(nextValue) !== trimmed) setDraft(String(nextValue));
+  }
+
   function resetOptimizerSettings() {
     setOptimizerSettings(defaultOptimizerSettings);
+    setQualityDraft(String(defaultOptimizerSettings.quality));
+    setContrastFactorDraft(String(defaultOptimizerSettings.contrast_factor));
   }
 
   function swapFilenameRenderFields() {
@@ -1884,14 +1943,15 @@ export default function App() {
                     max="100"
                     step="1"
                     value={optimizerSettings.quality}
-                    onChange={(event) => updateOptimizerSetting("quality", clampNumber(Number(event.target.value), 1, 100))}
+                    onChange={(event) => updateQualityFromSlider(event.target.value)}
                   />
                   <input
                     type="number"
                     min="1"
                     max="100"
-                    value={optimizerSettings.quality}
-                    onChange={(event) => updateOptimizerSetting("quality", clampNumber(Number(event.target.value), 1, 100))}
+                    value={qualityDraft}
+                    onChange={(event) => updateQualityDraft(event.target.value)}
+                    onBlur={commitQualityDraft}
                     aria-label="JPEG quality"
                   />
                 </div>
@@ -1906,16 +1966,17 @@ export default function App() {
                     step="0.1"
                     value={optimizerSettings.contrast_factor}
                     disabled={!optimizerSettings.contrast_boost}
-                    onChange={(event) => updateOptimizerSetting("contrast_factor", clampNumber(Number(event.target.value), 0.5, 3))}
+                    onChange={(event) => updateContrastFactorFromSlider(event.target.value)}
                   />
                   <input
                     type="number"
                     min="0.5"
                     max="3"
                     step="0.1"
-                    value={optimizerSettings.contrast_factor}
+                    value={contrastFactorDraft}
                     disabled={!optimizerSettings.contrast_boost}
-                    onChange={(event) => updateOptimizerSetting("contrast_factor", clampNumber(Number(event.target.value), 0.5, 3))}
+                    onChange={(event) => updateContrastFactorDraft(event.target.value)}
+                    onBlur={commitContrastFactorDraft}
                     aria-label="Contrast multiplier"
                   />
                 </div>
