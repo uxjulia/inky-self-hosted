@@ -34,6 +34,18 @@ type Metadata = {
   author: string;
 };
 
+type CssFileEntry = {
+  data: ArrayBuffer;
+  text: string;
+  changed: boolean;
+};
+
+type UsedSelectors = {
+  classes: Set<string>;
+  ids: Set<string>;
+  elements: Set<string>;
+};
+
 const imageExtensionPattern = /\.(png|gif|webp|bmp|jpe?g)$/i;
 const xhtmlExtensionPattern = /\.(xhtml|html|htm)$/i;
 const cssExtensionPattern = /\.css$/i;
@@ -60,7 +72,7 @@ export async function optimizeEpubInBrowser(
   const entries = Object.entries(zip.files);
   const imageRenameMap = buildImageRenameMap(entries);
   const xhtmlFiles: Record<string, string> = {};
-  const cssFiles = new Set<string>();
+  const cssFiles: Record<string, CssFileEntry> = {};
   let opfPath = "";
   let opfText = "";
 
@@ -83,8 +95,13 @@ export async function optimizeEpubInBrowser(
       continue;
     }
     if (cssExtensionPattern.test(path)) {
-      cssFiles.add(path);
-      if (settings.remove_css) continue;
+      const data = await entry.async("arraybuffer");
+      cssFiles[path] = {
+        data,
+        text: new TextDecoder().decode(data),
+        changed: false
+      };
+      continue;
     }
     if (settings.remove_fonts && fontExtensionPattern.test(path)) continue;
 
@@ -109,7 +126,7 @@ export async function optimizeEpubInBrowser(
 
     if (xhtmlExtensionPattern.test(path)) {
       const text = await entry.async("text");
-      const processed = processXhtml(text, path, imageRenameMap, cssFiles, settings);
+      const processed = processXhtml(text, path, imageRenameMap, settings);
       xhtmlFiles[path] = processed;
       out.file(path, processed, {
         compression: "DEFLATE",
@@ -145,6 +162,29 @@ export async function optimizeEpubInBrowser(
       });
     }
   }
+  let remainingCssFiles = cssFiles;
+  let cssWasTreeShaken = false;
+  if (settings.remove_css) {
+    const cssResult = treeShakeCssFiles(cssFiles, xhtmlFiles, updatedOpf, opfPath);
+    remainingCssFiles = cssResult.cssFiles;
+    updatedOpf = cssResult.opfText;
+    cssWasTreeShaken = cssResult.rulesRemoved > 0 || cssResult.filesRemoved > 0;
+    for (const [path, text] of Object.entries(cssResult.xhtmlFiles)) {
+      xhtmlFiles[path] = text;
+      out.file(path, text, {
+        compression: "DEFLATE",
+        compressionOptions: { level: 8 },
+        createFolders: false
+      });
+    }
+  }
+  for (const [path, css] of Object.entries(remainingCssFiles)) {
+    out.file(path, css.changed ? css.text : css.data, {
+      compression: "DEFLATE",
+      compressionOptions: { level: 8 },
+      createFolders: false
+    });
+  }
   out.file(opfPath, updatedOpf, {
     compression: "DEFLATE",
     compressionOptions: { level: 8 },
@@ -160,7 +200,7 @@ export async function optimizeEpubInBrowser(
       createFolders: false
     });
   }
-  out.file(crossInkOptimizerManifestPath, JSON.stringify(buildOptimizerManifest(device, settings)), {
+  out.file(crossInkOptimizerManifestPath, JSON.stringify(buildOptimizerManifest(device, settings, cssWasTreeShaken)), {
     compression: "DEFLATE",
     compressionOptions: { level: 8 },
     createFolders: false
@@ -276,7 +316,6 @@ function processXhtml(
   text: string,
   path: string,
   imageRenameMap: Map<string, string>,
-  cssFiles: Set<string>,
   settings: BrowserOptimizerSettings
 ) {
   const parser = new DOMParser();
@@ -289,16 +328,6 @@ function processXhtml(
     rewriteReference(element, "src", path, imageRenameMap);
     rewriteReference(element, "href", path, imageRenameMap);
     rewriteReference(element, "xlink:href", path, imageRenameMap);
-  }
-
-  if (settings.remove_css) {
-    for (const link of Array.from(doc.querySelectorAll("link"))) {
-      const href = link.getAttribute("href") || "";
-      const rel = (link.getAttribute("rel") || "").toLowerCase();
-      if (rel.includes("stylesheet") || cssFiles.has(resolvePath(path, href))) {
-        link.remove();
-      }
-    }
   }
 
   const serialized = new XMLSerializer().serializeToString(doc);
@@ -342,9 +371,6 @@ function processOpf(
     ) {
       item.remove();
     }
-    if (settings.remove_css && (cssExtensionPattern.test(href) || mediaType === "text/css")) {
-      item.remove();
-    }
   }
 
   return new XMLSerializer().serializeToString(doc);
@@ -361,10 +387,281 @@ function processOpfRegex(opfText: string, imageRenameMap: Map<string, string>, s
       ""
     );
   }
-  if (settings.remove_css) {
-    next = next.replace(/<[^>]*item\b[^>]*(?:media-type=["']text\/css["']|href=["'][^"']+\.css["'])[^>]*\/?>/gi, "");
-  }
   return next;
+}
+
+function treeShakeCssFiles(
+  cssFiles: Record<string, CssFileEntry>,
+  xhtmlFiles: Record<string, string>,
+  opfText: string,
+  opfPath: string
+) {
+  const used = collectUsedSelectors(xhtmlFiles);
+  const linkedCss = collectReachableCssPaths(cssFiles, xhtmlFiles);
+  const remainingCssFiles: Record<string, CssFileEntry> = {};
+  const removedCssPaths = new Set<string>();
+  const changedXhtmlFiles: Record<string, string> = {};
+  let rulesRemoved = 0;
+  let filesRemoved = 0;
+
+  for (const [path, css] of Object.entries(cssFiles)) {
+    if (!linkedCss.has(path)) {
+      removedCssPaths.add(path);
+      filesRemoved += 1;
+      continue;
+    }
+
+    const cleaned = removeUnusedCssRules(css.text, used);
+    rulesRemoved += cleaned.removedRules;
+    if (!cleaned.text.trim()) {
+      removedCssPaths.add(path);
+      filesRemoved += 1;
+      continue;
+    }
+
+    remainingCssFiles[path] = {
+      ...css,
+      text: cleaned.text,
+      changed: css.changed || cleaned.removedRules > 0
+    };
+  }
+
+  if (removedCssPaths.size === 0) {
+    return {
+      cssFiles: remainingCssFiles,
+      xhtmlFiles: changedXhtmlFiles,
+      opfText,
+      rulesRemoved,
+      filesRemoved
+    };
+  }
+
+  for (const [path, text] of Object.entries(xhtmlFiles)) {
+    const updated = removeStylesheetLinks(text, path, removedCssPaths);
+    if (updated !== text) changedXhtmlFiles[path] = updated;
+  }
+
+  return {
+    cssFiles: remainingCssFiles,
+    xhtmlFiles: changedXhtmlFiles,
+    opfText: removeCssItemsFromOpf(opfText, opfPath, removedCssPaths),
+    rulesRemoved,
+    filesRemoved
+  };
+}
+
+function collectUsedSelectors(xhtmlFiles: Record<string, string>): UsedSelectors {
+  const used: UsedSelectors = {
+    classes: new Set<string>(),
+    ids: new Set<string>(),
+    elements: new Set<string>()
+  };
+  const parser = new DOMParser();
+
+  for (const text of Object.values(xhtmlFiles)) {
+    const doc = parser.parseFromString(text, "text/html");
+    for (const element of Array.from(doc.querySelectorAll("*"))) {
+      used.elements.add(element.tagName.toLowerCase());
+      for (const className of Array.from(element.classList)) used.classes.add(className);
+      const id = element.getAttribute("id");
+      if (id) used.ids.add(id);
+    }
+  }
+
+  return used;
+}
+
+function collectReachableCssPaths(cssFiles: Record<string, CssFileEntry>, xhtmlFiles: Record<string, string>) {
+  const cssPaths = new Set(Object.keys(cssFiles));
+  const reachable = new Set<string>();
+  const parser = new DOMParser();
+
+  for (const [xhtmlPath, text] of Object.entries(xhtmlFiles)) {
+    const doc = parser.parseFromString(text, "text/html");
+    for (const link of Array.from(doc.querySelectorAll("link"))) {
+      if (!isStylesheetLink(link)) continue;
+      const href = link.getAttribute("href") || "";
+      const cssPath = resolvePath(xhtmlPath, safeDecodeURIComponent(stripUrlSuffix(href)));
+      if (cssPaths.has(cssPath)) reachable.add(cssPath);
+    }
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const cssPath of Array.from(reachable)) {
+      for (const importedPath of collectCssImports(cssFiles[cssPath]?.text || "", cssPath, cssPaths)) {
+        if (!reachable.has(importedPath)) {
+          reachable.add(importedPath);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  return reachable;
+}
+
+function collectCssImports(cssText: string, cssPath: string, cssPaths: Set<string>) {
+  const imports = new Set<string>();
+  const importPattern = /@import\s+(?:url\(\s*)?["']?([^'")\s;]+)/gi;
+  for (const match of cssText.matchAll(importPattern)) {
+    const imported = resolvePath(cssPath, safeDecodeURIComponent(stripUrlSuffix(match[1] || "")));
+    if (cssPaths.has(imported)) imports.add(imported);
+  }
+  return imports;
+}
+
+function removeUnusedCssRules(cssText: string, used: UsedSelectors) {
+  const source = stripCssComments(cssText);
+  let output = "";
+  let removedRules = 0;
+  let cursor = 0;
+
+  while (cursor < source.length) {
+    const open = source.indexOf("{", cursor);
+    if (open === -1) {
+      output += source.slice(cursor);
+      break;
+    }
+
+    const close = findMatchingBrace(source, open);
+    if (close === -1) {
+      output += source.slice(cursor);
+      break;
+    }
+
+    const selectorStart = findRuleStart(source, cursor, open);
+    const selector = source.slice(selectorStart, open).trim();
+    const fullRule = source.slice(selectorStart, close + 1);
+    output += source.slice(cursor, selectorStart);
+
+    if (!selector || selector.startsWith("@") || selectorMatchesUsed(selector, used)) {
+      output += fullRule;
+    } else {
+      removedRules += 1;
+    }
+
+    cursor = close + 1;
+  }
+
+  return { text: output.trim(), removedRules };
+}
+
+function stripCssComments(cssText: string) {
+  return cssText.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+function findRuleStart(cssText: string, cursor: number, openBrace: number) {
+  let index = openBrace - 1;
+  while (index >= cursor && cssText[index] !== "}") index -= 1;
+  return index + 1;
+}
+
+function findMatchingBrace(cssText: string, openBrace: number) {
+  let depth = 0;
+  for (let index = openBrace; index < cssText.length; index += 1) {
+    const char = cssText[index];
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+}
+
+function selectorMatchesUsed(selectorText: string, used: UsedSelectors) {
+  for (const selector of splitSelectorList(selectorText)) {
+    const trimmed = selector.trim();
+    if (!trimmed || ["*", "html", "body"].includes(trimmed)) return true;
+
+    const classes = Array.from(trimmed.matchAll(/\.([a-zA-Z_][\w-]*)/g), (match) => match[1]);
+    const ids = Array.from(trimmed.matchAll(/#([a-zA-Z_][\w-]*)/g), (match) => match[1]);
+    if (classes.length > 0 || ids.length > 0) {
+      if (classes.every((className) => used.classes.has(className)) && ids.every((id) => used.ids.has(id))) {
+        return true;
+      }
+      continue;
+    }
+
+    if (trimmed.includes(":") || trimmed.includes("[")) return true;
+
+    const elements = Array.from(trimmed.matchAll(/(?:^|[\s>+~])([a-zA-Z][\w-]*)/g), (match) =>
+      match[1].toLowerCase()
+    );
+    if (elements.length === 0 || elements.some((element) => used.elements.has(element))) return true;
+  }
+
+  return false;
+}
+
+function splitSelectorList(selectorText: string) {
+  const selectors: string[] = [];
+  let current = "";
+  let bracketDepth = 0;
+  let parenDepth = 0;
+  for (const char of selectorText) {
+    if (char === "[") bracketDepth += 1;
+    if (char === "]") bracketDepth = Math.max(0, bracketDepth - 1);
+    if (char === "(") parenDepth += 1;
+    if (char === ")") parenDepth = Math.max(0, parenDepth - 1);
+    if (char === "," && bracketDepth === 0 && parenDepth === 0) {
+      selectors.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  selectors.push(current);
+  return selectors;
+}
+
+function removeStylesheetLinks(xhtmlText: string, xhtmlPath: string, removedCssPaths: Set<string>) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xhtmlText, "application/xhtml+xml");
+  if (doc.getElementsByTagName("parsererror").length > 0) return xhtmlText;
+
+  let removed = false;
+  for (const link of Array.from(doc.querySelectorAll("link"))) {
+    if (!isStylesheetLink(link)) continue;
+    const href = link.getAttribute("href") || "";
+    const cssPath = resolvePath(xhtmlPath, safeDecodeURIComponent(stripUrlSuffix(href)));
+    if (removedCssPaths.has(cssPath)) {
+      link.remove();
+      removed = true;
+    }
+  }
+
+  return removed ? new XMLSerializer().serializeToString(doc) : xhtmlText;
+}
+
+function removeCssItemsFromOpf(opfText: string, opfPath: string, removedCssPaths: Set<string>) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(opfText, "application/xml");
+  if (doc.getElementsByTagName("parsererror").length > 0) return opfText;
+
+  let removed = false;
+  for (const item of Array.from(doc.getElementsByTagName("item"))) {
+    const href = item.getAttribute("href") || "";
+    const mediaType = item.getAttribute("media-type") || "";
+    if ((mediaType === "text/css" || cssExtensionPattern.test(href)) && removedCssPaths.has(resolvePath(opfPath, href))) {
+      item.remove();
+      removed = true;
+    }
+  }
+
+  return removed ? new XMLSerializer().serializeToString(doc) : opfText;
+}
+
+function isStylesheetLink(link: Element) {
+  const rel = (link.getAttribute("rel") || "").toLowerCase().split(/\s+/);
+  const type = (link.getAttribute("type") || "").toLowerCase();
+  return rel.includes("stylesheet") || type === "text/css";
+}
+
+function stripUrlSuffix(value: string) {
+  return value.split(/[#?]/, 1)[0];
 }
 
 type SplitPart = {
@@ -860,7 +1157,7 @@ function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function buildOptimizerManifest(device: BrowserOptimizeDevice, settings: BrowserOptimizerSettings) {
+function buildOptimizerManifest(device: BrowserOptimizeDevice, settings: BrowserOptimizerSettings, cssWasTreeShaken: boolean) {
   return {
     format: "crossink-optimizer",
     version: 1,
@@ -873,7 +1170,7 @@ function buildOptimizerManifest(device: BrowserOptimizeDevice, settings: Browser
     features: {
       htmlNormalized: settings.text_cleanup,
       cssFlattened: false,
-      cssRemoved: settings.remove_css,
+      cssRemoved: cssWasTreeShaken,
       fontsRemoved: settings.remove_fonts,
       xLocations: true,
       prebuiltPxc: false
