@@ -498,12 +498,13 @@ async def send_file_to_device(
     device_url: str,
     destination_path: str = "/",
     progress: SendProgress | None = None,
+    filename: str | None = None,
 ) -> dict:
     base = normalize_device_url(device_url)
     destination_path = _normalize_destination_path(destination_path)
     async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
         created_folders = await _ensure_device_folder(client, base, destination_path)
-        return await _upload_file_atomically(client, base, file_path, destination_path, created_folders, progress)
+        return await _upload_file_atomically(client, base, file_path, destination_path, created_folders, progress, filename)
 
 
 async def _ensure_device_folder(client: httpx.AsyncClient, base: str, destination_path: str) -> list[str]:
@@ -547,8 +548,9 @@ async def _upload_file_atomically(
     destination_path: str,
     created_folders: list[str],
     progress: SendProgress | None,
+    filename: str | None,
 ) -> dict:
-    final_name = _device_filename(file_path.name)
+    final_name = _device_filename(filename or file_path.name)
     temp_name = _temporary_upload_name(final_name)
     temp_path = _join_device_folder(destination_path, temp_name)
     final_path = _join_device_folder(destination_path, final_name)

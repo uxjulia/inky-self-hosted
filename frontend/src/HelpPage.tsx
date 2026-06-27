@@ -25,15 +25,8 @@ export function HelpPage({
         <div>
           <p className="eyebrow">Getting Started</p>
           <h2>
-            Send books and articles to your Cross<span className="serif">I</span>nk reader
+            Sending files to your Cross<span className="serif">I</span>nk reader
           </h2>
-          <p>
-            {standaloneMode
-              ? isHostedApp
-                ? "Inky optimizes EPUBs in this browser and sends them directly to an X3 or X4 device over USB. Files do not upload to an Inky server."
-                : "Inky stores local files on this device and sends them directly to an X3 or X4 device. EPUBs are optimized in the app before sending."
-              : "Inky connects catalogs, feeds, cloud folders, and local files to an X3 or X4 device. EPUBs can be optimized before sending. TXT, XTC, XTCH, BMP, and PNG files are sent as-is."}
-          </p>
         </div>
       </div>
 
@@ -131,7 +124,9 @@ export function HelpPage({
             <ul>
               {!standaloneMode && <li>EPUBs are optimized for the selected X3 or X4 device before upload.</li>}
               {standaloneMode && <li>EPUBs are optimized locally in the browser before sending.</li>}
-              {!isPublicReadOnly && <li>RSS and Atom articles are first converted to EPUB, then optimized and sent.</li>}
+              {!isPublicReadOnly && (
+                <li>RSS and Atom articles are first converted to EPUB, then optimized and sent.</li>
+              )}
               {!isHostedApp && <li>TXT, XTC, XTCH, BMP, and PNG files skip optimization and upload directly.</li>}
               <li>The Device card shows the latest job log after send work starts.</li>
             </ul>
@@ -154,17 +149,17 @@ export function HelpPage({
                   screen pages.
                 </li>
                 <li>
-                  Reference pages give a consistent stable page number that stays useful even when font size, margins, or
-                  orientation change.
+                  Reference pages give a consistent stable page number that stays useful even when font size, margins,
+                  or orientation change.
                 </li>
                 <li>TOC, cover, image, and metadata cleanup help books open cleaner and use less device memory.</li>
                 <li>
-                  Optional long-section splitting can break EPUB sections over 2,000 visible words into smaller
-                  sections for faster on-device rendering. This does not affect your visible chapters or table of contents.
+                  Optional long-section splitting can break EPUB sections over 2,000 visible words into smaller sections
+                  for faster on-device rendering. This does not affect your visible chapters or table of contents.
                 </li>
                 <li>
-                  Images are prepared for the selected X3 or X4 screen so covers and images fit the target
-                  display better.
+                  Images are prepared for the selected X3 or X4 screen so covers and images fit the target display
+                  better.
                 </li>
               </ul>
             </div>

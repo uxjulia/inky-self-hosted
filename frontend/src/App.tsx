@@ -158,6 +158,7 @@ type Job = {
   message: string;
   error?: string | null;
   item_id?: number | null;
+  result_json?: string | null;
 };
 
 type SourceForm = {
@@ -1199,7 +1200,10 @@ export default function App() {
         method: "POST",
         body: JSON.stringify(defaultOptimizePayload())
       });
-      await waitForJobCompletion(job);
+      const completedJob = await waitForJobCompletion(job);
+      const { blob, filename } = await downloadLibraryItemFile(item);
+      await sendBlobViaUsb(blob, optimizedDeviceFilename(completedJob) || filename || libraryItemFilename(item), item.id);
+      return;
     }
 
     const { blob, filename } = await downloadLibraryItemFile(item);
@@ -2391,6 +2395,17 @@ function filenameFromContentDisposition(value: string | null) {
   if (quotedMatch) return quotedMatch[1];
   const plainMatch = value.match(/filename=([^;]+)/i);
   return plainMatch?.[1]?.trim() || "";
+}
+
+function optimizedDeviceFilename(job: Job) {
+  if (!job.result_json) return "";
+  try {
+    const result = JSON.parse(job.result_json) as { device_filename?: unknown; optimization?: { device_filename?: unknown } };
+    const filename = result.optimization?.device_filename ?? result.device_filename;
+    return typeof filename === "string" ? filename : "";
+  } catch {
+    return "";
+  }
 }
 
 function isMountedLibraryItem(item: LibraryItem) {

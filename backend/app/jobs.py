@@ -11,7 +11,7 @@ from .config import get_settings
 from .db import SessionLocal
 from .library import format_upload_bytes, send_file_to_device
 from .models import Job, JobStatus, LibraryItem, utc_now
-from .optimizer.service import optimize_epub
+from .optimizer.service import optimize_epub, preferred_output_filename
 from .schemas import DeviceSendRequest, OptimizeRequest
 
 
@@ -76,12 +76,18 @@ def run_send_job(job_id: str, item_id: int, request: DeviceSendRequest) -> None:
         job.message = "Preparing file"
         db.commit()
 
-        file_path = _send_path(job_id, job, Path(item.original_path), request, Path(item.optimized_path) if item.optimized_path else None)
+        file_path, device_filename = _send_path(
+            job_id,
+            job,
+            Path(item.original_path),
+            request,
+            Path(item.optimized_path) if item.optimized_path else None,
+        )
         if request.optimize_first and item.original_path.lower().endswith(".epub") and not item.optimized_path:
             item.optimized_path = str(file_path)
             db.commit()
 
-        _send_file(job_id, job, file_path, request)
+        _send_file(job_id, job, file_path, request, device_filename)
         item.sent_at = utc_now()
         db.commit()
     except Exception as exc:
@@ -101,30 +107,38 @@ def run_send_path_job(job_id: str, source_path: str, request: DeviceSendRequest)
         job.message = "Preparing file"
         db.commit()
 
-        file_path = _send_path(job_id, job, Path(source_path), request)
-        _send_file(job_id, job, file_path, request)
+        file_path, device_filename = _send_path(job_id, job, Path(source_path), request)
+        _send_file(job_id, job, file_path, request, device_filename)
     except Exception as exc:
         set_job(job_id, status=JobStatus.failed.value, progress=100, message="Send failed", error=str(exc))
     finally:
         db.close()
 
 
-def _send_path(job_id: str, job: Job, original_path: Path, request: DeviceSendRequest, optimized_path: Path | None = None) -> Path:
+def _send_path(
+    job_id: str,
+    job: Job,
+    original_path: Path,
+    request: DeviceSendRequest,
+    optimized_path: Path | None = None,
+) -> tuple[Path, str | None]:
     file_path = optimized_path or original_path
     is_epub = original_path.suffix.lower() == ".epub"
+    device_filename = preferred_output_filename(original_path, request) if request.optimize_first and is_epub else None
     if request.optimize_first and is_epub and optimized_path is None:
         def progress(percent: int, message: str) -> None:
             set_job(job_id, progress=max(5, min(80, int(percent * 0.8))), message=message)
 
         output_path, result = optimize_epub(original_path, get_settings().optimized_dir, request, progress)
         file_path = output_path
+        device_filename = result.get("device_filename") or device_filename
         job.result_json = json.dumps({"optimization": result})
     elif request.optimize_first and not is_epub:
         job.result_json = json.dumps({"optimization": "skipped for non-EPUB file"})
-    return file_path
+    return file_path, device_filename
 
 
-def _send_file(job_id: str, job: Job, file_path: Path, request: DeviceSendRequest) -> None:
+def _send_file(job_id: str, job: Job, file_path: Path, request: DeviceSendRequest, device_filename: str | None = None) -> None:
     set_job(
         job_id,
         progress=0,
@@ -135,7 +149,7 @@ def _send_file(job_id: str, job: Job, file_path: Path, request: DeviceSendReques
         set_job(job_id, progress=max(0, min(100, percent)), message=message)
 
     send_result = asyncio.run(
-        send_file_to_device(file_path, request.device_url, request.destination_path, send_progress)
+        send_file_to_device(file_path, request.device_url, request.destination_path, send_progress, device_filename)
     )
     result = {"send": send_result}
     if job.result_json:
