@@ -42,6 +42,9 @@ const crossInkOptimizerManifestPath = "META-INF/crossink/optimizer-v1.json";
 const wordsPerLocation = 64;
 const wordsPerReferencePage = 250;
 const sectionSplitWordThreshold = 2000;
+const orphanIntroWordLimit = 50;
+const headingTags = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
+const mediaTags = new Set(["audio", "canvas", "embed", "iframe", "image", "img", "object", "picture", "svg", "video"]);
 
 export async function optimizeEpubInBrowser(
   file: Blob,
@@ -448,7 +451,10 @@ function splitXhtmlSection(text: string, path: string, wordThreshold: number): S
   const body = firstElementByLocalName(doc, "body");
   if (!body || nodeWordCount(body) <= wordThreshold) return [{ path, text, anchors: new Set() }];
 
-  const splitChain = body.children.length <= 1 ? findSplitChain(body, wordThreshold) : [];
+  let splitChain = body.children.length <= 1 ? findSplitChain(body, wordThreshold) : [];
+  if (body.children.length > 1) {
+    splitChain = findIntroSplitChain(body, wordThreshold);
+  }
   const splitTarget = splitChain.length > 0 ? splitChain[splitChain.length - 1] : body;
   const nodes = childElements(splitTarget);
   if (nodes.length <= 1) return [{ path, text, anchors: new Set() }];
@@ -467,9 +473,10 @@ function splitXhtmlSection(text: string, path: string, wordThreshold: number): S
     currentWords += words;
   }
   if (current.length > 0) chunks.push(current);
-  if (chunks.length <= 1) return [{ path, text, anchors: new Set() }];
+  const mergedChunks = mergeOrphanIntroChunks(chunks, wordThreshold);
+  if (mergedChunks.length <= 1) return [{ path, text, anchors: new Set() }];
 
-  return chunks.map((chunk, index) => {
+  return mergedChunks.map((chunk, index) => {
     const partPath = index === 0 ? path : sectionPartPath(path, index + 1);
     return {
       path: partPath,
@@ -531,6 +538,76 @@ function findSplitChain(body: Element, wordThreshold: number) {
     node = node.parentElement;
   }
   return chain;
+}
+
+function findIntroSplitChain(body: Element, wordThreshold: number) {
+  const nodes = childElements(body);
+  for (const [index, node] of nodes.entries()) {
+    if (nodeWordCount(node) <= wordThreshold || node.children.length <= 1) continue;
+    const preceding = nodes.slice(0, index);
+    const following = nodes.slice(index + 1);
+    if (preceding.length === 0 || !isOrphanIntroChunk(preceding, wordThreshold)) continue;
+    if (following.length > 0 && !allDecorative(following)) continue;
+    return findSplitChainWithin(body, node, wordThreshold);
+  }
+  return [];
+}
+
+function findSplitChainWithin(body: Element, start: Element, wordThreshold: number) {
+  let best: Element | null = null;
+  let bestChildCount = 0;
+  for (const node of [start, ...Array.from(start.querySelectorAll("*"))]) {
+    if (node.children.length <= bestChildCount || nodeWordCount(node) <= wordThreshold) continue;
+    best = node;
+    bestChildCount = node.children.length;
+  }
+  if (!best) return [];
+
+  const chain: Element[] = [];
+  let node: Element | null = best;
+  while (node && node !== body) {
+    chain.unshift(node);
+    node = node.parentElement;
+  }
+  return chain;
+}
+
+function mergeOrphanIntroChunks(chunks: Element[][], wordThreshold: number) {
+  if (chunks.length <= 1) return chunks;
+
+  const merged: Element[][] = [];
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = chunks[index];
+    if (index < chunks.length - 1 && isOrphanIntroChunk(chunk, wordThreshold)) {
+      chunks[index + 1] = [...chunk, ...chunks[index + 1]];
+    } else if (index === chunks.length - 1 && merged.length > 0 && isOrphanIntroChunk(chunk, wordThreshold)) {
+      merged[merged.length - 1].push(...chunk);
+    } else {
+      merged.push(chunk);
+    }
+  }
+  return merged;
+}
+
+function isOrphanIntroChunk(nodes: Element[], wordThreshold: number) {
+  const words = nodes.reduce((total, node) => total + nodeWordCount(node), 0);
+  if (words > introWordLimit(wordThreshold)) return false;
+  return words === 0 || nodes.some((node) => containsHeadingOrMedia(node));
+}
+
+function introWordLimit(wordThreshold: number) {
+  return Math.max(1, Math.min(orphanIntroWordLimit, Math.floor(wordThreshold / 20)));
+}
+
+function containsHeadingOrMedia(node: Element) {
+  return [node, ...Array.from(node.querySelectorAll("*"))].some((element) => {
+    const tag = element.localName.toLowerCase();
+    return headingTags.has(tag) || mediaTags.has(tag);
+  });
+}
+
+function allDecorative(nodes: Element[]) {
+  return nodes.every((node) => nodeWordCount(node) === 0 && !containsHeadingOrMedia(node));
 }
 
 function rewriteRelocatedAnchorRefs(text: string, sourcePath: string, relocationMap: Map<string, string>) {
