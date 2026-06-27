@@ -80,7 +80,7 @@ type SourceType = "local" | RemoteSourceType;
 type Theme = "light" | "dark";
 type DeviceTarget = "x4" | "x3";
 type TransferMode = "wifi" | "usb";
-type SortMode = "source" | "title_asc" | "title_desc" | "type";
+type SortMode = "source" | "date_added" | "title_asc" | "title_desc" | "type";
 type ToastState = { message: string; tone: "success" | "error" };
 type PendingBrowseAction = { key: string; action: "save" | "send" };
 type FilenameRenderToken = "Book Title" | "Author";
@@ -145,6 +145,7 @@ type LibraryItem = {
   sent_at?: string | null;
   is_missing?: boolean;
   last_scan_at?: string | null;
+  created_at?: string | null;
 };
 
 type Job = {
@@ -260,8 +261,8 @@ export default function App() {
     );
   }, [library, trimmedSearchQuery]);
   const remoteItems = activeBrowseResult?.items || [];
-  const activeSortMode = !isLocalSource && sortMode === "type" ? "source" : sortMode;
-  const sortOptions: SortMode[] = isLocalSource ? ["source", "type", "title_asc", "title_desc"] : ["source", "title_asc", "title_desc"];
+  const activeSortMode = !isLocalSource && (sortMode === "type" || sortMode === "date_added") ? "source" : sortMode;
+  const sortOptions: SortMode[] = isLocalSource ? ["source", "date_added", "type", "title_asc", "title_desc"] : ["source", "title_asc", "title_desc"];
   const availableSourceTypes = useMemo(
     () => sourceTypes.filter((type) => type !== "local_folder" || isDesktopApp),
     []
@@ -1665,7 +1666,7 @@ export default function App() {
                 return (
                   <div className={`item-row local-library-row ${item.is_missing ? "missing-library-row" : ""}`} key={item.id}>
                     <div className={coverUrl ? "item-cover" : "item-icon"}>
-                      {coverUrl ? <img src={mediaUrl(coverUrl)} alt="" loading="lazy" /> : <BookOpen size={16} />}
+                      {coverUrl ? <AuthenticatedImage src={coverUrl} alt="" /> : <BookOpen size={16} />}
                     </div>
                     <div className="item-main">
                       <div className="item-title-line">
@@ -1719,7 +1720,7 @@ export default function App() {
                   tabIndex={opensBrowseTarget ? 0 : undefined}
                 >
                   <div className={item.image_url ? "item-cover" : "item-icon"}>
-                    {item.image_url ? <img src={mediaUrl(item.image_url)} alt="" loading="lazy" /> : iconForItem(item)}
+                    {item.image_url ? <AuthenticatedImage src={item.image_url} alt="" /> : iconForItem(item)}
                   </div>
                   <div className="item-main">
                     <strong>{item.title}</strong>
@@ -2061,7 +2062,8 @@ function standaloneRecordToLibraryItem(record: StandaloneFileRecord): LibraryIte
     source_url: `standalone://library/${record.id}`,
     sent_at: record.sentAt || null,
     is_missing: false,
-    last_scan_at: null
+    last_scan_at: null,
+    created_at: record.createdAt
   };
 }
 
@@ -2142,6 +2144,43 @@ function browseItemKey(item: BrowseItem) {
 function mediaUrl(url: string) {
   const apiBaseUrl = getApiBaseUrl();
   return apiBaseUrl && url.startsWith("/api/") ? `${apiBaseUrl}${url}` : url;
+}
+
+function AuthenticatedImage({ src, alt }: { src: string; alt: string }) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const needsAuthenticatedFetch = src.startsWith("/api/");
+
+  useEffect(() => {
+    if (!needsAuthenticatedFetch) {
+      setObjectUrl(null);
+      return;
+    }
+
+    let active = true;
+    let nextObjectUrl: string | null = null;
+
+    async function loadImage() {
+      try {
+        const response = await apiFetch(src);
+        const blob = await response.blob();
+        if (!active) return;
+        nextObjectUrl = URL.createObjectURL(blob);
+        setObjectUrl(nextObjectUrl);
+      } catch {
+        if (active) setObjectUrl(null);
+      }
+    }
+
+    loadImage();
+
+    return () => {
+      active = false;
+      if (nextObjectUrl) URL.revokeObjectURL(nextObjectUrl);
+    };
+  }, [needsAuthenticatedFetch, src]);
+
+  if (needsAuthenticatedFetch && !objectUrl) return null;
+  return <img src={objectUrl || mediaUrl(src)} alt={alt} loading="lazy" />;
 }
 
 function getInitialApiBaseUrl() {
@@ -2291,12 +2330,15 @@ function iconForItem(item: BrowseItem) {
 }
 
 function sortBrowseItems(items: BrowseItem[], sortMode: SortMode) {
-  if (sortMode === "source" || sortMode === "type") return items;
+  if (sortMode === "source" || sortMode === "type" || sortMode === "date_added") return items;
   return [...items].sort((left, right) => compareTitles(left.title, right.title, sortMode));
 }
 
 function sortLibraryItems(items: LibraryItem[], sortMode: SortMode) {
   if (sortMode === "source") return items;
+  if (sortMode === "date_added") {
+    return [...items].sort((left, right) => compareDateAdded(left, right) || compareTitles(left.title, right.title, "title_asc"));
+  }
   if (sortMode === "type") {
     return [...items].sort((left, right) => {
       const typeResult = librarySortType(left).localeCompare(librarySortType(right), undefined, { numeric: true, sensitivity: "base" });
@@ -2311,7 +2353,20 @@ function compareTitles(left: string, right: string, sortMode: SortMode) {
   return sortMode === "title_desc" ? -result : result;
 }
 
+function compareDateAdded(left: LibraryItem, right: LibraryItem) {
+  const leftTime = timestampForSort(left.created_at);
+  const rightTime = timestampForSort(right.created_at);
+  return rightTime - leftTime;
+}
+
+function timestampForSort(value?: string | null) {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
 function sortLabelForMode(sortMode: SortMode) {
+  if (sortMode === "date_added") return "Date Added";
   if (sortMode === "type") return "Type";
   if (sortMode === "title_asc") return "Title A-Z";
   if (sortMode === "title_desc") return "Title Z-A";
