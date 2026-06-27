@@ -8,6 +8,7 @@ export type BrowserOptimizerSettings = {
   contrast_boost: boolean;
   contrast_factor: number;
   eink_quantize: boolean;
+  words_per_reference_page: number;
   split_long_sections: boolean;
   remove_fonts: boolean;
   remove_css: boolean;
@@ -40,8 +41,8 @@ const fontExtensionPattern = /\.(ttf|otf|woff2?|eot)$/i;
 const crossInkLocationManifestPath = "META-INF/x-locations.json";
 const crossInkOptimizerManifestPath = "META-INF/crossink/optimizer-v1.json";
 const wordsPerLocation = 64;
-const wordsPerReferencePage = 250;
-const sectionSplitWordThreshold = 2000;
+const defaultWordsPerReferencePage = 275;
+const sectionSplitWordThreshold = 6000;
 const orphanIntroWordLimit = 50;
 const headingTags = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
 const mediaTags = new Set(["audio", "canvas", "embed", "iframe", "image", "img", "object", "picture", "svg", "video"]);
@@ -151,7 +152,7 @@ export async function optimizeEpubInBrowser(
   });
 
   progress?.(84, "Writing CrossInk metadata");
-  const locations = buildCrossInkLocationManifest(updatedOpf, opfPath, xhtmlFiles);
+  const locations = buildCrossInkLocationManifest(updatedOpf, opfPath, xhtmlFiles, settings.words_per_reference_page);
   if (locations) {
     out.file(crossInkLocationManifestPath, JSON.stringify(locations), {
       compression: "DEFLATE",
@@ -730,12 +731,18 @@ function uniqueId(base: string, existingIds: Set<string>) {
   return value;
 }
 
-function buildCrossInkLocationManifest(opfText: string, opfPath: string, xhtmlFiles: Record<string, string>) {
+function buildCrossInkLocationManifest(
+  opfText: string,
+  opfPath: string,
+  xhtmlFiles: Record<string, string>,
+  configuredWordsPerReferencePage = defaultWordsPerReferencePage
+) {
+  const wordsPerReferencePage = normalizeWordsPerReferencePage(configuredWordsPerReferencePage);
   const spine = parseSpineHrefs(opfText, opfPath);
   if (spine.length === 0) return null;
   let nextLocation = 1;
   let totalWords = 0;
-  const chapterGroups = buildChapterGroups(spine, xhtmlFiles);
+  const chapterGroups = buildChapterGroups(spine, xhtmlFiles, wordsPerReferencePage);
   const entries = spine.map((href, index) => {
     const text = extractVisibleText(xhtmlFiles[href] || "");
     const words = countWords(text);
@@ -772,7 +779,7 @@ function buildCrossInkLocationManifest(opfText: string, opfPath: string, xhtmlFi
   };
 }
 
-function buildChapterGroups(spine: string[], xhtmlFiles: Record<string, string>) {
+function buildChapterGroups(spine: string[], xhtmlFiles: Record<string, string>, wordsPerReferencePage = defaultWordsPerReferencePage) {
   const byChapterHref = new Map<
     string,
     { href: string; startSpineIndex: number; endSpineIndex: number; wordStart: number; wordCount: number }
@@ -813,6 +820,10 @@ function buildChapterGroups(spine: string[], xhtmlFiles: Record<string, string>)
   });
 
   return { groups, groupByHref };
+}
+
+function normalizeWordsPerReferencePage(value: number) {
+  return Number.isFinite(value) ? Math.max(1, Math.min(10000, Math.round(value))) : defaultWordsPerReferencePage;
 }
 
 function originalChapterHref(href: string) {

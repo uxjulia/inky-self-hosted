@@ -13,6 +13,7 @@
 - Basic Auth support for self-hosted installs.
 - In-app help page covering sources, local library, device setup, and send behavior.
 - Help content explaining CrossInk-specific EPUB enhancements such as stable locations and reference pages.
+- EPUB optimizer setting for customizing how many words count as one generated reference page.
 
 ### Changed
 

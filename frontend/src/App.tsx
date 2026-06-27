@@ -95,6 +95,7 @@ type OptimizerSettings = {
   eink_quantize: boolean;
   light_novel: boolean;
   split_long_sections: boolean;
+  words_per_reference_page: number;
   remove_fonts: boolean;
   remove_css: boolean;
   text_cleanup: boolean;
@@ -191,6 +192,7 @@ const defaultOptimizerSettings: OptimizerSettings = {
   eink_quantize: true,
   light_novel: false,
   split_long_sections: true,
+  words_per_reference_page: 275,
   remove_fonts: true,
   remove_css: true,
   text_cleanup: true
@@ -226,6 +228,9 @@ export default function App() {
   const [optimizerSettings, setOptimizerSettings] = useState<OptimizerSettings>(() => getInitialOptimizerSettings());
   const [qualityDraft, setQualityDraft] = useState(() => String(optimizerSettings.quality));
   const [contrastFactorDraft, setContrastFactorDraft] = useState(() => String(optimizerSettings.contrast_factor));
+  const [referencePageWordsDraft, setReferencePageWordsDraft] = useState(() =>
+    String(optimizerSettings.words_per_reference_page)
+  );
   const [apiBaseUrlDraft, setApiBaseUrlDraft] = useState(() => getInitialApiBaseUrl());
   const [standaloneMode, setStandaloneMode] = useState(initialStandaloneMode);
   const usesBrowserLibrary = standaloneMode || usesBrowserLibraryByDefault;
@@ -862,7 +867,23 @@ export default function App() {
     commitOptimizerNumberDraft("contrast_factor", contrastFactorDraft, 0.5, 3, setContrastFactorDraft, true);
   }
 
-  function commitOptimizerNumberDraft<K extends "quality" | "contrast_factor">(
+  function updateReferencePageWordsDraft(value: string) {
+    setReferencePageWordsDraft(value);
+    commitOptimizerNumberDraft("words_per_reference_page", value, 1, 10000, setReferencePageWordsDraft);
+  }
+
+  function commitReferencePageWordsDraft() {
+    commitOptimizerNumberDraft(
+      "words_per_reference_page",
+      referencePageWordsDraft,
+      1,
+      10000,
+      setReferencePageWordsDraft,
+      true
+    );
+  }
+
+  function commitOptimizerNumberDraft<K extends "quality" | "contrast_factor" | "words_per_reference_page">(
     key: K,
     draft: string,
     min: number,
@@ -891,6 +912,7 @@ export default function App() {
     setOptimizerSettings(defaultOptimizerSettings);
     setQualityDraft(String(defaultOptimizerSettings.quality));
     setContrastFactorDraft(String(defaultOptimizerSettings.contrast_factor));
+    setReferencePageWordsDraft(String(defaultOptimizerSettings.words_per_reference_page));
   }
 
   function swapFilenameRenderFields() {
@@ -1253,9 +1275,9 @@ export default function App() {
           : usesBrowserLibrary
             ? await probeStandaloneDevice(resolvedDeviceUrl)
             : await api<Record<string, unknown>>("/api/devices/probe", {
-                method: "POST",
-                body: JSON.stringify({ device_url: resolvedDeviceUrl })
-              });
+              method: "POST",
+              body: JSON.stringify({ device_url: resolvedDeviceUrl })
+            });
       setDeviceStatus(
         `Successfully connected to: ${status.device || "Device"} at ${transferMode === "usb" ? "USB" : status.ip || resolvedDeviceUrl}`
       );
@@ -1614,9 +1636,8 @@ export default function App() {
               <div className="source-list">
                 {allSources.map((source, index) => (
                   <div
-                    className={`source-row ${source.id === selectedSourceId ? "selected" : ""} ${
-                      source.id === draggedSourceId ? "dragging" : ""
-                    } ${source.id === dragOverSourceId ? "drag-over" : ""}`}
+                    className={`source-row ${source.id === selectedSourceId ? "selected" : ""} ${source.id === draggedSourceId ? "dragging" : ""
+                      } ${source.id === dragOverSourceId ? "drag-over" : ""}`}
                     draggable={!isPublicReadOnly}
                     key={source.id}
                     onClick={() => {
@@ -1901,11 +1922,11 @@ export default function App() {
                       onKeyDown={
                         opensBrowseTarget
                           ? (event) => {
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                openBrowseItem(item);
-                              }
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              openBrowseItem(item);
                             }
+                          }
                           : undefined
                       }
                       role={opensBrowseTarget ? "button" : undefined}
@@ -2202,6 +2223,19 @@ export default function App() {
                   onChange={(event) => updateOptimizerSetting("text_cleanup", event.target.checked)}
                 />
                 <span>Clean text punctuation and spacing</span>
+              </label>
+              <label className="field">
+                <span>Words per page (used for Stable Page Numbers)</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="10000"
+                  step="1"
+                  value={referencePageWordsDraft}
+                  onChange={(event) => updateReferencePageWordsDraft(event.target.value)}
+                  onBlur={commitReferencePageWordsDraft}
+                  aria-label="Words per reference page"
+                />
               </label>
             </div>
             <div className="modal-actions">
@@ -2541,6 +2575,11 @@ function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
     eink_quantize: booleanOrDefault(stored.eink_quantize, defaultOptimizerSettings.eink_quantize),
     light_novel: booleanOrDefault(stored.light_novel, defaultOptimizerSettings.light_novel),
     split_long_sections: booleanOrDefault(stored.split_long_sections, defaultOptimizerSettings.split_long_sections),
+    words_per_reference_page: clampNumber(
+      Number(stored.words_per_reference_page ?? defaultOptimizerSettings.words_per_reference_page),
+      1,
+      10000
+    ),
     remove_fonts: booleanOrDefault(stored.remove_fonts, defaultOptimizerSettings.remove_fonts),
     remove_css: booleanOrDefault(stored.remove_css, defaultOptimizerSettings.remove_css),
     text_cleanup: booleanOrDefault(stored.text_cleanup, defaultOptimizerSettings.text_cleanup)

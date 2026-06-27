@@ -141,6 +141,7 @@ class OptimizeRequest(BaseModel):
     eink_quantize: bool = True
     light_novel: bool = False
     split_long_sections: bool = True
+    words_per_reference_page: int = Field(default=275, ge=1, le=10000)
     remove_fonts: bool = True
     remove_css: bool = True
     text_cleanup: bool = True
