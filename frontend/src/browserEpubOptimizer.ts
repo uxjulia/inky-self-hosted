@@ -190,7 +190,11 @@ function buildImageRenameMap(entries: [string, JSZip.JSZipObject][]) {
   return renameMap;
 }
 
-async function processImage(data: ArrayBuffer, device: BrowserOptimizeDevice, settings: BrowserOptimizerSettings): Promise<ImageProcessResult> {
+async function processImage(
+  data: ArrayBuffer,
+  device: BrowserOptimizeDevice,
+  settings: BrowserOptimizerSettings
+): Promise<ImageProcessResult> {
   const dimensions = device === "x4" ? { width: 800, height: 480 } : { width: 792, height: 528 };
   const image = await loadImage(data);
   const scale = Math.min(1, dimensions.width / image.naturalWidth, dimensions.height / image.naturalHeight);
@@ -199,7 +203,9 @@ async function processImage(data: ArrayBuffer, device: BrowserOptimizeDevice, se
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-  const context = canvas.getContext("2d", { willReadFrequently: settings.grayscale || settings.contrast_boost || settings.eink_quantize });
+  const context = canvas.getContext("2d", {
+    willReadFrequently: settings.grayscale || settings.contrast_boost || settings.eink_quantize
+  });
   if (!context) throw new Error("Canvas is not available.");
   context.imageSmoothingQuality = "high";
   context.drawImage(image, 0, 0, width, height);
@@ -308,7 +314,12 @@ function rewriteReference(element: Element, attr: string, basePath: string, imag
   element.setAttribute(attr, relativePath(basePath, renamed) + suffix);
 }
 
-function processOpf(opfText: string, opfPath: string, imageRenameMap: Map<string, string>, settings: BrowserOptimizerSettings) {
+function processOpf(
+  opfText: string,
+  opfPath: string,
+  imageRenameMap: Map<string, string>,
+  settings: BrowserOptimizerSettings
+) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(opfText, "application/xml");
   if (doc.getElementsByTagName("parsererror").length > 0) {
@@ -324,7 +335,10 @@ function processOpf(opfText: string, opfPath: string, imageRenameMap: Map<string
       item.setAttribute("href", relativePath(opfPath, renamed));
       item.setAttribute("media-type", "image/jpeg");
     }
-    if (settings.remove_fonts && (fontExtensionPattern.test(href) || mediaType.startsWith("font/") || mediaType.includes("opentype"))) {
+    if (
+      settings.remove_fonts &&
+      (fontExtensionPattern.test(href) || mediaType.startsWith("font/") || mediaType.includes("opentype"))
+    ) {
       item.remove();
     }
     if (settings.remove_css && (cssExtensionPattern.test(href) || mediaType === "text/css")) {
@@ -341,7 +355,10 @@ function processOpfRegex(opfText: string, imageRenameMap: Map<string, string>, s
     next = next.split(escapeXml(relativeBasename(from))).join(escapeXml(relativeBasename(to)));
   }
   if (settings.remove_fonts) {
-    next = next.replace(/<[^>]*item\b[^>]*(?:media-type=["'][^"']*(?:font|opentype)[^"']*["']|href=["'][^"']+\.(?:ttf|otf|woff2?|eot)["'])[^>]*\/?>/gi, "");
+    next = next.replace(
+      /<[^>]*item\b[^>]*(?:media-type=["'][^"']*(?:font|opentype)[^"']*["']|href=["'][^"']+\.(?:ttf|otf|woff2?|eot)["'])[^>]*\/?>/gi,
+      ""
+    );
   }
   if (settings.remove_css) {
     next = next.replace(/<[^>]*item\b[^>]*(?:media-type=["']text\/css["']|href=["'][^"']+\.css["'])[^>]*\/?>/gi, "");
@@ -486,7 +503,13 @@ function splitXhtmlSection(text: string, path: string, wordThreshold: number): S
   });
 }
 
-function buildSplitPart(originalDoc: Document, originalBody: Element, splitChain: Element[], chunk: Element[], includePrecedingSiblings: boolean) {
+function buildSplitPart(
+  originalDoc: Document,
+  originalBody: Element,
+  splitChain: Element[],
+  chunk: Element[],
+  includePrecedingSiblings: boolean
+) {
   const root = originalDoc.documentElement;
   const nextDoc = document.implementation.createDocument(root.namespaceURI, root.tagName);
   const nextRoot = nextDoc.documentElement;
@@ -497,7 +520,9 @@ function buildSplitPart(originalDoc: Document, originalBody: Element, splitChain
 
   const nextBody = createElementLike(nextDoc, originalBody);
   copyAttributes(originalBody, nextBody);
-  if (includePrecedingSiblings) nextBody.textContent = originalBody.childNodes[0]?.nodeType === Node.TEXT_NODE ? originalBody.childNodes[0].textContent : "";
+  if (includePrecedingSiblings)
+    nextBody.textContent =
+      originalBody.childNodes[0]?.nodeType === Node.TEXT_NODE ? originalBody.childNodes[0].textContent : "";
   nextRoot.appendChild(nextBody);
 
   let container = nextBody;
@@ -612,7 +637,10 @@ function allDecorative(nodes: Element[]) {
 
 function rewriteRelocatedAnchorRefs(text: string, sourcePath: string, relocationMap: Map<string, string>) {
   const parser = new DOMParser();
-  const doc = parser.parseFromString(text, sourcePath.toLowerCase().endsWith(".opf") ? "application/xml" : "application/xhtml+xml");
+  const doc = parser.parseFromString(
+    text,
+    sourcePath.toLowerCase().endsWith(".opf") ? "application/xml" : "application/xhtml+xml"
+  );
   if (doc.getElementsByTagName("parsererror").length > 0) return text;
   let updated = false;
 
@@ -644,7 +672,9 @@ function childElements(element: Element) {
 }
 
 function firstElementByLocalName(root: ParentNode, localName: string) {
-  return Array.from(root.querySelectorAll("*")).find((element) => element.localName.toLowerCase() === localName) || null;
+  return (
+    Array.from(root.querySelectorAll("*")).find((element) => element.localName.toLowerCase() === localName) || null
+  );
 }
 
 function nodeWordCount(node: Element) {
@@ -672,7 +702,9 @@ function copyAttributes(from: Element, to: Element) {
 }
 
 function createElementLike(doc: Document, element: Element) {
-  return element.namespaceURI ? doc.createElementNS(element.namespaceURI, element.tagName) : doc.createElement(element.tagName);
+  return element.namespaceURI
+    ? doc.createElementNS(element.namespaceURI, element.tagName)
+    : doc.createElement(element.tagName);
 }
 
 function sectionPartPath(path: string, index: number) {
@@ -741,7 +773,10 @@ function buildCrossInkLocationManifest(opfText: string, opfPath: string, xhtmlFi
 }
 
 function buildChapterGroups(spine: string[], xhtmlFiles: Record<string, string>) {
-  const byChapterHref = new Map<string, { href: string; startSpineIndex: number; endSpineIndex: number; wordStart: number; wordCount: number }>();
+  const byChapterHref = new Map<
+    string,
+    { href: string; startSpineIndex: number; endSpineIndex: number; wordStart: number; wordCount: number }
+  >();
   const groupByHref = new Map<string, number>();
   let totalWords = 0;
 
@@ -864,7 +899,13 @@ function formatOutputFilename(inputFilename: string, metadata: Metadata, setting
 }
 
 function sanitizeFilename(value: string) {
-  return value.replace(/[<>:"/\\|?*\u0000-\u001F]/g, " ").replace(/\s+/g, " ").trim().slice(0, 160) || "book";
+  return (
+    value
+      .replace(/[<>:"/\\|?*\u0000-\u001F]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 160) || "book"
+  );
 }
 
 function resolvePath(basePath: string, href: string) {
@@ -895,11 +936,7 @@ function relativeBasename(path: string) {
 }
 
 function escapeXml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function safeDecodeURIComponent(value: string) {

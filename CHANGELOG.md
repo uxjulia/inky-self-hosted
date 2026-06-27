@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+
 - Self-hosted companion app for CrossInk devices with OPDS, WebDAV, RSS/Atom, local uploads, and local library browsing.
 - React/Vite frontend, FastAPI backend, SQLite storage, and Docker Compose development/deployment flow.
 - Desktop Electron app with a PyInstaller-packaged FastAPI backend.
@@ -14,4 +15,5 @@
 - Help content explaining CrossInk-specific EPUB enhancements such as stable locations and reference pages.
 
 ### Changed
+
 - EPUB optimization now tree-shakes unused CSS rules and removes unreachable stylesheet files.

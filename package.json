@@ -13,6 +13,8 @@
     "dev:api": "mkdir -p backend/storage && cd backend && INKY_DATABASE_URL=${INKY_DATABASE_URL:-sqlite:///./storage/inky.db} INKY_DATA_DIR=${INKY_DATA_DIR:-./storage} .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port ${INKY_API_PORT:-8001} --no-access-log",
     "dev:api:lan": "mkdir -p backend/storage && cd backend && INKY_DATABASE_URL=${INKY_DATABASE_URL:-sqlite:///./storage/inky.db} INKY_DATA_DIR=${INKY_DATA_DIR:-./storage} .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port ${INKY_API_PORT:-8001} --no-access-log",
     "dev:web": "npm run dev --prefix frontend",
+    "format": "prettier --write \"**/*.{cjs,css,html,js,json,jsx,md,mjs,ts,tsx,yaml,yml}\"",
+    "format:check": "prettier --check \"**/*.{cjs,css,html,js,json,jsx,md,mjs,ts,tsx,yaml,yml}\"",
     "build": "npm run build --prefix frontend && backend/.venv/bin/python -m compileall backend/app",
     "build:hosted": "VITE_INKY_APP_MODE=hosted npm run build --prefix frontend",
     "build:public": "VITE_INKY_APP_MODE=public npm run build --prefix frontend",
@@ -71,6 +73,7 @@
     "concurrently": "^10.0.3",
     "electron": "^42.4.0",
     "electron-builder": "^26.15.3",
+    "prettier": "^3.9.0",
     "wait-on": "^9.0.10"
   },
   "dependencies": {

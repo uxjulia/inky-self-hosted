@@ -6,7 +6,8 @@ export default defineConfig(({ mode }) => {
   const envDir = fileURLToPath(new URL("..", import.meta.url));
   const env = loadEnv(mode, envDir, "");
   const apiPort = process.env.INKY_API_PORT || env.INKY_API_PORT || "8001";
-  const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || env.VITE_API_PROXY_TARGET || `http://localhost:${apiPort}`;
+  const apiProxyTarget =
+    process.env.VITE_API_PROXY_TARGET || env.VITE_API_PROXY_TARGET || `http://localhost:${apiPort}`;
 
   return {
     base: "./",

@@ -3,9 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const python = process.platform === "win32"
-  ? path.join(root, "backend", ".venv", "Scripts", "python.exe")
-  : path.join(root, "backend", ".venv", "bin", "python");
+const python =
+  process.platform === "win32"
+    ? path.join(root, "backend", ".venv", "Scripts", "python.exe")
+    : path.join(root, "backend", ".venv", "bin", "python");
 
 if (!fs.existsSync(python)) {
   console.error("Missing backend virtualenv. Run `npm install` first.");

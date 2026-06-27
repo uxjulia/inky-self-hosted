@@ -260,26 +260,33 @@ export default function App() {
     if (!trimmedSearchQuery) return library;
     const needle = trimmedSearchQuery.toLocaleLowerCase();
     return library.filter((item) =>
-      [item.title, item.author, item.source_url, item.original_path].some((value) => value?.toLocaleLowerCase().includes(needle))
+      [item.title, item.author, item.source_url, item.original_path].some((value) =>
+        value?.toLocaleLowerCase().includes(needle)
+      )
     );
   }, [library, trimmedSearchQuery]);
   const remoteItems = activeBrowseResult?.items || [];
   const activeSortMode = !isLocalSource && (sortMode === "type" || sortMode === "date_added") ? "source" : sortMode;
-  const sortOptions: SortMode[] = isLocalSource ? ["source", "date_added", "type", "title_asc", "title_desc"] : ["source", "title_asc", "title_desc"];
-  const availableSourceTypes = useMemo(
-    () => sourceTypes.filter((type) => type !== "local_folder" || isDesktopApp),
-    []
-  );
+  const sortOptions: SortMode[] = isLocalSource
+    ? ["source", "date_added", "type", "title_asc", "title_desc"]
+    : ["source", "title_asc", "title_desc"];
+  const availableSourceTypes = useMemo(() => sourceTypes.filter((type) => type !== "local_folder" || isDesktopApp), []);
   const sortedLibrary = useMemo(() => sortLibraryItems(displayedLibrary, sortMode), [displayedLibrary, sortMode]);
   const sortedRemoteItems = useMemo(() => sortBrowseItems(remoteItems, activeSortMode), [remoteItems, activeSortMode]);
   const displayedItems = isLocalSource ? sortedLibrary : sortedRemoteItems;
   const totalPages = Math.max(1, Math.ceil(displayedItems.length / browsePageSize));
   const clampedBrowsePage = Math.min(browsePage, totalPages);
-  const paginatedLibrary = sortedLibrary.slice((clampedBrowsePage - 1) * browsePageSize, clampedBrowsePage * browsePageSize);
-  const paginatedRemoteItems = sortedRemoteItems.slice((clampedBrowsePage - 1) * browsePageSize, clampedBrowsePage * browsePageSize);
-  const hasRemotePagination = !isLocalSource && Boolean(activeBrowseResult?.previous_url || activeBrowseResult?.next_url);
-  const showPagination =
-    displayedItems.length > browsePageSize || hasRemotePagination;
+  const paginatedLibrary = sortedLibrary.slice(
+    (clampedBrowsePage - 1) * browsePageSize,
+    clampedBrowsePage * browsePageSize
+  );
+  const paginatedRemoteItems = sortedRemoteItems.slice(
+    (clampedBrowsePage - 1) * browsePageSize,
+    clampedBrowsePage * browsePageSize
+  );
+  const hasRemotePagination =
+    !isLocalSource && Boolean(activeBrowseResult?.previous_url || activeBrowseResult?.next_url);
+  const showPagination = displayedItems.length > browsePageSize || hasRemotePagination;
   const paginationLabel = hasRemotePagination
     ? totalPages > 1
       ? `Catalog Page ${remotePage} · results page ${clampedBrowsePage} of ${totalPages}`
@@ -493,7 +500,11 @@ export default function App() {
           return;
         }
 
-        await Promise.all([loadSources(), loadLibrary(), activeJobId ? loadVisibleJob(activeJobId) : Promise.resolve()]);
+        await Promise.all([
+          loadSources(),
+          loadLibrary(),
+          activeJobId ? loadVisibleJob(activeJobId) : Promise.resolve()
+        ]);
 
         if (selectedSourceId && selectedSourceId !== localSourceId) {
           if (trimmedSearchQuery) {
@@ -546,10 +557,13 @@ export default function App() {
     const loadSeq = ++libraryLoadSeq.current;
     setRescanningLibrary(true);
     try {
-      const refreshed = await runAction(async () => {
-        const data = await api<LibraryItem[]>("/api/library/rescan", { method: "POST" });
-        if (loadSeq === libraryLoadSeq.current) setLibrary(data);
-      }, { toastOnError: true });
+      const refreshed = await runAction(
+        async () => {
+          const data = await api<LibraryItem[]>("/api/library/rescan", { method: "POST" });
+          if (loadSeq === libraryLoadSeq.current) setLibrary(data);
+        },
+        { toastOnError: true }
+      );
       if (refreshed !== undefined) showToast("Library rescan complete");
     } finally {
       setRescanningLibrary(false);
@@ -695,7 +709,10 @@ export default function App() {
     const previousSources = sources;
     const previousLocalSourceIndex = localSourceIndex;
     const nextSources = nextAllSources.filter((source) => source.id !== localSourceId);
-    const nextLocalSourceIndex = Math.max(0, nextAllSources.findIndex((source) => source.id === localSourceId));
+    const nextLocalSourceIndex = Math.max(
+      0,
+      nextAllSources.findIndex((source) => source.id === localSourceId)
+    );
     setSources(nextSources);
     setLocalSourceIndex(nextLocalSourceIndex);
     window.localStorage.setItem(localSourceIndexStorageKey, String(nextLocalSourceIndex));
@@ -891,7 +908,9 @@ export default function App() {
   async function openResultPage(target: string | null | undefined, direction: "next" | "previous") {
     if (!target || !selectedSourceId || isLocalSource) return;
     await runAction(async () => {
-      const result = await api<BrowseResult>(`/api/sources/${selectedSourceId}/browse?target=${encodeURIComponent(target)}`);
+      const result = await api<BrowseResult>(
+        `/api/sources/${selectedSourceId}/browse?target=${encodeURIComponent(target)}`
+      );
       if (searchResult) {
         setSearchResult(result);
       } else {
@@ -905,18 +924,24 @@ export default function App() {
   async function importItem(item: BrowseItem) {
     if (!selectedSourceId || selectedSourceId === localSourceId) return;
     if (usesBrowserLibrary) {
-      showToast("Public mode keeps Local Library in this browser. Add local files from the Local Library panel.", "error");
+      showToast(
+        "Public mode keeps Local Library in this browser. Add local files from the Local Library panel.",
+        "error"
+      );
       return;
     }
     setPendingBrowseAction({ key: browseItemKey(item), action: "save" });
     setBusy(true);
     try {
-      await runAction(async () => {
-        const imported = await importBrowseItem(item);
-        if (!imported) return;
-        showToast("Saved to Local Library");
-        await loadLibrary();
-      }, { toastOnError: true });
+      await runAction(
+        async () => {
+          const imported = await importBrowseItem(item);
+          if (!imported) return;
+          showToast("Saved to Local Library");
+          await loadLibrary();
+        },
+        { toastOnError: true }
+      );
     } finally {
       setPendingBrowseAction(null);
       setBusy(false);
@@ -932,21 +957,38 @@ export default function App() {
     setPendingBrowseAction({ key: browseItemKey(item), action: "send" });
     setBusy(true);
     try {
-      await runAction(async () => {
-        if (transferMode === "usb") {
+      await runAction(
+        async () => {
+          if (transferMode === "usb") {
+            const imported = await importBrowseItem(item);
+            if (!imported) return;
+            await sendLibraryItemViaUsb(imported);
+            await loadLibrary();
+            return;
+          }
+
+          if (selectedSource?.type === "local_folder" && item.path) {
+            const job = await api<Job>(`/api/sources/${selectedSourceId}/send-local-file`, {
+              method: "POST",
+              body: JSON.stringify({
+                ...defaultOptimizePayload(),
+                path: item.path,
+                device_url: resolvedDeviceUrl,
+                destination_path: destinationPath,
+                optimize_first: true
+              })
+            });
+            trackJob(job);
+            showToast("Send queued");
+            return;
+          }
+
           const imported = await importBrowseItem(item);
           if (!imported) return;
-          await sendLibraryItemViaUsb(imported);
-          await loadLibrary();
-          return;
-        }
-
-        if (selectedSource?.type === "local_folder" && item.path) {
-          const job = await api<Job>(`/api/sources/${selectedSourceId}/send-local-file`, {
+          const job = await api<Job>(`/api/library/${imported.id}/send`, {
             method: "POST",
             body: JSON.stringify({
               ...defaultOptimizePayload(),
-              path: item.path,
               device_url: resolvedDeviceUrl,
               destination_path: destinationPath,
               optimize_first: true
@@ -954,24 +996,10 @@ export default function App() {
           });
           trackJob(job);
           showToast("Send queued");
-          return;
-        }
-
-        const imported = await importBrowseItem(item);
-        if (!imported) return;
-        const job = await api<Job>(`/api/library/${imported.id}/send`, {
-          method: "POST",
-          body: JSON.stringify({
-            ...defaultOptimizePayload(),
-            device_url: resolvedDeviceUrl,
-            destination_path: destinationPath,
-            optimize_first: true
-          })
-        });
-        trackJob(job);
-        showToast("Send queued");
-        await loadLibrary();
-      }, { toastOnError: true });
+          await loadLibrary();
+        },
+        { toastOnError: true }
+      );
     } finally {
       setPendingBrowseAction(null);
       setBusy(false);
@@ -997,7 +1025,12 @@ export default function App() {
     if (item.type === "file" && item.path && selectedSource?.type === "webdav") {
       return api<LibraryItem>("/api/library/import-webdav", {
         method: "POST",
-        body: JSON.stringify({ source_id: selectedSourceId, path: item.path, title: item.title, cover_url: item.image_url })
+        body: JSON.stringify({
+          source_id: selectedSourceId,
+          path: item.path,
+          title: item.title,
+          cover_url: item.image_url
+        })
       });
     }
 
@@ -1086,10 +1119,17 @@ export default function App() {
         updateBrowserSendJob(jobId, item.id, 0, "Preparing upload", "running");
         transferLog(0, `Starting Wi-Fi upload to ${destinationPath || "/"}`);
         try {
-          await sendBlobToDevice(prepared.blob, prepared.filename, record.mediaType, resolvedDeviceUrl, destinationPath, (progress, message) => {
-            updateBrowserSendJob(jobId, item.id, progress, message, "running");
-            transferLog(progress, message);
-          });
+          await sendBlobToDevice(
+            prepared.blob,
+            prepared.filename,
+            record.mediaType,
+            resolvedDeviceUrl,
+            destinationPath,
+            (progress, message) => {
+              updateBrowserSendJob(jobId, item.id, progress, message, "running");
+              transferLog(progress, message);
+            }
+          );
           transferLog(100, "Wi-Fi upload complete");
         } catch (error) {
           transferLog(null, `Wi-Fi upload failed: ${messageFromUnknown(error)}`, "error");
@@ -1152,12 +1192,18 @@ export default function App() {
     updateBrowserSendJob(jobId, itemId, 0, "Preparing USB upload", "running");
     transferLog(0, `Starting USB upload to ${destinationPath || "/"}`);
     try {
-      await sendBlobToSerialDevice(blob, filename, destinationPath, (progress, message) => {
-        lastProgress = progress;
-        lastMessage = message;
-        updateBrowserSendJob(jobId, itemId, progress, message, "running");
-        transferLog(progress, message);
-      }, (message) => transferLog(null, message));
+      await sendBlobToSerialDevice(
+        blob,
+        filename,
+        destinationPath,
+        (progress, message) => {
+          lastProgress = progress;
+          lastMessage = message;
+          updateBrowserSendJob(jobId, itemId, progress, message, "running");
+          transferLog(progress, message);
+        },
+        (message) => transferLog(null, message)
+      );
       transferLog(100, "USB upload complete");
     } catch (error) {
       const message = messageFromUnknown(error);
@@ -1201,15 +1247,18 @@ export default function App() {
     setDeviceStatus("");
     setTestingDevice(true);
     try {
-      const status = transferMode === "usb"
-        ? await probeSerialDevice()
-        : usesBrowserLibrary
-        ? await probeStandaloneDevice(resolvedDeviceUrl)
-        : await api<Record<string, unknown>>("/api/devices/probe", {
-            method: "POST",
-            body: JSON.stringify({ device_url: resolvedDeviceUrl })
-          });
-      setDeviceStatus(`Successfully connected to: ${status.device || "Device"} at ${transferMode === "usb" ? "USB" : status.ip || resolvedDeviceUrl}`);
+      const status =
+        transferMode === "usb"
+          ? await probeSerialDevice()
+          : usesBrowserLibrary
+            ? await probeStandaloneDevice(resolvedDeviceUrl)
+            : await api<Record<string, unknown>>("/api/devices/probe", {
+                method: "POST",
+                body: JSON.stringify({ device_url: resolvedDeviceUrl })
+              });
+      setDeviceStatus(
+        `Successfully connected to: ${status.device || "Device"} at ${transferMode === "usb" ? "USB" : status.ip || resolvedDeviceUrl}`
+      );
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
       setDeviceError(readableDeviceError(message));
@@ -1218,7 +1267,10 @@ export default function App() {
     }
   }
 
-  async function runAction<T>(action: () => Promise<T>, options: { toastOnError?: boolean } = {}): Promise<T | undefined> {
+  async function runAction<T>(
+    action: () => Promise<T>,
+    options: { toastOnError?: boolean } = {}
+  ): Promise<T | undefined> {
     setError("");
     try {
       return await action();
@@ -1237,7 +1289,13 @@ export default function App() {
     };
   }
 
-  function updateBrowserSendJob(jobId: string, itemId: number, progress: number, message: string, status: Job["status"]) {
+  function updateBrowserSendJob(
+    jobId: string,
+    itemId: number,
+    progress: number,
+    message: string,
+    status: Job["status"]
+  ) {
     setJobs([
       {
         id: jobId,
@@ -1316,7 +1374,12 @@ export default function App() {
           <h1>Inky</h1>
           <p>Sign in to access your self-hosted library.</p>
           {loginError && <div className="auth-error">{loginError}</div>}
-          <input value={loginUsername} onChange={(event) => setLoginUsername(event.target.value)} placeholder="Username" autoComplete="username" />
+          <input
+            value={loginUsername}
+            onChange={(event) => setLoginUsername(event.target.value)}
+            placeholder="Username"
+            autoComplete="username"
+          />
           <input
             value={loginPassword}
             onChange={(event) => setLoginPassword(event.target.value)}
@@ -1340,7 +1403,9 @@ export default function App() {
           <span className="brand-logo" aria-hidden="true" />
           <div>
             <h1>Inky</h1>
-            <span>A Cross<span className="serif">I</span>nk Companion App</span>
+            <span>
+              A Cross<span className="serif">I</span>nk Companion App
+            </span>
           </div>
         </div>
         <div className="topbar-actions">
@@ -1364,7 +1429,13 @@ export default function App() {
             {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
           {view === "app" && (
-            <button className="icon-text" type="button" onClick={() => refreshAll()} title="Refresh" disabled={refreshing}>
+            <button
+              className="icon-text"
+              type="button"
+              onClick={() => refreshAll()}
+              title="Refresh"
+              disabled={refreshing}
+            >
               <RefreshCw className={refreshing ? "spin" : ""} size={15} />
               {refreshing ? "Refreshing" : "Refresh"}
             </button>
@@ -1393,470 +1464,532 @@ export default function App() {
           isPublicReadOnly={isPublicReadOnly}
         />
       ) : (
-      <section className="layout">
-        <aside className="sidebar">
-          <section className="panel device-panel">
-            <div className="panel-header">
-              <div className="heading-line">
-                <TabletSmartphone size={16} />
-                <h2>Device</h2>
-              </div>
-              <button type="button" onClick={probeDevice} title="Test Connection" disabled={testingDevice}>
-                {testingDevice ? <RefreshCw className="spin" size={15} /> : transferMode === "usb" ? <Usb size={15} /> : <Wifi size={15} />}
-                {testingDevice ? "Searching" : "Test Connection"}
-              </button>
-            </div>
-            {deviceError && (
-              <div className="empty-state status-state error-state">
-                <span>{readableError(deviceError)}</span>
-                <button className="border-0" type="button" onClick={() => setDeviceError("")} title="Dismiss device error" aria-label="Dismiss device error">
-                  <X size={16} />
-                </button>
-              </div>
-            )}
-            {deviceStatus && (
-              <div className="empty-state status-state success-state">
-                <span>{deviceStatus}</span>
-                <button
-                  type="button"
-                  onClick={() => setDeviceStatus("")}
-                  title="Dismiss connection status"
-                  aria-label="Dismiss connection status"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            )}
-            <label className="field">
-              <span>Transfer method</span>
-              {canUseWifiTransfer ? (
-                <div className="segmented transfer-mode-segmented">
-                  <button type="button" className={transferMode === "wifi" ? "active" : ""} onClick={() => setTransferMode("wifi")}>
-                    <Wifi size={14} />
-                    Wi-Fi
-                  </button>
-                  <button type="button" className={transferMode === "usb" ? "active" : ""} onClick={() => setTransferMode("usb")}>
-                    <Usb size={14} />
-                    USB
-                  </button>
+        <section className="layout">
+          <aside className="sidebar">
+            <section className="panel device-panel">
+              <div className="panel-header">
+                <div className="heading-line">
+                  <TabletSmartphone size={16} />
+                  <h2>Device</h2>
                 </div>
-              ) : (
-                <div className="segmented transfer-mode-segmented">
-                  <span className="active selected-option">
-                    <Usb size={14} />
-                    USB
-                  </span>
+                <button type="button" onClick={probeDevice} title="Test Connection" disabled={testingDevice}>
+                  {testingDevice ? (
+                    <RefreshCw className="spin" size={15} />
+                  ) : transferMode === "usb" ? (
+                    <Usb size={15} />
+                  ) : (
+                    <Wifi size={15} />
+                  )}
+                  {testingDevice ? "Searching" : "Test Connection"}
+                </button>
+              </div>
+              {deviceError && (
+                <div className="empty-state status-state error-state">
+                  <span>{readableError(deviceError)}</span>
+                  <button
+                    className="border-0"
+                    type="button"
+                    onClick={() => setDeviceError("")}
+                    title="Dismiss device error"
+                    aria-label="Dismiss device error"
+                  >
+                    <X size={16} />
+                  </button>
                 </div>
               )}
-            </label>
-            {canUseWifiTransfer && transferMode === "wifi" && (
+              {deviceStatus && (
+                <div className="empty-state status-state success-state">
+                  <span>{deviceStatus}</span>
+                  <button
+                    type="button"
+                    onClick={() => setDeviceStatus("")}
+                    title="Dismiss connection status"
+                    aria-label="Dismiss connection status"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
               <label className="field">
-                <span>Device host</span>
+                <span>Transfer method</span>
+                {canUseWifiTransfer ? (
+                  <div className="segmented transfer-mode-segmented">
+                    <button
+                      type="button"
+                      className={transferMode === "wifi" ? "active" : ""}
+                      onClick={() => setTransferMode("wifi")}
+                    >
+                      <Wifi size={14} />
+                      Wi-Fi
+                    </button>
+                    <button
+                      type="button"
+                      className={transferMode === "usb" ? "active" : ""}
+                      onClick={() => setTransferMode("usb")}
+                    >
+                      <Usb size={14} />
+                      USB
+                    </button>
+                  </div>
+                ) : (
+                  <div className="segmented transfer-mode-segmented">
+                    <span className="active selected-option">
+                      <Usb size={14} />
+                      USB
+                    </span>
+                  </div>
+                )}
+              </label>
+              {canUseWifiTransfer && transferMode === "wifi" && (
+                <label className="field">
+                  <span>Device host</span>
+                  <input
+                    value={deviceUrl}
+                    onChange={(event) => {
+                      setDeviceError("");
+                      setDeviceStatus("");
+                      setDeviceUrl(event.target.value);
+                    }}
+                    placeholder={deviceHostPlaceholder}
+                  />
+                </label>
+              )}
+              <label className="field">
+                <span>Destination folder (created if needed)</span>
                 <input
-                  value={deviceUrl}
-                  onChange={(event) => {
-                    setDeviceError("");
-                    setDeviceStatus("");
-                    setDeviceUrl(event.target.value);
-                  }}
-                  placeholder={deviceHostPlaceholder}
+                  value={destinationPath}
+                  onChange={(event) => setDestinationPath(event.target.value)}
+                  placeholder="/"
                 />
               </label>
-            )}
-            <label className="field">
-              <span>Destination folder (created if needed)</span>
-              <input value={destinationPath} onChange={(event) => setDestinationPath(event.target.value)} placeholder="/" />
-            </label>
-            <label className="field">
-              <span>Optimize for</span>
-              <div className="segmented">
-                <button type="button" className={device === "x4" ? "active" : ""} onClick={() => setDevice("x4")}>
-                  X4
-                </button>
-                <button type="button" className={device === "x3" ? "active" : ""} onClick={() => setDevice("x3")}>
-                  X3
-                </button>
-              </div>
-            </label>
-            <button className="icon-text optimizer-settings-button" type="button" onClick={() => setOptimizerModalOpen(true)} title="EPUB Optimizer Settings">
-              <SlidersHorizontal size={16} />
-              EPUB Optimizer Settings
-            </button>
-            {jobs.length > 0 && (
-              <pre className="job-log" aria-label="Latest device job">
-                {jobs.map((job) => (
-                  <code key={job.id} className={jobLogClassName(job)}>
-                    {formatJobLog(job)}
-                  </code>
-                ))}
-              </pre>
-            )}
-          </section>
-
-          <section className="panel source-panel">
-            <div className="panel-header">
-              <div className="heading-line">
-              <Library size={16} />
-              <h2>Sources</h2>
-              </div>
-              {!standaloneMode && !isPublicReadOnly && (
-                <button
-                  className="border-0"
-                  type="button"
-                  onClick={openAddSourceModal}
-                  title="Add source"
-                  aria-label="Add source"
-                >
-                  <Plus size={16} />
-                </button>
+              <label className="field">
+                <span>Optimize for</span>
+                <div className="segmented">
+                  <button type="button" className={device === "x4" ? "active" : ""} onClick={() => setDevice("x4")}>
+                    X4
+                  </button>
+                  <button type="button" className={device === "x3" ? "active" : ""} onClick={() => setDevice("x3")}>
+                    X3
+                  </button>
+                </div>
+              </label>
+              <button
+                className="icon-text optimizer-settings-button"
+                type="button"
+                onClick={() => setOptimizerModalOpen(true)}
+                title="EPUB Optimizer Settings"
+              >
+                <SlidersHorizontal size={16} />
+                EPUB Optimizer Settings
+              </button>
+              {jobs.length > 0 && (
+                <pre className="job-log" aria-label="Latest device job">
+                  {jobs.map((job) => (
+                    <code key={job.id} className={jobLogClassName(job)}>
+                      {formatJobLog(job)}
+                    </code>
+                  ))}
+                </pre>
               )}
-            </div>
-            <div className="source-list">
-              {allSources.map((source, index) => (
-                <div
-                  className={`source-row ${source.id === selectedSourceId ? "selected" : ""} ${
-                    source.id === draggedSourceId ? "dragging" : ""
-                  } ${source.id === dragOverSourceId ? "drag-over" : ""}`}
-                  draggable={!isPublicReadOnly}
-                  key={source.id}
-                  onClick={() => {
-                    setSourceMenuId(null);
-                    setSelectedSourceId(source.id);
-                  }}
-                  onDragStart={(event) => {
-                    event.dataTransfer.effectAllowed = "move";
-                    setDraggedSourceId(source.id);
-                  }}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = "move";
-                    setDragOverSourceId(source.id);
-                  }}
-                  onDragLeave={() => setDragOverSourceId((current) => (current === source.id ? null : current))}
-                  onDragEnd={() => {
-                    setDraggedSourceId(null);
-                    setDragOverSourceId(null);
-                  }}
-                  onDrop={(event) => dropSource(event, source.id)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
+            </section>
+
+            <section className="panel source-panel">
+              <div className="panel-header">
+                <div className="heading-line">
+                  <Library size={16} />
+                  <h2>Sources</h2>
+                </div>
+                {!standaloneMode && !isPublicReadOnly && (
+                  <button
+                    className="border-0"
+                    type="button"
+                    onClick={openAddSourceModal}
+                    title="Add source"
+                    aria-label="Add source"
+                  >
+                    <Plus size={16} />
+                  </button>
+                )}
+              </div>
+              <div className="source-list">
+                {allSources.map((source, index) => (
+                  <div
+                    className={`source-row ${source.id === selectedSourceId ? "selected" : ""} ${
+                      source.id === draggedSourceId ? "dragging" : ""
+                    } ${source.id === dragOverSourceId ? "drag-over" : ""}`}
+                    draggable={!isPublicReadOnly}
+                    key={source.id}
+                    onClick={() => {
+                      setSourceMenuId(null);
                       setSelectedSourceId(source.id);
-                    }
-                  }}
-                >
-                  {!isPublicReadOnly && <GripVertical className="source-drag-icon" size={15} aria-hidden="true" />}
-                  <span className="source-type">{sourceTypeShortLabel(source.type)}</span>
-                  <span className="source-name">{source.name}</span>
-                  {!isPublicReadOnly && <div className="source-menu-wrap">
-                    <button
-                      className="source-menu-button"
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setSourceMenuId((current) => (current === source.id ? null : source.id));
-                      }}
-                      title={`${source.name} settings`}
-                      aria-label={`${source.name} settings`}
-                      aria-expanded={sourceMenuId === source.id}
-                    >
-                      <MoreVertical size={15} />
-                    </button>
-                    {sourceMenuId === source.id && (
-                      <div className="source-menu" role="menu">
-                        {source.id !== localSourceId && (source.type !== "local_folder" || isDesktopApp) && (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openEditSource(source);
-                            }}
-                            role="menuitem"
-                          >
-                            <Pencil size={15} />
-                            Edit
-                          </button>
-                        )}
+                    }}
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      setDraggedSourceId(source.id);
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      setDragOverSourceId(source.id);
+                    }}
+                    onDragLeave={() => setDragOverSourceId((current) => (current === source.id ? null : current))}
+                    onDragEnd={() => {
+                      setDraggedSourceId(null);
+                      setDragOverSourceId(null);
+                    }}
+                    onDrop={(event) => dropSource(event, source.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedSourceId(source.id);
+                      }
+                    }}
+                  >
+                    {!isPublicReadOnly && <GripVertical className="source-drag-icon" size={15} aria-hidden="true" />}
+                    <span className="source-type">{sourceTypeShortLabel(source.type)}</span>
+                    <span className="source-name">{source.name}</span>
+                    {!isPublicReadOnly && (
+                      <div className="source-menu-wrap">
                         <button
+                          className="source-menu-button"
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
-                            moveSourceByOffset(source.id, -1);
+                            setSourceMenuId((current) => (current === source.id ? null : source.id));
                           }}
-                          disabled={index === 0}
-                          role="menuitem"
+                          title={`${source.name} settings`}
+                          aria-label={`${source.name} settings`}
+                          aria-expanded={sourceMenuId === source.id}
                         >
-                          <ArrowUp size={15} />
-                          Move up
+                          <MoreVertical size={15} />
                         </button>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            moveSourceByOffset(source.id, 1);
-                          }}
-                          disabled={index === allSources.length - 1}
-                          role="menuitem"
-                        >
-                          <ArrowDown size={15} />
-                          Move down
-                        </button>
-                        {source.id !== localSourceId && (
-                          <button
-                            type="button"
-                            className="danger-menu-item"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              deleteSource(source.id);
-                            }}
-                            role="menuitem"
-                          >
-                            <Trash2 size={15} />
-                            Delete
-                          </button>
+                        {sourceMenuId === source.id && (
+                          <div className="source-menu" role="menu">
+                            {source.id !== localSourceId && (source.type !== "local_folder" || isDesktopApp) && (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openEditSource(source);
+                                }}
+                                role="menuitem"
+                              >
+                                <Pencil size={15} />
+                                Edit
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                moveSourceByOffset(source.id, -1);
+                              }}
+                              disabled={index === 0}
+                              role="menuitem"
+                            >
+                              <ArrowUp size={15} />
+                              Move up
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                moveSourceByOffset(source.id, 1);
+                              }}
+                              disabled={index === allSources.length - 1}
+                              role="menuitem"
+                            >
+                              <ArrowDown size={15} />
+                              Move down
+                            </button>
+                            {source.id !== localSourceId && (
+                              <button
+                                type="button"
+                                className="danger-menu-item"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  deleteSource(source.id);
+                                }}
+                                role="menuitem"
+                              >
+                                <Trash2 size={15} />
+                                Delete
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     )}
-                  </div>}
-                </div>
-              ))}
-            </div>
-          </section>
-        </aside>
-
-        <section className="panel browse-panel">
-          <div className="panel-header">
-            <div className="heading-line">
-              {sourceIcon}
-              <h2>{isLocalSource ? localSource.name : activeBrowseResult?.title || selectedSource?.name || "Browse"}</h2>
-            </div>
-            <div className="toolbar">
-              {!isLocalSource && (
-                <button type="button" onClick={browseBack} disabled={browseStack.length <= 1} title="Back">
-                  Back
-                </button>
-              )}
-              {isLocalSource && (
-                <>
-                  {!usesBrowserLibrary && (
-                    <button type="button" onClick={rescanLibrary} disabled={rescanningLibrary} title="Rescan mounted library">
-                      <RefreshCw className={rescanningLibrary ? "spin" : ""} size={15} />
-                      {rescanningLibrary ? "Rescanning" : "Rescan"}
-                    </button>
-                  )}
-                  <label className="file-button border-0" title="Upload file" aria-label="Upload file">
-                    <Plus size={16} />
-                    <input type="file" accept={isHostedApp ? ".epub" : ".epub,.txt,.xtc,.xtch,.bmp,.png"} onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)} />
-                  </label>
-                </>
-              )}
-            </div>
-          </div>
-          {selectedSource && (
-            <form className="search-bar" onSubmit={searchSelectedSource}>
-              <input
-                value={searchQuery}
-                onChange={(event) => updateSearchQuery(event.target.value)}
-                placeholder={`Search ${selectedSource.name}`}
-                aria-label={`Search ${selectedSource.name}`}
-              />
-              {searchQuery && (
-                <button type="button" onClick={clearSearch} title="Clear search" aria-label="Clear search">
-                  <X size={16} />
-                </button>
-              )}
-              <button type="submit" disabled={searching || !trimmedSearchQuery} title="Search">
-                {searching ? <RefreshCw className="spin" size={15} /> : <Search size={15} />}
-                Search
-              </button>
-              <div className="sort-menu-wrap">
-                <button
-                  type="button"
-                  className={`sort-button ${activeSortMode === "source" ? "" : "active"}`}
-                  onClick={() => setSortMenuOpen((open) => !open)}
-                  title={`Sort: ${sortLabel}`}
-                  aria-label={`Sort: ${sortLabel}`}
-                  aria-expanded={sortMenuOpen}
-                >
-                  <ArrowUpDown size={16} />
-                </button>
-                {sortMenuOpen && (
-                  <div className="sort-menu" role="menu">
-                    {sortOptions.map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        className={activeSortMode === mode ? "active" : ""}
-                        onClick={() => updateSortMode(mode)}
-                        role="menuitem"
-                      >
-                        {sortLabelForMode(mode)}
-                      </button>
-                    ))}
                   </div>
+                ))}
+              </div>
+            </section>
+          </aside>
+
+          <section className="panel browse-panel">
+            <div className="panel-header">
+              <div className="heading-line">
+                {sourceIcon}
+                <h2>
+                  {isLocalSource ? localSource.name : activeBrowseResult?.title || selectedSource?.name || "Browse"}
+                </h2>
+              </div>
+              <div className="toolbar">
+                {!isLocalSource && (
+                  <button type="button" onClick={browseBack} disabled={browseStack.length <= 1} title="Back">
+                    Back
+                  </button>
+                )}
+                {isLocalSource && (
+                  <>
+                    {!usesBrowserLibrary && (
+                      <button
+                        type="button"
+                        onClick={rescanLibrary}
+                        disabled={rescanningLibrary}
+                        title="Rescan mounted library"
+                      >
+                        <RefreshCw className={rescanningLibrary ? "spin" : ""} size={15} />
+                        {rescanningLibrary ? "Rescanning" : "Rescan"}
+                      </button>
+                    )}
+                    <label className="file-button border-0" title="Upload file" aria-label="Upload file">
+                      <Plus size={16} />
+                      <input
+                        type="file"
+                        accept={isHostedApp ? ".epub" : ".epub,.txt,.xtc,.xtch,.bmp,.png"}
+                        onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)}
+                      />
+                    </label>
+                  </>
                 )}
               </div>
-            </form>
-          )}
-          <div className="table-list">
-            {error && (
-              <div className="empty-state status-state error-state">
-                <span>{readableError(error)}</span>
-                <button type="button" onClick={() => setError("")} title="Dismiss error" aria-label="Dismiss error">
-                  <X size={16} />
+            </div>
+            {selectedSource && (
+              <form className="search-bar" onSubmit={searchSelectedSource}>
+                <input
+                  value={searchQuery}
+                  onChange={(event) => updateSearchQuery(event.target.value)}
+                  placeholder={`Search ${selectedSource.name}`}
+                  aria-label={`Search ${selectedSource.name}`}
+                />
+                {searchQuery && (
+                  <button type="button" onClick={clearSearch} title="Clear search" aria-label="Clear search">
+                    <X size={16} />
+                  </button>
+                )}
+                <button type="submit" disabled={searching || !trimmedSearchQuery} title="Search">
+                  {searching ? <RefreshCw className="spin" size={15} /> : <Search size={15} />}
+                  Search
                 </button>
-              </div>
-            )}
-            {!error && isLocalSource && displayedLibrary.length === 0 && (
-              <div className="empty-state">
-                {trimmedSearchQuery ? `No results found for "${trimmedSearchQuery}".` : "No local files yet."}
-              </div>
-            )}
-            {!error &&
-              isLocalSource &&
-              paginatedLibrary.map((item) => {
-                const itemMeta = formatLibraryItemMeta(item);
-                const canRemoveItem = !isMountedLibraryItem(item);
-                const canSendItem = !item.is_missing;
-                const sendTitle = item.is_missing
-                  ? "File is missing from the mounted library folder"
-                  : canOptimizeLibraryItem(item)
-                  ? `Optimize for ${deviceLabel} & Send`
-                  : "Send to device";
-                const fileType = libraryFileType(item);
-                const coverUrl = item.is_missing ? null : item.cover_url;
-                return (
-                  <div className={`item-row local-library-row ${item.is_missing ? "missing-library-row" : ""}`} key={item.id}>
-                    <div className={coverUrl ? "item-cover" : "item-icon"}>
-                      {coverUrl ? <AuthenticatedImage src={coverUrl} alt="" /> : <BookOpen size={16} />}
-                    </div>
-                    <div className="item-main">
-                      <div className="item-title-line">
-                        <strong>{item.title}</strong>
-                      </div>
-                      {itemMeta && <span>{itemMeta}</span>}
-                    </div>
-
-                    <div className="row-actions">
-                      {fileType && <span className={`file-type-tag file-type-${fileType}`}>{fileType}</span>}
-                      <button type="button" onClick={() => sendToDevice(item)} title={sendTitle} disabled={!canSendItem}>
-                        <Send size={16} />
-                      </button>
-                      {canRemoveItem && (
-                        <button type="button" onClick={() => removeLocalItem(item)} title="Remove">
-                          <Trash2 size={16} />
+                <div className="sort-menu-wrap">
+                  <button
+                    type="button"
+                    className={`sort-button ${activeSortMode === "source" ? "" : "active"}`}
+                    onClick={() => setSortMenuOpen((open) => !open)}
+                    title={`Sort: ${sortLabel}`}
+                    aria-label={`Sort: ${sortLabel}`}
+                    aria-expanded={sortMenuOpen}
+                  >
+                    <ArrowUpDown size={16} />
+                  </button>
+                  {sortMenuOpen && (
+                    <div className="sort-menu" role="menu">
+                      {sortOptions.map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          className={activeSortMode === mode ? "active" : ""}
+                          onClick={() => updateSortMode(mode)}
+                          role="menuitem"
+                        >
+                          {sortLabelForMode(mode)}
                         </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            {!error && !isLocalSource && activeBrowseResult?.message && <div className="empty-state">{activeBrowseResult.message}</div>}
-            {!error && !isLocalSource && selectedSource && !browseResult && (
-              <div className="empty-state">Select refresh to browse this source.</div>
-            )}
-            {!isLocalSource && paginatedRemoteItems.map((item, index) => {
-              const opensBrowseTarget = item.type === "navigation" || item.type === "directory";
-              const isSendableItem = item.type === "book" || item.type === "article" || item.type === "file";
-              const itemKey = browseItemKey(item);
-              const savingItem = pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "save";
-              const sendingItem = pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "send";
-              const sendTitle = canOptimizeBrowseItem(item) ? `Optimize for ${deviceLabel} & Send` : "Send to device";
-              const sendingTitle = canOptimizeBrowseItem(item) ? `Optimizing for ${deviceLabel} & sending` : "Sending to device";
-              return (
-                <div
-                  className={`item-row ${isSendableItem ? "sendable-row" : "navigation-row"} ${opensBrowseTarget ? "clickable-row" : ""}`}
-                  key={`${item.type}-${item.url || item.path}-${index}`}
-                  onClick={opensBrowseTarget ? () => openBrowseItem(item) : undefined}
-                  onKeyDown={
-                    opensBrowseTarget
-                      ? (event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            openBrowseItem(item);
-                          }
-                        }
-                      : undefined
-                  }
-                  role={opensBrowseTarget ? "button" : undefined}
-                  tabIndex={opensBrowseTarget ? 0 : undefined}
-                >
-                  <div className={item.image_url ? "item-cover" : "item-icon"}>
-                    {item.image_url ? <AuthenticatedImage src={item.image_url} alt="" /> : iconForItem(item)}
-                  </div>
-                  <div className="item-main">
-                    <strong>{item.title}</strong>
-                    <span>
-                      {[item.author, item.published, item.size ? formatBytes(item.size) : null].filter(Boolean).join(" · ")}
-                    </span>
-                  </div>
-                  {isSendableItem && (
-                    <div className="row-actions">
-                      <button
-                        type="button"
-                        onClick={() => importItem(item)}
-                        title={savingItem ? "Saving to Local Library" : "Save to Local Library"}
-                        aria-label={savingItem ? "Saving to Local Library" : "Save to Local Library"}
-                        disabled={busy}
-                      >
-                        {savingItem ? <RefreshCw className="spin" size={15} /> : <Save size={16} />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => sendBrowseItem(item)}
-                        title={sendingItem ? sendingTitle : sendTitle}
-                        aria-label={sendingItem ? sendingTitle : sendTitle}
-                        disabled={busy}
-                      >
-                        {sendingItem ? <RefreshCw className="spin" size={15} /> : <Send size={16} />}
-                      </button>
+                      ))}
                     </div>
                   )}
                 </div>
-              );
-            })}
-          </div>
-          {showPagination && (
-            <div className="pagination-bar">
-              <span>
-                {paginationLabel}
-              </span>
-              <div className="pagination-actions">
-                <button
-                  type="button"
-                  onClick={() =>
-                    clampedBrowsePage > 1
-                      ? setBrowsePage((page) => Math.max(1, page - 1))
-                      : openResultPage(activeBrowseResult?.previous_url, "previous")
-                  }
-                  disabled={clampedBrowsePage <= 1 && !activeBrowseResult?.previous_url}
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    clampedBrowsePage < totalPages
-                      ? setBrowsePage((page) => Math.min(totalPages, page + 1))
-                      : openResultPage(activeBrowseResult?.next_url, "next")
-                  }
-                  disabled={clampedBrowsePage >= totalPages && !activeBrowseResult?.next_url}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
-        </section>
+              </form>
+            )}
+            <div className="table-list">
+              {error && (
+                <div className="empty-state status-state error-state">
+                  <span>{readableError(error)}</span>
+                  <button type="button" onClick={() => setError("")} title="Dismiss error" aria-label="Dismiss error">
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+              {!error && isLocalSource && displayedLibrary.length === 0 && (
+                <div className="empty-state">
+                  {trimmedSearchQuery ? `No results found for "${trimmedSearchQuery}".` : "No local files yet."}
+                </div>
+              )}
+              {!error &&
+                isLocalSource &&
+                paginatedLibrary.map((item) => {
+                  const itemMeta = formatLibraryItemMeta(item);
+                  const canRemoveItem = !isMountedLibraryItem(item);
+                  const canSendItem = !item.is_missing;
+                  const sendTitle = item.is_missing
+                    ? "File is missing from the mounted library folder"
+                    : canOptimizeLibraryItem(item)
+                      ? `Optimize for ${deviceLabel} & Send`
+                      : "Send to device";
+                  const fileType = libraryFileType(item);
+                  const coverUrl = item.is_missing ? null : item.cover_url;
+                  return (
+                    <div
+                      className={`item-row local-library-row ${item.is_missing ? "missing-library-row" : ""}`}
+                      key={item.id}
+                    >
+                      <div className={coverUrl ? "item-cover" : "item-icon"}>
+                        {coverUrl ? <AuthenticatedImage src={coverUrl} alt="" /> : <BookOpen size={16} />}
+                      </div>
+                      <div className="item-main">
+                        <div className="item-title-line">
+                          <strong>{item.title}</strong>
+                        </div>
+                        {itemMeta && <span>{itemMeta}</span>}
+                      </div>
 
-      </section>
+                      <div className="row-actions">
+                        {fileType && <span className={`file-type-tag file-type-${fileType}`}>{fileType}</span>}
+                        <button
+                          type="button"
+                          onClick={() => sendToDevice(item)}
+                          title={sendTitle}
+                          disabled={!canSendItem}
+                        >
+                          <Send size={16} />
+                        </button>
+                        {canRemoveItem && (
+                          <button type="button" onClick={() => removeLocalItem(item)} title="Remove">
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              {!error && !isLocalSource && activeBrowseResult?.message && (
+                <div className="empty-state">{activeBrowseResult.message}</div>
+              )}
+              {!error && !isLocalSource && selectedSource && !browseResult && (
+                <div className="empty-state">Select refresh to browse this source.</div>
+              )}
+              {!isLocalSource &&
+                paginatedRemoteItems.map((item, index) => {
+                  const opensBrowseTarget = item.type === "navigation" || item.type === "directory";
+                  const isSendableItem = item.type === "book" || item.type === "article" || item.type === "file";
+                  const itemKey = browseItemKey(item);
+                  const savingItem = pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "save";
+                  const sendingItem = pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "send";
+                  const sendTitle = canOptimizeBrowseItem(item)
+                    ? `Optimize for ${deviceLabel} & Send`
+                    : "Send to device";
+                  const sendingTitle = canOptimizeBrowseItem(item)
+                    ? `Optimizing for ${deviceLabel} & sending`
+                    : "Sending to device";
+                  return (
+                    <div
+                      className={`item-row ${isSendableItem ? "sendable-row" : "navigation-row"} ${opensBrowseTarget ? "clickable-row" : ""}`}
+                      key={`${item.type}-${item.url || item.path}-${index}`}
+                      onClick={opensBrowseTarget ? () => openBrowseItem(item) : undefined}
+                      onKeyDown={
+                        opensBrowseTarget
+                          ? (event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                openBrowseItem(item);
+                              }
+                            }
+                          : undefined
+                      }
+                      role={opensBrowseTarget ? "button" : undefined}
+                      tabIndex={opensBrowseTarget ? 0 : undefined}
+                    >
+                      <div className={item.image_url ? "item-cover" : "item-icon"}>
+                        {item.image_url ? <AuthenticatedImage src={item.image_url} alt="" /> : iconForItem(item)}
+                      </div>
+                      <div className="item-main">
+                        <strong>{item.title}</strong>
+                        <span>
+                          {[item.author, item.published, item.size ? formatBytes(item.size) : null]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </div>
+                      {isSendableItem && (
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            onClick={() => importItem(item)}
+                            title={savingItem ? "Saving to Local Library" : "Save to Local Library"}
+                            aria-label={savingItem ? "Saving to Local Library" : "Save to Local Library"}
+                            disabled={busy}
+                          >
+                            {savingItem ? <RefreshCw className="spin" size={15} /> : <Save size={16} />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => sendBrowseItem(item)}
+                            title={sendingItem ? sendingTitle : sendTitle}
+                            aria-label={sendingItem ? sendingTitle : sendTitle}
+                            disabled={busy}
+                          >
+                            {sendingItem ? <RefreshCw className="spin" size={15} /> : <Send size={16} />}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+            {showPagination && (
+              <div className="pagination-bar">
+                <span>{paginationLabel}</span>
+                <div className="pagination-actions">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      clampedBrowsePage > 1
+                        ? setBrowsePage((page) => Math.max(1, page - 1))
+                        : openResultPage(activeBrowseResult?.previous_url, "previous")
+                    }
+                    disabled={clampedBrowsePage <= 1 && !activeBrowseResult?.previous_url}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      clampedBrowsePage < totalPages
+                        ? setBrowsePage((page) => Math.min(totalPages, page + 1))
+                        : openResultPage(activeBrowseResult?.next_url, "next")
+                    }
+                    disabled={clampedBrowsePage >= totalPages && !activeBrowseResult?.next_url}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        </section>
       )}
 
       {view === "app" && sourceModalOpen && (
         <div className="modal-backdrop" role="presentation">
-          <form className="panel form-panel modal-card" onSubmit={saveSource} role="dialog" aria-modal="true" aria-labelledby="source-modal-title">
+          <form
+            className="panel form-panel modal-card"
+            onSubmit={saveSource}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="source-modal-title"
+          >
             <div className="panel-header">
               <h2 id="source-modal-title">{editingSource ? "Edit Source" : "Add Source"}</h2>
               <button type="button" onClick={closeSourceModal} title="Close" aria-label="Close source modal">
@@ -1876,7 +2009,11 @@ export default function App() {
                   </button>
                 ))}
               </div>
-              <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Name" />
+              <input
+                value={form.name}
+                onChange={(event) => setForm({ ...form, name: event.target.value })}
+                placeholder="Name"
+              />
               {form.type === "local_folder" ? (
                 <div className="folder-source-field">
                   <input value={form.url} readOnly placeholder="Select a folder" />
@@ -1886,7 +2023,11 @@ export default function App() {
                 </div>
               ) : (
                 <>
-                  <input value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} placeholder="URL" />
+                  <input
+                    value={form.url}
+                    onChange={(event) => setForm({ ...form, url: event.target.value })}
+                    placeholder="URL"
+                  />
                   <input
                     value={form.username}
                     onChange={(event) => setForm({ ...form, username: event.target.value })}
@@ -1916,10 +2057,20 @@ export default function App() {
 
       {view === "app" && optimizerModalOpen && (
         <div className="modal-backdrop" role="presentation">
-          <section className="panel form-panel modal-card optimizer-modal-card" role="dialog" aria-modal="true" aria-labelledby="optimizer-modal-title">
+          <section
+            className="panel form-panel modal-card optimizer-modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="optimizer-modal-title"
+          >
             <div className="panel-header">
               <h2 id="optimizer-modal-title">EPUB Optimizer Settings</h2>
-              <button type="button" onClick={() => setOptimizerModalOpen(false)} title="Close" aria-label="Close optimizer settings">
+              <button
+                type="button"
+                onClick={() => setOptimizerModalOpen(false)}
+                title="Close"
+                aria-label="Close optimizer settings"
+              >
                 <X size={16} />
               </button>
             </div>
@@ -1928,7 +2079,12 @@ export default function App() {
                 <span>Filename render</span>
                 <div className="filename-render-control">
                   <span className="filename-render-value">{optimizerSettings.filename_render_first}</span>
-                  <button type="button" onClick={swapFilenameRenderFields} title="Swap filename fields" aria-label="Swap filename fields">
+                  <button
+                    type="button"
+                    onClick={swapFilenameRenderFields}
+                    title="Swap filename fields"
+                    aria-label="Swap filename fields"
+                  >
                     <ArrowLeftRight size={16} />
                   </button>
                   <span className="filename-render-value">{optimizerSettings.filename_render_second}</span>
@@ -2063,10 +2219,21 @@ export default function App() {
 
       {serverModalOpen && (
         <div className="modal-backdrop" role="presentation">
-          <form className="panel form-panel modal-card" onSubmit={saveServerSettings} role="dialog" aria-modal="true" aria-labelledby="server-modal-title">
+          <form
+            className="panel form-panel modal-card"
+            onSubmit={saveServerSettings}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="server-modal-title"
+          >
             <div className="panel-header">
               <h2 id="server-modal-title">Server</h2>
-              <button type="button" onClick={() => setServerModalOpen(false)} title="Close" aria-label="Close server settings">
+              <button
+                type="button"
+                onClick={() => setServerModalOpen(false)}
+                title="Close"
+                aria-label="Close server settings"
+              >
                 <X size={16} />
               </button>
             </div>
@@ -2095,7 +2262,10 @@ export default function App() {
       )}
 
       {toast && (
-        <div className={`toast ${toast.tone === "error" ? "error-toast" : "success-toast"}`} role={toast.tone === "error" ? "alert" : "status"}>
+        <div
+          className={`toast ${toast.tone === "error" ? "error-toast" : "success-toast"}`}
+          role={toast.tone === "error" ? "alert" : "status"}
+        >
           <span>{toast.message}</span>
           <button type="button" onClick={() => setToast(null)} title="Close" aria-label="Close notification">
             <X size={16} />
@@ -2148,7 +2318,9 @@ function formatLibraryItemMeta(item: LibraryItem) {
     item.author,
     item.is_missing ? "Missing from mounted folder" : null,
     item.sent_at ? `Sent on ${formatSentDate(item.sent_at)}` : null
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function libraryFileType(item: LibraryItem) {
@@ -2196,7 +2368,11 @@ function canOptimizeLibraryItem(item: LibraryItem) {
 
 function canOptimizeBrowseItem(item: BrowseItem) {
   if (item.type === "article") return true;
-  return item.media_type?.toLowerCase().includes("application/epub+zip") || hasEpubExtension(item.url) || hasEpubExtension(item.path);
+  return (
+    item.media_type?.toLowerCase().includes("application/epub+zip") ||
+    hasEpubExtension(item.url) ||
+    hasEpubExtension(item.path)
+  );
 }
 
 function hasEpubExtension(value: string | null | undefined) {
@@ -2250,11 +2426,15 @@ function AuthenticatedImage({ src, alt }: { src: string; alt: string }) {
 }
 
 function getInitialApiBaseUrl() {
-  return normalizeApiBaseUrl(window.inkyDesktop?.apiBaseUrl || window.localStorage.getItem(apiBaseUrlStorageKey) || bundledApiBaseUrl);
+  return normalizeApiBaseUrl(
+    window.inkyDesktop?.apiBaseUrl || window.localStorage.getItem(apiBaseUrlStorageKey) || bundledApiBaseUrl
+  );
 }
 
 function getApiBaseUrl() {
-  return normalizeApiBaseUrl(window.inkyDesktop?.apiBaseUrl || window.localStorage.getItem(apiBaseUrlStorageKey) || bundledApiBaseUrl);
+  return normalizeApiBaseUrl(
+    window.inkyDesktop?.apiBaseUrl || window.localStorage.getItem(apiBaseUrlStorageKey) || bundledApiBaseUrl
+  );
 }
 
 function persistApiBaseUrl(value: string) {
@@ -2346,8 +2526,14 @@ function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
   if (!value || typeof value !== "object") return defaultOptimizerSettings;
   const stored = value as Partial<OptimizerSettings>;
   return {
-    filename_render_first: filenameRenderTokenOrDefault(stored.filename_render_first, defaultOptimizerSettings.filename_render_first),
-    filename_render_second: filenameRenderTokenOrDefault(stored.filename_render_second, defaultOptimizerSettings.filename_render_second),
+    filename_render_first: filenameRenderTokenOrDefault(
+      stored.filename_render_first,
+      defaultOptimizerSettings.filename_render_first
+    ),
+    filename_render_second: filenameRenderTokenOrDefault(
+      stored.filename_render_second,
+      defaultOptimizerSettings.filename_render_second
+    ),
     quality: clampNumber(Number(stored.quality ?? defaultOptimizerSettings.quality), 1, 100),
     grayscale: booleanOrDefault(stored.grayscale, defaultOptimizerSettings.grayscale),
     contrast_boost: booleanOrDefault(stored.contrast_boost, defaultOptimizerSettings.contrast_boost),
@@ -2426,7 +2612,9 @@ function sortStorageKeyForSource(sourceId: number | null) {
 }
 
 function isSortMode(value: unknown): value is SortMode {
-  return value === "source" || value === "date_added" || value === "type" || value === "title_asc" || value === "title_desc";
+  return (
+    value === "source" || value === "date_added" || value === "type" || value === "title_asc" || value === "title_desc"
+  );
 }
 
 function insertLocalSource(sources: Source[], localSourceIndex: number) {
@@ -2449,11 +2637,16 @@ function sortBrowseItems(items: BrowseItem[], sortMode: SortMode) {
 function sortLibraryItems(items: LibraryItem[], sortMode: SortMode) {
   if (sortMode === "source") return items;
   if (sortMode === "date_added") {
-    return [...items].sort((left, right) => compareDateAdded(left, right) || compareTitles(left.title, right.title, "title_asc"));
+    return [...items].sort(
+      (left, right) => compareDateAdded(left, right) || compareTitles(left.title, right.title, "title_asc")
+    );
   }
   if (sortMode === "type") {
     return [...items].sort((left, right) => {
-      const typeResult = librarySortType(left).localeCompare(librarySortType(right), undefined, { numeric: true, sensitivity: "base" });
+      const typeResult = librarySortType(left).localeCompare(librarySortType(right), undefined, {
+        numeric: true,
+        sensitivity: "base"
+      });
       return typeResult || compareTitles(left.title, right.title, "title_asc");
     });
   }

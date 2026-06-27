@@ -40,9 +40,10 @@ function frontendIndexPath() {
 function pythonExecutable() {
   if (process.env.INKY_PYTHON_PATH) return process.env.INKY_PYTHON_PATH;
 
-  const venvPython = process.platform === "win32"
-    ? path.join(backendDir(), ".venv", "Scripts", "python.exe")
-    : path.join(backendDir(), ".venv", "bin", "python");
+  const venvPython =
+    process.platform === "win32"
+      ? path.join(backendDir(), ".venv", "Scripts", "python.exe")
+      : path.join(backendDir(), ".venv", "bin", "python");
 
   if (fs.existsSync(venvPython)) return venvPython;
   return process.platform === "win32" ? "python" : "python3";

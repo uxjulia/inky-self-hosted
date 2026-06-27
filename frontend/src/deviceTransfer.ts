@@ -78,7 +78,13 @@ async function ensureDeviceFolder(base: string, destinationPath: string) {
   return createdFolders;
 }
 
-async function postFileToDevice(base: string, blob: Blob, mediaType: string, destinationPath: string, uploadName: string) {
+async function postFileToDevice(
+  base: string,
+  blob: Blob,
+  mediaType: string,
+  destinationPath: string,
+  uploadName: string
+) {
   const formData = new FormData();
   formData.append("file", new Blob([blob], { type: mediaType || "application/octet-stream" }), uploadName);
   return fetch(`${base}/upload?path=${encodeURIComponent(destinationPath)}`, {
@@ -131,7 +137,9 @@ function normalizeDestinationPath(destinationPath: string) {
 }
 
 function destinationFolderSegments(destinationPath: string) {
-  const segments = normalizeDestinationPath(destinationPath).split("/").filter((segment) => segment && segment !== ".");
+  const segments = normalizeDestinationPath(destinationPath)
+    .split("/")
+    .filter((segment) => segment && segment !== ".");
   if (segments.some((segment) => segment === "..")) {
     throw new Error("Destination folder cannot contain '..'.");
   }

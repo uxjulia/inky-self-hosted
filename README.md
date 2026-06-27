@@ -133,6 +133,12 @@ Run the API and frontend together with live reload:
 npm run dev
 ```
 
+Format supported frontend, desktop, config, and documentation files:
+
+```bash
+npm run format
+```
+
 Open:
 
 ```text

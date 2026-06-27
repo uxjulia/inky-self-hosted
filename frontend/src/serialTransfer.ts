@@ -233,12 +233,15 @@ async function openSerialConnection() {
   }
 
   const grantedPorts = await navigator.serial.getPorts();
-  const port = grantedPorts.find(isEsp32SerialPort) || await navigator.serial.requestPort({ filters: esp32SerialFilters });
+  const port =
+    grantedPorts.find(isEsp32SerialPort) || (await navigator.serial.requestPort({ filters: esp32SerialFilters }));
   try {
     await port.open({ baudRate: 115200, bufferSize: 8192 });
   } catch (error) {
     if (error instanceof Error && /busy|already open|access denied|in use/i.test(error.message)) {
-      throw new Error("USB serial port is busy. Close any serial monitor or other Inky window using the reader, then try again.");
+      throw new Error(
+        "USB serial port is busy. Close any serial monitor or other Inky window using the reader, then try again."
+      );
     }
     throw error;
   }
@@ -253,7 +256,11 @@ async function openSerialConnection() {
   }
 }
 
-async function ensureSerialFolder(connection: SerialConnection, destinationPath: string, progress?: SerialTransferProgress) {
+async function ensureSerialFolder(
+  connection: SerialConnection,
+  destinationPath: string,
+  progress?: SerialTransferProgress
+) {
   const segments = destinationFolderSegments(destinationPath);
   let current = "/sdcard";
 
@@ -267,7 +274,12 @@ async function ensureSerialFolder(connection: SerialConnection, destinationPath:
 async function serialMkdir(connection: SerialConnection, path: string) {
   const pathBytes = textEncoder.encode(path);
   await connection.write(new Uint8Array([...commandMagic, 0x4b, ...u16le(pathBytes.length), ...pathBytes]));
-  const response = await readUntil(connection, (line) => line === "OK" || line.startsWith("ERR:"), 5000, `mkdir ${path}`);
+  const response = await readUntil(
+    connection,
+    (line) => line === "OK" || line.startsWith("ERR:"),
+    5000,
+    `mkdir ${path}`
+  );
   if (response !== "OK" && response !== "ERR:mkdir_failed") throw new Error(response);
 }
 
@@ -283,20 +295,35 @@ async function writeSerialFile(
   const checksum = crc32(data);
 
   progress?.(8, `Uploading ${fullPath.split("/").pop() || "file"}`);
-  await connection.write(new Uint8Array([...commandMagic, 0x57, ...u16le(pathBytes.length), ...pathBytes, ...u32le(data.length)]));
-  await readUntil(connection, (line) => {
-    if (line.startsWith("ERR:")) throw new Error(line);
-    return line === "READY";
-  }, 10000, `write ${fullPath}`);
+  await connection.write(
+    new Uint8Array([...commandMagic, 0x57, ...u16le(pathBytes.length), ...pathBytes, ...u32le(data.length)])
+  );
+  await readUntil(
+    connection,
+    (line) => {
+      if (line.startsWith("ERR:")) throw new Error(line);
+      return line === "READY";
+    },
+    10000,
+    `write ${fullPath}`
+  );
 
   const chunkSize = 256;
   for (let sent = 0; sent < data.length;) {
     const end = Math.min(sent + chunkSize, data.length);
-    await connection.write(data.slice(sent, end), serialWriteTimeoutMs, `serial write at ${formatBytes(sent)} of ${formatBytes(data.length)}`, () => {
-      diagnostic?.(`Waiting for browser to write ${formatBytes(sent)} of ${formatBytes(data.length)}`);
-    });
+    await connection.write(
+      data.slice(sent, end),
+      serialWriteTimeoutMs,
+      `serial write at ${formatBytes(sent)} of ${formatBytes(data.length)}`,
+      () => {
+        diagnostic?.(`Waiting for browser to write ${formatBytes(sent)} of ${formatBytes(data.length)}`);
+      }
+    );
     sent = end;
-    progress?.(10 + Math.floor((sent / Math.max(1, data.length)) * 85), `Uploading ${formatBytes(sent)} of ${formatBytes(data.length)}`);
+    progress?.(
+      10 + Math.floor((sent / Math.max(1, data.length)) * 85),
+      `Uploading ${formatBytes(sent)} of ${formatBytes(data.length)}`
+    );
     await readAck(
       connection,
       serialAckTimeoutMs,
@@ -308,14 +335,21 @@ async function writeSerialFile(
         if (line.startsWith("BUSY:write:")) {
           diagnostic?.(`Device writing to SD (${formatBytes(sent)} of ${formatBytes(data.length)}): ${line}`);
         } else if (line.startsWith("BUSY:read:")) {
-          diagnostic?.(`Device waiting for serial bytes (${formatBytes(sent)} of ${formatBytes(data.length)}): ${line}`);
+          diagnostic?.(
+            `Device waiting for serial bytes (${formatBytes(sent)} of ${formatBytes(data.length)}): ${line}`
+          );
         }
       }
     );
   }
 
   await connection.write(new Uint8Array(u32le(checksum)));
-  const response = await readUntil(connection, (line) => line === "OK" || line.startsWith("ERR:"), 30000, `finish ${fullPath}`);
+  const response = await readUntil(
+    connection,
+    (line) => line === "OK" || line.startsWith("ERR:"),
+    30000,
+    `finish ${fullPath}`
+  );
   if (response !== "OK") throw new Error(response);
 }
 
@@ -375,7 +409,12 @@ async function readLineAfterFirstByte(connection: SerialConnection, firstByte: n
   }
 }
 
-async function readUntil(connection: SerialConnection, predicate: (line: string) => boolean, timeoutMs: number, label: string) {
+async function readUntil(
+  connection: SerialConnection,
+  predicate: (line: string) => boolean,
+  timeoutMs: number,
+  label: string
+) {
   const deadline = Date.now() + timeoutMs;
 
   while (true) {
@@ -490,7 +529,7 @@ function createCrcTable() {
   const table = new Uint32Array(256);
   for (let i = 0; i < 256; i += 1) {
     let c = i;
-    for (let j = 0; j < 8; j += 1) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    for (let j = 0; j < 8; j += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
     table[i] = c;
   }
   return table;
