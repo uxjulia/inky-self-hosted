@@ -67,6 +67,7 @@ const usesBrowserLibraryByDefault = isPublicApp || import.meta.env.VITE_INKY_LIB
 const isPublicReadOnly = isPublicApp || import.meta.env.VITE_INKY_PUBLIC_READ_ONLY === "1";
 const themeStorageKey = "inky-theme";
 const localSourceIndexStorageKey = "inky-local-source-index";
+const sortModeBySourceStorageKey = "inky-sort-mode-by-source";
 const optimizerSettingsStorageKey = "inky-optimizer-settings";
 const deviceStorageKey = "inky-device-target";
 const transferModeStorageKey = "inky-transfer-mode";
@@ -326,6 +327,8 @@ export default function App() {
   }, [activeJobId]);
 
   useEffect(() => {
+    setSortMode(getStoredSortModeForSource(selectedSourceId));
+    setSortMenuOpen(false);
     clearSearch();
     if (selectedSourceId === localSourceId) {
       setBrowseStack([null]);
@@ -799,7 +802,9 @@ export default function App() {
   }
 
   function updateSortMode(value: SortMode) {
-    setSortMode(value);
+    const nextSortMode = normalizeSortModeForSource(value, selectedSourceId);
+    setSortMode(nextSortMode);
+    saveSortModeForSource(selectedSourceId, nextSortMode);
     setBrowsePage(1);
     setSortMenuOpen(false);
   }
@@ -1610,7 +1615,7 @@ export default function App() {
               <div className="sort-menu-wrap">
                 <button
                   type="button"
-                  className={`sort-button ${sortMode === "source" ? "" : "active"}`}
+                  className={`sort-button ${activeSortMode === "source" ? "" : "active"}`}
                   onClick={() => setSortMenuOpen((open) => !open)}
                   title={`Sort: ${sortLabel}`}
                   aria-label={`Sort: ${sortLabel}`}
@@ -2315,6 +2320,52 @@ function getInitialLocalSourceIndex() {
 
 function clampLocalSourceIndex(index: number, remoteSourceCount: number) {
   return Math.max(0, Math.min(index, remoteSourceCount));
+}
+
+function getStoredSortModeForSource(sourceId: number | null): SortMode {
+  const storageKey = sortStorageKeyForSource(sourceId);
+  if (!storageKey) return "source";
+
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(sortModeBySourceStorageKey) || "{}");
+    if (!stored || typeof stored !== "object") return "source";
+    return normalizeSortModeForSource((stored as Record<string, unknown>)[storageKey], sourceId);
+  } catch {
+    return "source";
+  }
+}
+
+function saveSortModeForSource(sourceId: number | null, sortMode: SortMode) {
+  const storageKey = sortStorageKeyForSource(sourceId);
+  if (!storageKey) return;
+
+  let stored: Record<string, SortMode> = {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(sortModeBySourceStorageKey) || "{}");
+    if (parsed && typeof parsed === "object") {
+      stored = parsed as Record<string, SortMode>;
+    }
+  } catch {
+    stored = {};
+  }
+
+  stored[storageKey] = normalizeSortModeForSource(sortMode, sourceId);
+  window.localStorage.setItem(sortModeBySourceStorageKey, JSON.stringify(stored));
+}
+
+function normalizeSortModeForSource(value: unknown, sourceId: number | null): SortMode {
+  if (!isSortMode(value)) return "source";
+  if (sourceId !== localSourceId && (value === "date_added" || value === "type")) return "source";
+  return value;
+}
+
+function sortStorageKeyForSource(sourceId: number | null) {
+  if (sourceId === null) return null;
+  return sourceId === localSourceId ? "local" : `source:${sourceId}`;
+}
+
+function isSortMode(value: unknown): value is SortMode {
+  return value === "source" || value === "date_added" || value === "type" || value === "title_asc" || value === "title_desc";
 }
 
 function insertLocalSource(sources: Source[], localSourceIndex: number) {
