@@ -12,9 +12,9 @@ def normalize_device_url(value: str) -> str:
 
 
 def safe_filename(value: str, fallback: str = "item") -> str:
-    cleaned = "".join(ch if ch.isalnum() or ch in " ._-" else "_" for ch in value).strip(" .")
+    cleaned = "".join(" " if ch in '<>:"/\\|?*' or ord(ch) < 32 else ch for ch in value)
     cleaned = " ".join(cleaned.split())
-    return cleaned[:180] or fallback
+    return cleaned.strip()[:160] or fallback
 
 
 def extension_from_url(url: str, fallback: str = ".epub") -> str:
@@ -35,4 +35,3 @@ def join_remote(base_url: str, path: str | None) -> str:
 def display_title_from_url(url: str) -> str:
     name = Path(urlparse(url).path).name
     return safe_filename(name.rsplit(".", 1)[0] if name else "Untitled", "Untitled")
-
