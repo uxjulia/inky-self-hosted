@@ -362,6 +362,8 @@ h2 {
   gap: 12px;
   min-width: 0;
   min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .panel {
@@ -1115,6 +1117,7 @@ progress {
 
   .sidebar {
     align-self: start;
+    overflow: visible;
   }
 
   .source-drag-icon {
