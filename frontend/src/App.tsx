@@ -5,6 +5,7 @@ import {
   ArrowUpDown,
   BookOpen,
   CircleHelp,
+  Download,
   GripVertical,
   Folder,
   Home,
@@ -13,6 +14,7 @@ import {
   LogOut,
   MoreVertical,
   Moon,
+  Paintbrush,
   Pencil,
   Plus,
   RefreshCw,
@@ -25,6 +27,7 @@ import {
   TabletSmartphone,
   Sun,
   Trash2,
+  Upload,
   Usb,
   Wifi,
   X
@@ -83,7 +86,7 @@ type DeviceTarget = "x4" | "x3";
 type TransferMode = "wifi" | "usb";
 type SortMode = "source" | "date_added" | "title_asc" | "title_desc" | "type";
 type ToastState = { message: string; tone: "success" | "error" };
-type PendingBrowseAction = { key: string; action: "save" | "send" };
+type PendingBrowseAction = { key: string; action: "save" | "send" | "optimize" };
 type FilenameRenderToken = "Book Title" | "Author";
 type OptimizerSettings = {
   filename_render_first: FilenameRenderToken;
@@ -161,6 +164,11 @@ type Job = {
   result_json?: string | null;
 };
 
+type RecentOptimizedDownload = {
+  blob: Blob;
+  filename: string;
+};
+
 type SourceForm = {
   type: RemoteSourceType;
   name: string;
@@ -221,6 +229,8 @@ export default function App() {
   const [library, setLibrary] = useState<LibraryItem[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [recentOptimizedDownload, setRecentOptimizedDownload] = useState<RecentOptimizedDownload | null>(null);
+  const [optimizingLibraryItemId, setOptimizingLibraryItemId] = useState<number | null>(null);
   const [form, setForm] = useState<SourceForm>(emptySourceForm);
   const [deviceUrl, setDeviceUrl] = useState(defaultDeviceHost);
   const [destinationPath, setDestinationPath] = useState("/");
@@ -254,6 +264,7 @@ export default function App() {
   const [editingSource, setEditingSource] = useState<Source | null>(null);
   const [draggedSourceId, setDraggedSourceId] = useState<number | null>(null);
   const [dragOverSourceId, setDragOverSourceId] = useState<number | null>(null);
+  const [localFileDragOver, setLocalFileDragOver] = useState(false);
   const [sourceMenuId, setSourceMenuId] = useState<number | null>(null);
   const allSources = useMemo(() => insertLocalSource(sources, localSourceIndex), [sources, localSourceIndex]);
   const selectedSource = allSources.find((source) => source.id === selectedSourceId) || null;
@@ -1029,6 +1040,37 @@ export default function App() {
     }
   }
 
+  async function optimizeBrowseItem(item: BrowseItem) {
+    if (!selectedSourceId || selectedSourceId === localSourceId || !canOptimizeBrowseItem(item)) return;
+    setPendingBrowseAction({ key: browseItemKey(item), action: "optimize" });
+    setBusy(true);
+    try {
+      await runAction(
+        async () => {
+          setRecentOptimizedDownload(null);
+          const response = await apiFetch(`/api/sources/${selectedSourceId}/optimize-epub`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              item,
+              settings: defaultOptimizePayload()
+            })
+          });
+          const blob = await response.blob();
+          const filename =
+            filenameFromContentDisposition(response.headers.get("content-disposition")) ||
+            `${safeDownloadStem(item.title || "optimized")}.epub`;
+          setRecentOptimizedDownload({ blob, filename });
+          showToast("Optimized EPUB ready to download");
+        },
+        { toastOnError: true }
+      );
+    } finally {
+      setPendingBrowseAction(null);
+      setBusy(false);
+    }
+  }
+
   async function importBrowseItem(item: BrowseItem): Promise<LibraryItem | null> {
     if (!selectedSourceId || selectedSourceId === localSourceId) return null;
 
@@ -1080,22 +1122,51 @@ export default function App() {
     return null;
   }
 
-  async function uploadLocalFile(file: File | null) {
-    if (!file) return;
+  async function uploadLocalFiles(files: FileList | File[] | null) {
+    const selectedFiles = Array.from(files || []);
+    if (selectedFiles.length === 0) return;
     await runAction(async () => {
       if (usesBrowserLibrary) {
-        await addStandaloneFile(file);
-        showToast("Saved");
+        for (const file of selectedFiles) {
+          await addStandaloneFile(file);
+        }
+        showToast(`${selectedFiles.length} ${selectedFiles.length === 1 ? "file" : "files"} saved`);
         await loadLibrary();
         return;
       }
 
-      const formData = new FormData();
-      formData.append("file", file);
-      await api("/api/library/upload", { method: "POST", body: formData, rawBody: true });
-      showToast("Uploaded");
+      for (const file of selectedFiles) {
+        const formData = new FormData();
+        formData.append("file", file);
+        await api("/api/library/upload", { method: "POST", body: formData, rawBody: true });
+      }
+      showToast(`${selectedFiles.length} ${selectedFiles.length === 1 ? "file" : "files"} uploaded`);
       await loadLibrary();
     });
+  }
+
+  function dragHasFiles(event: DragEvent<HTMLElement>) {
+    return Array.from(event.dataTransfer.types).includes("Files");
+  }
+
+  function dragLocalFiles(event: DragEvent<HTMLElement>) {
+    if (!isLocalSource || !dragHasFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setLocalFileDragOver(true);
+  }
+
+  function leaveLocalFiles(event: DragEvent<HTMLElement>) {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setLocalFileDragOver(false);
+    }
+  }
+
+  async function dropLocalFiles(event: DragEvent<HTMLElement>) {
+    if (!isLocalSource) return;
+    event.preventDefault();
+    setLocalFileDragOver(false);
+    await uploadLocalFiles(event.dataTransfer.files);
   }
 
   async function removeLocalItem(item: LibraryItem) {
@@ -1113,6 +1184,39 @@ export default function App() {
       showToast("Removed");
       await loadLibrary();
     });
+  }
+
+  async function optimizeLibraryItem(item: LibraryItem) {
+    if (!canOptimizeLibraryItem(item)) return;
+    setOptimizingLibraryItemId(item.id);
+    try {
+      await runAction(
+        async () => {
+          if (usesBrowserLibrary) {
+            const { record, blob } = await getStandaloneFile(item.id);
+            await prepareStandaloneBlobForSend(blob, record.filename, item.id);
+            showToast("Optimized EPUB ready to download");
+            return;
+          }
+
+          setRecentOptimizedDownload(null);
+          const job = await api<Job>(`/api/library/${item.id}/optimize`, {
+            method: "POST",
+            body: JSON.stringify(defaultOptimizePayload())
+          });
+          const completedJob = await waitForJobCompletion(job);
+          const { blob, filename } = await downloadLibraryItemFile(item);
+          setRecentOptimizedDownload({
+            blob,
+            filename: optimizedDeviceFilename(completedJob) || filename || libraryItemFilename(item)
+          });
+          showToast("Optimized EPUB ready to download");
+        },
+        { toastOnError: true }
+      );
+    } finally {
+      setOptimizingLibraryItemId(null);
+    }
   }
 
   async function sendToDevice(item: LibraryItem) {
@@ -1182,9 +1286,11 @@ export default function App() {
   async function prepareStandaloneBlobForSend(blob: Blob, filename: string, itemId: number) {
     if (!hasEpubExtension(filename)) return { blob, filename };
     const jobId = crypto.randomUUID();
+    setRecentOptimizedDownload(null);
     if (canOptimizeBrowserFileOnServer()) {
       updateBrowserSendJob(jobId, itemId, 0, "Optimizing EPUB on server", "running");
       const result = await optimizeBrowserFileOnServer(blob, filename);
+      setRecentOptimizedDownload(result);
       updateBrowserSendJob(jobId, itemId, 100, "EPUB optimized on server", "succeeded");
       return result;
     }
@@ -1193,6 +1299,7 @@ export default function App() {
     const result = await optimizeEpubInBrowser(blob, filename, device, optimizerSettings, (progress, message) => {
       updateBrowserSendJob(jobId, itemId, progress, message, "running");
     });
+    setRecentOptimizedDownload(result);
     updateBrowserSendJob(jobId, itemId, 100, "EPUB optimized in browser", "succeeded");
     return result;
   }
@@ -1221,13 +1328,16 @@ export default function App() {
     }
 
     if (canOptimizeLibraryItem(item)) {
+      setRecentOptimizedDownload(null);
       const job = await api<Job>(`/api/library/${item.id}/optimize`, {
         method: "POST",
         body: JSON.stringify(defaultOptimizePayload())
       });
       const completedJob = await waitForJobCompletion(job);
       const { blob, filename } = await downloadLibraryItemFile(item);
-      await sendBlobViaUsb(blob, optimizedDeviceFilename(completedJob) || filename || libraryItemFilename(item), item.id);
+      const optimizedFilename = optimizedDeviceFilename(completedJob) || filename || libraryItemFilename(item);
+      setRecentOptimizedDownload({ blob, filename: optimizedFilename });
+      await sendBlobViaUsb(blob, optimizedFilename, item.id);
       return;
     }
 
@@ -1291,6 +1401,11 @@ export default function App() {
       blob,
       filename: filenameFromContentDisposition(response.headers.get("content-disposition")) || libraryItemFilename(item)
     };
+  }
+
+  function downloadRecentOptimizedFile() {
+    if (!recentOptimizedDownload) return;
+    downloadBlob(recentOptimizedDownload.blob, recentOptimizedDownload.filename);
   }
 
   async function probeDevice() {
@@ -1633,6 +1748,17 @@ export default function App() {
                 <SlidersHorizontal size={16} />
                 EPUB Optimizer Settings
               </button>
+              {recentOptimizedDownload && (
+                <button
+                  className="icon-text recent-download-button"
+                  type="button"
+                  onClick={downloadRecentOptimizedFile}
+                  title={`Download ${recentOptimizedDownload.filename}`}
+                >
+                  <Download size={16} />
+                  Download Optimized EPUB
+                </button>
+              )}
               {jobs.length > 0 && (
                 <pre className="job-log" aria-label="Latest device job">
                   {jobs.map((job) => (
@@ -1810,8 +1936,12 @@ export default function App() {
                       <Plus size={16} />
                       <input
                         type="file"
+                        multiple
                         accept={isHostedApp ? ".epub" : ".epub,.txt,.xtc,.xtch,.bmp,.png"}
-                        onChange={(event) => uploadLocalFile(event.target.files?.[0] || null)}
+                        onChange={(event) => {
+                          void uploadLocalFiles(event.target.files);
+                          event.currentTarget.value = "";
+                        }}
                       />
                     </label>
                   </>
@@ -1864,6 +1994,19 @@ export default function App() {
                 </div>
               </form>
             )}
+            {isLocalSource && (
+              <section
+                className={`local-drop-zone ${localFileDragOver ? "drag-over" : ""}`}
+                onDragEnter={dragLocalFiles}
+                onDragOver={dragLocalFiles}
+                onDragLeave={leaveLocalFiles}
+                onDrop={dropLocalFiles}
+                aria-label="Drop files to add them to Local Library"
+              >
+                <Upload size={18} />
+                <span>Drop files here or use the add button</span>
+              </section>
+            )}
             <div className="table-list">
               {error && (
                 <div className="empty-state status-state error-state">
@@ -1884,6 +2027,8 @@ export default function App() {
                   const itemMeta = formatLibraryItemMeta(item);
                   const canRemoveItem = !isMountedLibraryItem(item);
                   const canSendItem = !item.is_missing;
+                  const canOptimizeItem = canSendItem && canOptimizeLibraryItem(item);
+                  const optimizingItem = optimizingLibraryItemId === item.id;
                   const sendTitle = item.is_missing
                     ? "File is missing from the mounted library folder"
                     : canOptimizeLibraryItem(item)
@@ -1908,6 +2053,17 @@ export default function App() {
 
                       <div className="row-actions">
                         {fileType && <span className={`file-type-tag file-type-${fileType}`}>{fileType}</span>}
+                        {canOptimizeItem && (
+                          <button
+                            type="button"
+                            onClick={() => optimizeLibraryItem(item)}
+                            title={optimizingItem ? `Optimizing for ${deviceLabel}` : `Optimize for ${deviceLabel}`}
+                            aria-label={optimizingItem ? `Optimizing for ${deviceLabel}` : `Optimize for ${deviceLabel}`}
+                            disabled={optimizingItem}
+                          >
+                            {optimizingItem ? <RefreshCw className="spin" size={15} /> : <Paintbrush size={16} />}
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => sendToDevice(item)}
@@ -1938,6 +2094,8 @@ export default function App() {
                   const itemKey = browseItemKey(item);
                   const savingItem = pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "save";
                   const sendingItem = pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "send";
+                  const optimizingItem = pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "optimize";
+                  const canOptimizeItem = canOptimizeBrowseItem(item);
                   const sendTitle = canOptimizeBrowseItem(item)
                     ? `Optimize for ${deviceLabel} & Send`
                     : "Send to device";
@@ -1984,6 +2142,21 @@ export default function App() {
                           >
                             {savingItem ? <RefreshCw className="spin" size={15} /> : <Save size={16} />}
                           </button>
+                          {canOptimizeItem && (
+                            <button
+                              type="button"
+                              onClick={() => optimizeBrowseItem(item)}
+                              title={optimizingItem ? `Optimizing for ${deviceLabel}` : `Optimize for ${deviceLabel}`}
+                              aria-label={optimizingItem ? `Optimizing for ${deviceLabel}` : `Optimize for ${deviceLabel}`}
+                              disabled={busy}
+                            >
+                              {optimizingItem ? (
+                                <RefreshCw className="spin" size={15} />
+                              ) : (
+                                <Paintbrush size={16} />
+                              )}
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => sendBrowseItem(item)}
@@ -2420,6 +2593,22 @@ function filenameFromContentDisposition(value: string | null) {
   if (quotedMatch) return quotedMatch[1];
   const plainMatch = value.match(/filename=([^;]+)/i);
   return plainMatch?.[1]?.trim() || "";
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename || "optimized.epub";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function safeDownloadStem(value: string) {
+  const cleaned = value.replace(/[<>:"/\\|?*\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim();
+  return cleaned.slice(0, 120) || "optimized";
 }
 
 function optimizedDeviceFilename(job: Job) {

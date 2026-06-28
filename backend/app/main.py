@@ -17,6 +17,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from .article_epub import fetch_article_as_epub
 from .auth import require_basic_auth
 from .config import ensure_data_dirs, get_settings
 from .connectors import browse_source, search_source
@@ -40,6 +41,7 @@ from .models import Job, LibraryItem, Source
 from .optimizer.service import optimize_epub
 from .schemas import (
     ArticleImportRequest,
+    BrowseItem,
     BrowseResult,
     ClientLogRequest,
     DeviceProbeRequest,
@@ -52,15 +54,17 @@ from .schemas import (
     LocalFolderImportRequest,
     OptimizeRequest,
     SourceCreate,
+    SourceOptimizeRequest,
     SourceReorder,
     SourceRead,
     SourceUpdate,
     WebDavImportRequest,
 )
-from .utils import safe_filename
+from .utils import join_remote, safe_filename
 
 
 PUBLIC_TEMP_OPTIMIZE_PATH = "/api/optimizer/epub"
+PUBLIC_SOURCE_OPTIMIZE_SUFFIX = "/optimize-epub"
 PUBLIC_TEMP_OPTIMIZE_SEMAPHORE = asyncio.Semaphore(1)
 
 app = FastAPI(title="Inky API", version="0.1.0", dependencies=[Depends(require_basic_auth)])
@@ -75,7 +79,13 @@ app.add_middleware(
 
 @app.middleware("http")
 async def block_public_writes(request: Request, call_next):
-    public_temp_optimize = request.method == "POST" and request.url.path == PUBLIC_TEMP_OPTIMIZE_PATH
+    public_temp_optimize = (
+        request.method == "POST"
+        and (
+            request.url.path == PUBLIC_TEMP_OPTIMIZE_PATH
+            or (request.url.path.startswith("/api/sources/") and request.url.path.endswith(PUBLIC_SOURCE_OPTIMIZE_SUFFIX))
+        )
+    )
     if get_settings().public_read_only and request.method not in {"GET", "HEAD", "OPTIONS"} and not public_temp_optimize:
         return JSONResponse({"detail": "This public Inky instance is read-only."}, status_code=403)
     return await call_next(request)
@@ -306,6 +316,79 @@ async def optimize_uploaded_epub(
         media_type="application/epub+zip",
         filename=result.get("device_filename") or output_path.name,
         background=background,
+    )
+
+
+@app.post("/api/sources/{source_id}" + PUBLIC_SOURCE_OPTIMIZE_SUFFIX)
+async def optimize_source_epub(
+    source_id: int,
+    payload: SourceOptimizeRequest,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    source = db.get(Source, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="source not found")
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="inky-source-optimize-", dir=get_settings().data_dir))
+    try:
+        input_path = await source_item_to_temp_epub(source, payload.item, temp_dir)
+        async with PUBLIC_TEMP_OPTIMIZE_SEMAPHORE:
+            output_path, result = await run_in_threadpool(optimize_epub, input_path, temp_dir, payload.settings)
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+
+    background.add_task(shutil.rmtree, temp_dir, ignore_errors=True)
+    return FileResponse(
+        output_path,
+        media_type="application/epub+zip",
+        filename=result.get("device_filename") or output_path.name,
+        background=background,
+    )
+
+
+async def source_item_to_temp_epub(source: Source, item: BrowseItem, temp_dir: Path) -> Path:
+    if item.type == "article" and item.url:
+        return await fetch_article_as_epub(item.url, temp_dir, item.title, item.author)
+
+    if item.type == "file" and item.path and source.type == "local_folder":
+        source_path = resolve_local_source_file(source, item.path)
+        if source_path.suffix.lower() != ".epub":
+            raise HTTPException(status_code=400, detail="only EPUB files can be optimized")
+        destination = temp_dir / safe_filename(source_path.name, "source.epub")
+        shutil.copyfile(source_path, destination)
+        return destination
+
+    url = item.url
+    if not url and item.path and source.type == "webdav":
+        url = join_remote(source.url, item.path)
+    if not url or not is_epub_browse_item(item):
+        raise HTTPException(status_code=400, detail="only EPUB files can be optimized")
+
+    auth = (source.username, source.password) if source.username and source.password else None
+    filename = safe_filename(f"{item.title or Path(url).stem}{Path(url).suffix or '.epub'}", "source.epub")
+    if not filename.lower().endswith(".epub"):
+        filename += ".epub"
+    destination = temp_dir / filename
+    try:
+        async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
+            async with client.stream("GET", url, auth=auth) as response:
+                response.raise_for_status()
+                with destination.open("wb") as handle:
+                    async for chunk in response.aiter_bytes(64 * 1024):
+                        handle.write(chunk)
+    except httpx.HTTPError as exc:
+        raise_download_error(exc)
+    return destination
+
+
+def is_epub_browse_item(item: BrowseItem) -> bool:
+    media_type = (item.media_type or "").lower()
+    return (
+        "application/epub+zip" in media_type
+        or Path((item.url or "").split("?", 1)[0]).suffix.lower() == ".epub"
+        or Path((item.path or "").split("?", 1)[0]).suffix.lower() == ".epub"
     )
 
 

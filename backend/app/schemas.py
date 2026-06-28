@@ -147,6 +147,11 @@ class OptimizeRequest(BaseModel):
     text_cleanup: bool = True
 
 
+class SourceOptimizeRequest(BaseModel):
+    item: BrowseItem
+    settings: OptimizeRequest
+
+
 class DeviceProbeRequest(BaseModel):
     device_url: str
 
