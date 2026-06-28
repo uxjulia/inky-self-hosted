@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import tempfile
@@ -14,6 +15,7 @@ import httpx
 from pydantic import ValidationError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from .auth import require_basic_auth
 from .config import ensure_data_dirs, get_settings
@@ -59,6 +61,7 @@ from .utils import safe_filename
 
 
 PUBLIC_TEMP_OPTIMIZE_PATH = "/api/optimizer/epub"
+PUBLIC_TEMP_OPTIMIZE_SEMAPHORE = asyncio.Semaphore(1)
 
 app = FastAPI(title="Inky API", version="0.1.0", dependencies=[Depends(require_basic_auth)])
 app.add_middleware(
@@ -291,7 +294,8 @@ async def optimize_uploaded_epub(
         with input_path.open("wb") as temp:
             while chunk := await file.read(1024 * 1024):
                 temp.write(chunk)
-        output_path, result = optimize_epub(input_path, temp_dir, request)
+        async with PUBLIC_TEMP_OPTIMIZE_SEMAPHORE:
+            output_path, result = await run_in_threadpool(optimize_epub, input_path, temp_dir, request)
     except Exception:
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise

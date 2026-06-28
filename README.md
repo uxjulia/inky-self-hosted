@@ -107,7 +107,9 @@ seeded sources without writing to the backend.
 
 Public EPUB sends use the server optimizer through a temporary upload. The
 optimized EPUB is streamed back to the browser for USB transfer, and the server
-removes the temporary input/output files after the response.
+removes the temporary input/output files after the response. To keep small
+Railway instances responsive, temporary public optimizations run one at a time
+in a worker thread.
 
 Recommended Railway variables for an open public instance:
 
