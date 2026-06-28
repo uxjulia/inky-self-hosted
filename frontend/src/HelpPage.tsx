@@ -122,7 +122,12 @@ export function HelpPage({
           <div>
             <h3>Send Files</h3>
             <ul>
-              {!standaloneMode && <li>EPUBs are optimized for the selected X3 or X4 device before upload.</li>}
+              {!standaloneMode && !isPublicReadOnly && (
+                <li>EPUBs are optimized for the selected X3 or X4 device before upload.</li>
+              )}
+              {!standaloneMode && isPublicReadOnly && (
+                <li>EPUBs are temporarily optimized on the server, then sent from your browser.</li>
+              )}
               {standaloneMode && <li>EPUBs are optimized locally in the browser before sending.</li>}
               {!isPublicReadOnly && (
                 <li>RSS and Atom articles are first converted to EPUB, then optimized and sent.</li>

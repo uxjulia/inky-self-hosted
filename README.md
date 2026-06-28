@@ -105,6 +105,10 @@ Library in that browser instead of the shared Railway database. The backend
 still needs `INKY_PUBLIC_READ_ONLY=1` so public visitors can read and browse
 seeded sources without writing to the backend.
 
+Public EPUB sends use the server optimizer through a temporary upload. The
+optimized EPUB is streamed back to the browser for USB transfer, and the server
+removes the temporary input/output files after the response.
+
 Recommended Railway variables for an open public instance:
 
 ```bash

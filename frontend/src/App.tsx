@@ -1182,12 +1182,37 @@ export default function App() {
   async function prepareStandaloneBlobForSend(blob: Blob, filename: string, itemId: number) {
     if (!hasEpubExtension(filename)) return { blob, filename };
     const jobId = crypto.randomUUID();
+    if (canOptimizeBrowserFileOnServer()) {
+      updateBrowserSendJob(jobId, itemId, 0, "Optimizing EPUB on server", "running");
+      const result = await optimizeBrowserFileOnServer(blob, filename);
+      updateBrowserSendJob(jobId, itemId, 100, "EPUB optimized on server", "succeeded");
+      return result;
+    }
+
     updateBrowserSendJob(jobId, itemId, 0, "Optimizing EPUB in browser", "running");
     const result = await optimizeEpubInBrowser(blob, filename, device, optimizerSettings, (progress, message) => {
       updateBrowserSendJob(jobId, itemId, progress, message, "running");
     });
     updateBrowserSendJob(jobId, itemId, 100, "EPUB optimized in browser", "succeeded");
     return result;
+  }
+
+  function canOptimizeBrowserFileOnServer() {
+    return usesBrowserLibrary && !standaloneMode && !isHostedApp;
+  }
+
+  async function optimizeBrowserFileOnServer(blob: Blob, filename: string) {
+    const formData = new FormData();
+    formData.append("file", blob, filename);
+    formData.append("settings", JSON.stringify(defaultOptimizePayload()));
+    const response = await apiFetch("/api/optimizer/epub", {
+      method: "POST",
+      body: formData
+    });
+    return {
+      blob: await response.blob(),
+      filename: filenameFromContentDisposition(response.headers.get("content-disposition")) || filename
+    };
   }
 
   async function sendLibraryItemViaUsb(item: LibraryItem) {

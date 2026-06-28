@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 import threading
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
+from pydantic import ValidationError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -33,6 +35,7 @@ from .library import (
     sync_mounted_library,
 )
 from .models import Job, LibraryItem, Source
+from .optimizer.service import optimize_epub
 from .schemas import (
     ArticleImportRequest,
     BrowseResult,
@@ -52,7 +55,10 @@ from .schemas import (
     SourceUpdate,
     WebDavImportRequest,
 )
+from .utils import safe_filename
 
+
+PUBLIC_TEMP_OPTIMIZE_PATH = "/api/optimizer/epub"
 
 app = FastAPI(title="Inky API", version="0.1.0", dependencies=[Depends(require_basic_auth)])
 app.add_middleware(
@@ -66,7 +72,8 @@ app.add_middleware(
 
 @app.middleware("http")
 async def block_public_writes(request: Request, call_next):
-    if get_settings().public_read_only and request.method not in {"GET", "HEAD", "OPTIONS"}:
+    public_temp_optimize = request.method == "POST" and request.url.path == PUBLIC_TEMP_OPTIMIZE_PATH
+    if get_settings().public_read_only and request.method not in {"GET", "HEAD", "OPTIONS"} and not public_temp_optimize:
         return JSONResponse({"detail": "This public Inky instance is read-only."}, status_code=403)
     return await call_next(request)
 
@@ -261,6 +268,41 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
         return copy_uploaded_file(db, temp_path, file.filename or "upload.epub")
     finally:
         temp_path.unlink(missing_ok=True)
+
+
+@app.post(PUBLIC_TEMP_OPTIMIZE_PATH)
+async def optimize_uploaded_epub(
+    background: BackgroundTasks,
+    file: UploadFile = File(...),
+    settings: str = Form("{}"),
+) -> FileResponse:
+    filename = file.filename or "upload.epub"
+    if Path(filename).suffix.lower() != ".epub":
+        raise HTTPException(status_code=400, detail="only EPUB files can be optimized")
+
+    try:
+        request = OptimizeRequest.model_validate_json(settings)
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.errors()) from exc
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="inky-optimize-", dir=get_settings().data_dir))
+    input_path = temp_dir / safe_filename(filename, "upload.epub")
+    try:
+        with input_path.open("wb") as temp:
+            while chunk := await file.read(1024 * 1024):
+                temp.write(chunk)
+        output_path, result = optimize_epub(input_path, temp_dir, request)
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+
+    background.add_task(shutil.rmtree, temp_dir, ignore_errors=True)
+    return FileResponse(
+        output_path,
+        media_type="application/epub+zip",
+        filename=result.get("device_filename") or output_path.name,
+        background=background,
+    )
 
 
 @app.post("/api/library/folders", response_model=list[LibraryItemRead])
