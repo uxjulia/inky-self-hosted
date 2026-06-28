@@ -57,7 +57,12 @@ process.on("SIGTERM", () => {
   process.exit(143);
 });
 
-spawnChild("web", "npm", ["run", "dev:web"]);
+spawnChild("web", "npm", ["run", "dev:web"], {
+  env: {
+    VITE_INKY_APP_MODE: "self-hosted",
+    VITE_INKY_PUBLIC_READ_ONLY: "0"
+  }
+});
 
 try {
   await waitFor("http://localhost:5173");

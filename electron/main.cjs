@@ -60,7 +60,8 @@ function backendCommand(port, dataDir, mountedLibraryDir) {
         INKY_DESKTOP_API_PORT: String(port),
         INKY_DATABASE_URL: `sqlite:///${path.join(dataDir, "inky.db")}`,
         INKY_DATA_DIR: dataDir,
-        INKY_MOUNTED_LIBRARY_DIR: mountedLibraryDir
+        INKY_MOUNTED_LIBRARY_DIR: mountedLibraryDir,
+        INKY_PUBLIC_READ_ONLY: "0"
       }
     };
   }
@@ -73,6 +74,7 @@ function backendCommand(port, dataDir, mountedLibraryDir) {
       INKY_DATABASE_URL: `sqlite:///${path.join(dataDir, "inky.db")}`,
       INKY_DATA_DIR: dataDir,
       INKY_MOUNTED_LIBRARY_DIR: mountedLibraryDir,
+      INKY_PUBLIC_READ_ONLY: "0",
       PYTHONUNBUFFERED: "1"
     }
   };

@@ -16,14 +16,15 @@
     "format": "prettier --write \"**/*.{cjs,css,html,js,json,jsx,md,mjs,ts,tsx,yaml,yml}\"",
     "format:check": "prettier --check \"**/*.{cjs,css,html,js,json,jsx,md,mjs,ts,tsx,yaml,yml}\"",
     "build": "npm run build --prefix frontend && backend/.venv/bin/python -m compileall backend/app",
+    "build:desktop": "VITE_INKY_APP_MODE=self-hosted VITE_INKY_PUBLIC_READ_ONLY=0 npm run build --prefix frontend && backend/.venv/bin/python -m compileall backend/app",
     "build:hosted": "VITE_INKY_APP_MODE=hosted npm run build --prefix frontend",
     "build:public": "VITE_INKY_APP_MODE=public npm run build --prefix frontend",
     "ios:sync": "npm run build && npx cap sync ios",
     "ios:open": "npm run ios:sync && npx cap open ios",
     "desktop:backend": "node scripts/build-backend-desktop.mjs",
     "desktop:dev": "node scripts/desktop-dev.mjs",
-    "desktop:dist": "npm run desktop:backend && npm run build && electron-builder",
-    "desktop:pack": "npm run desktop:backend && npm run build && electron-builder --dir"
+    "desktop:dist": "npm run desktop:backend && npm run build:desktop && electron-builder",
+    "desktop:pack": "npm run desktop:backend && npm run build:desktop && electron-builder --dir"
   },
   "build": {
     "appId": "app.inky.reader",
