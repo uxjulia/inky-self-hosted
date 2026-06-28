@@ -139,6 +139,26 @@ export function HelpPage({
         </article>
       </div>
 
+      <section className="help-section">
+        <div className="help-section-header">
+          <p className="eyebrow">Manual Transfer</p>
+          <h3>For Devices Without USB Transfer</h3>
+        </div>
+        <article className="help-card help-card-wide">
+          <div>
+            <p>
+              If your reader is locked from USB transfers, you can still use Inky to prepare EPUBs and move them by SD
+              card.
+            </p>
+            <ul>
+              <li>Add or drop EPUB files into Local Library.</li>
+              <li>Use the optimize button to prepare the EPUB for the selected X3 or X4 screen.</li>
+              <li>Choose Download Optimized EPUB, then copy that file onto the reader's SD card manually.</li>
+            </ul>
+          </div>
+        </article>
+      </section>
+
       {(!standaloneMode || isHostedApp) && (
         <section className="help-section">
           <div className="help-section-header">
