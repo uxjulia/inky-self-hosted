@@ -87,6 +87,7 @@ type TransferMode = "wifi" | "usb";
 type SortMode = "source" | "date_added" | "title_asc" | "title_desc" | "type";
 type ToastState = { message: string; tone: "success" | "error" };
 type PendingBrowseAction = { key: string; action: "save" | "send" | "optimize" };
+type FloatingTooltipPosition = { top: number; left: number };
 type FilenameRenderToken = "Book Title" | "Author";
 type OptimizerSettings = {
   filename_render_first: FilenameRenderToken;
@@ -210,6 +211,7 @@ const defaultOptimizerSettings: OptimizerSettings = {
 export default function App() {
   const libraryLoadSeq = useRef(0);
   const browseLoadSeq = useRef(0);
+  const stablePageTooltipButtonRef = useRef<HTMLButtonElement | null>(null);
   const [view, setView] = useState<AppView>(() => getInitialView());
   const [authChecked, setAuthChecked] = useState(false);
   const [authEnabled, setAuthEnabled] = useState(false);
@@ -263,6 +265,7 @@ export default function App() {
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
   const [optimizerModalOpen, setOptimizerModalOpen] = useState(false);
   const [serverModalOpen, setServerModalOpen] = useState(false);
+  const [stablePageTooltipPosition, setStablePageTooltipPosition] = useState<FloatingTooltipPosition | null>(null);
   const [editingSource, setEditingSource] = useState<Source | null>(null);
   const [draggedSourceId, setDraggedSourceId] = useState<number | null>(null);
   const [dragOverSourceId, setDragOverSourceId] = useState<number | null>(null);
@@ -276,6 +279,30 @@ export default function App() {
   const trimmedSearchQuery = searchQuery.trim();
   const activeBrowseResult = searchResult || browseResult;
   const showBrowseLoading = !isLocalSource && (browseLoading || searching);
+  function updateStablePageTooltipPosition() {
+    const button = stablePageTooltipButtonRef.current;
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    const gutter = 12;
+    const width = Math.min(340, window.innerWidth - gutter * 2);
+    const estimatedHeight = 132;
+    const left = Math.min(Math.max(gutter, rect.right - width), window.innerWidth - width - gutter);
+    const preferredTop = rect.top - estimatedHeight - 8;
+    const top =
+      preferredTop >= gutter
+        ? preferredTop
+        : Math.min(rect.bottom + 8, window.innerHeight - estimatedHeight - gutter);
+    setStablePageTooltipPosition({ top: Math.max(gutter, top), left });
+  }
+
+  function showStablePageTooltip() {
+    updateStablePageTooltipPosition();
+  }
+
+  function hideStablePageTooltip() {
+    setStablePageTooltipPosition(null);
+  }
+
   const displayedLibrary = useMemo(() => {
     if (!trimmedSearchQuery) return library;
     const needle = trimmedSearchQuery.toLocaleLowerCase();
@@ -389,6 +416,22 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(transferModeStorageKey, transferMode);
   }, [transferMode]);
+
+  useEffect(() => {
+    if (!optimizerModalOpen) {
+      hideStablePageTooltip();
+    }
+  }, [optimizerModalOpen]);
+
+  useEffect(() => {
+    if (!stablePageTooltipPosition) return;
+    window.addEventListener("resize", updateStablePageTooltipPosition);
+    window.addEventListener("scroll", updateStablePageTooltipPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateStablePageTooltipPosition);
+      window.removeEventListener("scroll", updateStablePageTooltipPosition, true);
+    };
+  }, [stablePageTooltipPosition]);
 
   useEffect(() => {
     const clampedIndex = clampLocalSourceIndex(localSourceIndex, sources.length);
@@ -2237,6 +2280,29 @@ export default function App() {
         </section>
       )}
 
+      <footer className="app-footer">
+        Made by{" "}
+        <a href="https://github.com/uxjulia" target="_blank" rel="noreferrer">
+          @uxjulia
+        </a>
+      </footer>
+
+      {stablePageTooltipPosition && (
+        <div
+          id="stable-page-numbers-tooltip"
+          className="advanced-tooltip-content"
+          role="tooltip"
+          style={{
+            left: `${stablePageTooltipPosition.left}px`,
+            top: `${stablePageTooltipPosition.top}px`
+          }}
+        >
+          Stable Page Numbers remain the same regardless of the book you're reading or the font size, margins, or other
+          page layout settings you use. This is a great way to compare how many pages you read across different books.
+          The average paperback book has between 250-300 words per page, therefore CrossInk defaults to 275.
+        </div>
+      )}
+
       {view === "app" && sourceModalOpen && (
         <div className="modal-backdrop" role="presentation">
           <form
@@ -2459,9 +2525,31 @@ export default function App() {
                 />
                 <span>Clean text punctuation and spacing</span>
               </label>
-              <label className="field">
-                <span>Words per page (used for Stable Page Numbers)</span>
+              <div className="field">
+                <div className="field-label">
+                  <label htmlFor="reference-page-words">Words per page (used for Stable Page Numbers)</label>
+                  <span className="advanced-tooltip">
+                    <button
+                      ref={stablePageTooltipButtonRef}
+                      type="button"
+                      aria-describedby="stable-page-numbers-tooltip"
+                      aria-label="Stable Page Numbers help"
+                      onBlur={hideStablePageTooltip}
+                      onFocus={showStablePageTooltip}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          hideStablePageTooltip();
+                        }
+                      }}
+                      onMouseEnter={showStablePageTooltip}
+                      onMouseLeave={hideStablePageTooltip}
+                    >
+                      <CircleHelp size={14} />
+                    </button>
+                  </span>
+                </div>
                 <input
+                  id="reference-page-words"
                   type="number"
                   min="1"
                   max="10000"
@@ -2469,9 +2557,8 @@ export default function App() {
                   value={referencePageWordsDraft}
                   onChange={(event) => updateReferencePageWordsDraft(event.target.value)}
                   onBlur={commitReferencePageWordsDraft}
-                  aria-label="Words per reference page"
                 />
-              </label>
+              </div>
             </div>
             <div className="modal-actions">
               <button type="button" onClick={resetOptimizerSettings}>
