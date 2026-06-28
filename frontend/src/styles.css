@@ -759,6 +759,11 @@ h2 {
   background: var(--color-panel-muted);
 }
 
+.loading-state {
+  display: flex;
+  justify-content: center;
+}
+
 .status-state {
   grid-template-columns: minmax(0, 1fr) auto;
   min-height: 44px;

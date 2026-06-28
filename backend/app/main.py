@@ -203,7 +203,7 @@ async def browse(source_id: int, target: str | None = None, db: Session = Depend
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=source_error_detail(exc)) from exc
 
 
 @app.get("/api/sources/{source_id}/search", response_model=BrowseResult)
@@ -213,7 +213,20 @@ async def search(source_id: int, q: str, target: str | None = None, db: Session 
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=source_error_detail(exc)) from exc
+
+
+def source_error_detail(exc: Exception) -> str:
+    if isinstance(exc, httpx.TimeoutException):
+        return "The source timed out while Inky was trying to browse it. Try again in a moment."
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code
+        reason = exc.response.reason_phrase
+        return f"The source returned {status_code} {reason} while Inky was trying to browse it."
+    if isinstance(exc, httpx.RequestError):
+        return "Inky could not connect to the source. Check the source URL and try again."
+    detail = str(exc).strip()
+    return detail or f"Unable to browse source ({type(exc).__name__})."
 
 
 @app.get("/api/library", response_model=list[LibraryItemRead])

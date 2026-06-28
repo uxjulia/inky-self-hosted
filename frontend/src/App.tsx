@@ -209,6 +209,7 @@ const defaultOptimizerSettings: OptimizerSettings = {
 
 export default function App() {
   const libraryLoadSeq = useRef(0);
+  const browseLoadSeq = useRef(0);
   const [view, setView] = useState<AppView>(() => getInitialView());
   const [authChecked, setAuthChecked] = useState(false);
   const [authEnabled, setAuthEnabled] = useState(false);
@@ -251,6 +252,7 @@ export default function App() {
   const [pendingBrowseAction, setPendingBrowseAction] = useState<PendingBrowseAction | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [rescanningLibrary, setRescanningLibrary] = useState(false);
+  const [browseLoading, setBrowseLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [error, setError] = useState("");
@@ -273,6 +275,7 @@ export default function App() {
   const resolvedDeviceUrl = resolveDeviceHostInput(deviceUrl);
   const trimmedSearchQuery = searchQuery.trim();
   const activeBrowseResult = searchResult || browseResult;
+  const showBrowseLoading = !isLocalSource && (browseLoading || searching);
   const displayedLibrary = useMemo(() => {
     if (!trimmedSearchQuery) return library;
     const needle = trimmedSearchQuery.toLocaleLowerCase();
@@ -353,17 +356,20 @@ export default function App() {
   }, [activeJobId]);
 
   useEffect(() => {
+    browseLoadSeq.current += 1;
     setSortMode(getStoredSortModeForSource(selectedSourceId));
     setSortMenuOpen(false);
     clearSearch();
     if (selectedSourceId === localSourceId) {
       setBrowseStack([null]);
       setBrowseResult(null);
+      setBrowseLoading(false);
     } else if (selectedSourceId) {
       setBrowseStack([null]);
       browse(selectedSourceId, null);
     } else {
       setBrowseResult(null);
+      setBrowseLoading(false);
     }
   }, [selectedSourceId]);
 
@@ -599,16 +605,24 @@ export default function App() {
   }
 
   async function browse(sourceId: number, target: string | null) {
+    const loadSeq = ++browseLoadSeq.current;
     if (sourceId === localSourceId) {
       setBrowseResult(null);
+      setBrowseLoading(false);
       return;
     }
     const query = target ? `?target=${encodeURIComponent(target)}` : "";
+    setBrowseLoading(true);
+    setBrowseResult(null);
+    setSearchResult(null);
     await runAction(async () => {
-      setBrowseResult(await api<BrowseResult>(`/api/sources/${sourceId}/browse${query}`));
+      const result = await api<BrowseResult>(`/api/sources/${sourceId}/browse${query}`);
+      if (loadSeq !== browseLoadSeq.current) return;
+      setBrowseResult(result);
       setBrowsePage(1);
       setRemotePage(1);
     });
+    if (loadSeq === browseLoadSeq.current) setBrowseLoading(false);
   }
 
   function openAddSourceModal() {
@@ -814,8 +828,12 @@ export default function App() {
 
     setSearching(true);
     try {
+      const loadSeq = ++browseLoadSeq.current;
+      setSearchResult(null);
       await runAction(async () => {
-        setSearchResult(await api<BrowseResult>(`/api/sources/${selectedSourceId}/search?${params.toString()}`));
+        const result = await api<BrowseResult>(`/api/sources/${selectedSourceId}/search?${params.toString()}`);
+        if (loadSeq !== browseLoadSeq.current) return;
+        setSearchResult(result);
         setBrowsePage(1);
         setRemotePage(1);
       });
@@ -941,10 +959,15 @@ export default function App() {
 
   async function openResultPage(target: string | null | undefined, direction: "next" | "previous") {
     if (!target || !selectedSourceId || isLocalSource) return;
+    const loadSeq = ++browseLoadSeq.current;
+    setBrowseLoading(true);
+    setBrowseResult(null);
+    setSearchResult(null);
     await runAction(async () => {
       const result = await api<BrowseResult>(
         `/api/sources/${selectedSourceId}/browse?target=${encodeURIComponent(target)}`
       );
+      if (loadSeq !== browseLoadSeq.current) return;
       if (searchResult) {
         setSearchResult(result);
       } else {
@@ -953,6 +976,7 @@ export default function App() {
       setBrowsePage(1);
       setRemotePage((page) => (direction === "next" ? page + 1 : Math.max(1, page - 1)));
     });
+    if (loadSeq === browseLoadSeq.current) setBrowseLoading(false);
   }
 
   async function importItem(item: BrowseItem) {
@@ -2016,12 +2040,19 @@ export default function App() {
                   </button>
                 </div>
               )}
+              {!error && showBrowseLoading && (
+                <div className="empty-state loading-state">
+                  <RefreshCw className="spin" size={16} />
+                  <span>Loading source</span>
+                </div>
+              )}
               {!error && isLocalSource && displayedLibrary.length === 0 && (
                 <div className="empty-state">
                   {trimmedSearchQuery ? `No results found for "${trimmedSearchQuery}".` : "No local files yet."}
                 </div>
               )}
               {!error &&
+                !showBrowseLoading &&
                 isLocalSource &&
                 paginatedLibrary.map((item) => {
                   const itemMeta = formatLibraryItemMeta(item);
@@ -2081,13 +2112,14 @@ export default function App() {
                     </div>
                   );
                 })}
-              {!error && !isLocalSource && activeBrowseResult?.message && (
+              {!error && !showBrowseLoading && !isLocalSource && activeBrowseResult?.message && (
                 <div className="empty-state">{activeBrowseResult.message}</div>
               )}
-              {!error && !isLocalSource && selectedSource && !browseResult && (
+              {!error && !showBrowseLoading && !isLocalSource && selectedSource && !browseResult && (
                 <div className="empty-state">Select refresh to browse this source.</div>
               )}
               {!isLocalSource &&
+                !showBrowseLoading &&
                 paginatedRemoteItems.map((item, index) => {
                   const opensBrowseTarget = item.type === "navigation" || item.type === "directory";
                   const isSendableItem = item.type === "book" || item.type === "article" || item.type === "file";
@@ -2718,7 +2750,10 @@ function normalizeApiBaseUrl(value: string | null | undefined) {
 function readableError(message: string) {
   try {
     const parsed = JSON.parse(message);
-    if (parsed.detail) return String(parsed.detail);
+    if (Object.prototype.hasOwnProperty.call(parsed, "detail")) {
+      const detail = String(parsed.detail || "").trim();
+      return detail || "The request failed without an error message.";
+    }
   } catch {
     // Keep original text below.
   }
