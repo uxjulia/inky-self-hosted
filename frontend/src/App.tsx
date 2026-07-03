@@ -90,6 +90,7 @@ type PendingBrowseAction = { key: string; action: "save" | "send" | "optimize" }
 type FloatingTooltipPosition = { top: number; left: number };
 type FilenameRenderToken = "Book Title" | "Author";
 type OptimizerSettings = {
+  use_original_filename: boolean;
   filename_render_first: FilenameRenderToken;
   filename_render_second: FilenameRenderToken;
   quality: number;
@@ -193,6 +194,7 @@ const browsePageSize = 25;
 const defaultDeviceHost = isSelfHostedBrowser ? "" : "crosspoint.local";
 const deviceHostPlaceholder = isSelfHostedBrowser ? "192.168." : "crosspoint.local";
 const defaultOptimizerSettings: OptimizerSettings = {
+  use_original_filename: false,
   filename_render_first: "Book Title",
   filename_render_second: "Author",
   quality: 70,
@@ -2406,11 +2408,20 @@ export default function App() {
                     onClick={swapFilenameRenderFields}
                     title="Swap filename fields"
                     aria-label="Swap filename fields"
+                    disabled={optimizerSettings.use_original_filename}
                   >
                     <ArrowLeftRight size={16} />
                   </button>
                   <span className="filename-render-value">{optimizerSettings.filename_render_second}</span>
                 </div>
+              </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={optimizerSettings.use_original_filename}
+                  onChange={(event) => updateOptimizerSetting("use_original_filename", event.target.checked)}
+                />
+                <span>Use Original</span>
               </label>
               <label className="field">
                 <span>JPEG quality</span>
@@ -2912,6 +2923,10 @@ function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
   if (!value || typeof value !== "object") return defaultOptimizerSettings;
   const stored = value as Partial<OptimizerSettings>;
   return {
+    use_original_filename: booleanOrDefault(
+      stored.use_original_filename,
+      defaultOptimizerSettings.use_original_filename
+    ),
     filename_render_first: filenameRenderTokenOrDefault(
       stored.filename_render_first,
       defaultOptimizerSettings.filename_render_first

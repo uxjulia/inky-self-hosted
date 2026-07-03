@@ -132,6 +132,7 @@ class JobRead(BaseModel):
 
 class OptimizeRequest(BaseModel):
     device: Literal["x4", "x3"] = "x4"
+    use_original_filename: bool = False
     filename_render_first: str = Field(default="Book Title", max_length=240)
     filename_render_second: str = Field(default="Author", max_length=240)
     quality: int = Field(default=70, ge=1, le=100)

@@ -41,6 +41,7 @@ def optimize_epub(input_path: Path, output_dir: Path, request: OptimizeRequest, 
             split_long_sections=request.split_long_sections,
             words_per_reference_page=request.words_per_reference_page,
             text_cleanup=request.text_cleanup,
+            use_original_filename=request.use_original_filename,
             filename_render_first=request.filename_render_first,
             filename_render_second=request.filename_render_second,
         )
@@ -75,6 +76,8 @@ def _unique_path(path: Path) -> Path:
 
 
 def preferred_output_filename(input_path: Path, request: OptimizeRequest, rendered_name: str | None = None) -> str:
+    if request.use_original_filename:
+        return safe_filename(input_path.name, "optimized.epub")
     name = rendered_name or _render_output_filename(input_path, request) or input_path.name
     if not name.lower().endswith(".epub"):
         name += ".epub"

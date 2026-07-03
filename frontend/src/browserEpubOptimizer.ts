@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 
 export type BrowserOptimizerSettings = {
+  use_original_filename: boolean;
   filename_render_first: "Book Title" | "Author";
   filename_render_second: "Book Title" | "Author";
   quality: number;
@@ -1202,6 +1203,7 @@ function textFromFirst(doc: Document, localName: string) {
 }
 
 function formatOutputFilename(inputFilename: string, metadata: Metadata, settings: BrowserOptimizerSettings) {
+  if (settings.use_original_filename) return sanitizeFilename(inputFilename);
   const values: Record<BrowserOptimizerSettings["filename_render_first"], string> = {
     "Book Title": metadata.title || inputFilename.replace(/\.epub$/i, ""),
     Author: metadata.author

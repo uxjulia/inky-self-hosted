@@ -63,6 +63,7 @@ class ProcessingOptions:
     section_split_word_threshold: int = 6000
     words_per_reference_page: int = 275
     filename_format: str = 'author-title'
+    use_original_filename: bool = False
     filename_render_first: str = 'Book Title'
     filename_render_second: str = 'Author'
     # Metadata edits (applied if non-empty)
@@ -620,13 +621,16 @@ def process_epub(input_path: str, output_path: str,
         package_epub(work_dir, output_path)
 
         # Step 22: Generate output filename
-        opf_tree = etree.parse(opf_path)
-        final_metadata = extract_metadata(opf_tree)
-        report.output_filename = _format_rendered_filename(
-            final_metadata,
-            options.filename_render_first,
-            options.filename_render_second,
-        )
+        if options.use_original_filename:
+            report.output_filename = os.path.basename(input_path)
+        else:
+            opf_tree = etree.parse(opf_path)
+            final_metadata = extract_metadata(opf_tree)
+            report.output_filename = _format_rendered_filename(
+                final_metadata,
+                options.filename_render_first,
+                options.filename_render_second,
+            )
 
         # Done
         report.optimized_size = os.path.getsize(output_path)
