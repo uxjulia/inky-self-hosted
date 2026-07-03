@@ -76,6 +76,7 @@ import {
   folderNameFromPath,
   hasEpubExtension,
   insertLocalSource,
+  isMountedLibraryItem,
   libraryItemFilename,
   messageFromUnknown,
   moveSource,
@@ -156,6 +157,7 @@ export default function App() {
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [browseStack, setBrowseStack] = useState<(string | null)[]>([null]);
   const [library, setLibrary] = useState<LibraryItem[]>([]);
+  const [selectedLocalItemIds, setSelectedLocalItemIds] = useState<Set<number>>(() => new Set());
   const [jobs, setJobs] = useState<Job[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [recentOptimizedDownload, setRecentOptimizedDownload] = useState<RecentOptimizedDownload | null>(null);
@@ -276,6 +278,10 @@ export default function App() {
     (clampedBrowsePage - 1) * browsePageSize,
     clampedBrowsePage * browsePageSize
   );
+  const selectedLocalItems = useMemo(
+    () => library.filter((item) => selectedLocalItemIds.has(item.id)),
+    [library, selectedLocalItemIds]
+  );
   const paginatedRemoteItems = sortedRemoteItems.slice(
     (clampedBrowsePage - 1) * browsePageSize,
     clampedBrowsePage * browsePageSize
@@ -283,6 +289,14 @@ export default function App() {
   const hasRemotePagination =
     !isLocalSource && Boolean(activeBrowseResult?.previous_url || activeBrowseResult?.next_url);
   const showPagination = displayedItems.length > browsePageSize || hasRemotePagination;
+
+  useEffect(() => {
+    const validIds = new Set(library.map((item) => item.id));
+    setSelectedLocalItemIds((current) => {
+      const next = new Set([...current].filter((id) => validIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [library]);
   const paginationLabel = hasRemotePagination
     ? totalPages > 1
       ? `Catalog Page ${remotePage} · results page ${clampedBrowsePage} of ${totalPages}`
@@ -1233,21 +1247,87 @@ export default function App() {
     await uploadLocalFiles(event.dataTransfer.files);
   }
 
-  async function removeLocalItem(item: LibraryItem) {
-    const confirmed = window.confirm(`Remove "${item.title}" from the local library?`);
+  async function removeLocalItems(items: LibraryItem[]) {
+    const removableItems = items.filter((item) => !isMountedLibraryItem(item));
+    if (removableItems.length === 0) return;
+    const confirmed =
+      removableItems.length === 1
+        ? window.confirm(`Remove "${removableItems[0].title}" from the local library?`)
+        : window.confirm(`Remove ${removableItems.length} files from the local library?`);
     if (!confirmed) return;
     await runAction(async () => {
       if (usesBrowserLibrary) {
-        await deleteStandaloneFile(item.id);
-        showToast("Removed");
-        await loadLibrary();
-        return;
+        for (const item of removableItems) {
+          await deleteStandaloneFile(item.id);
+        }
+      } else {
+        for (const item of removableItems) {
+          await api(`/api/library/${item.id}`, { method: "DELETE" });
+        }
       }
 
-      await api(`/api/library/${item.id}`, { method: "DELETE" });
-      showToast("Removed");
+      setSelectedLocalItemIds((current) => {
+        const next = new Set(current);
+        removableItems.forEach((item) => next.delete(item.id));
+        return next;
+      });
+      showToast(removableItems.length === 1 ? "Removed" : `Removed ${removableItems.length} files`);
       await loadLibrary();
     });
+  }
+
+  async function removeLocalItem(item: LibraryItem) {
+    await removeLocalItems([item]);
+  }
+
+  function toggleLocalItemSelected(itemId: number) {
+    setSelectedLocalItemIds((current) => {
+      const next = new Set(current);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  }
+
+  function setVisibleLocalItemsSelected(items: LibraryItem[], selected: boolean) {
+    setSelectedLocalItemIds((current) => {
+      const next = new Set(current);
+      items.forEach((item) => {
+        if (selected) {
+          next.add(item.id);
+        } else {
+          next.delete(item.id);
+        }
+      });
+      return next;
+    });
+  }
+
+  function clearLocalItemSelection() {
+    setSelectedLocalItemIds(new Set());
+  }
+
+  async function optimizeSelectedLocalItems() {
+    const items = selectedLocalItems.filter((item) => !item.is_missing && canOptimizeLibraryItem(item));
+    for (const item of items) {
+      await optimizeLibraryItem(item);
+    }
+    clearLocalItemSelection();
+  }
+
+  async function sendSelectedLocalItems() {
+    const items = selectedLocalItems.filter((item) => !item.is_missing);
+    for (const item of items) {
+      await sendToDevice(item);
+    }
+    clearLocalItemSelection();
+  }
+
+  async function removeSelectedLocalItems() {
+    await removeLocalItems(selectedLocalItems);
   }
 
   async function optimizeLibraryItem(item: LibraryItem) {
@@ -1811,6 +1891,8 @@ export default function App() {
             showBrowseLoading={showBrowseLoading}
             displayedLibrary={displayedLibrary}
             paginatedLibrary={paginatedLibrary}
+            selectedLocalItems={selectedLocalItems}
+            selectedLocalItemIds={selectedLocalItemIds}
             paginatedRemoteItems={paginatedRemoteItems}
             pendingBrowseAction={pendingBrowseAction}
             optimizingLibraryItemId={optimizingLibraryItemId}
@@ -1839,6 +1921,12 @@ export default function App() {
             onOptimizeLibraryItem={optimizeLibraryItem}
             onSendToDevice={sendToDevice}
             onRemoveLocalItem={removeLocalItem}
+            onToggleLocalItemSelected={toggleLocalItemSelected}
+            onSetVisibleLocalItemsSelected={setVisibleLocalItemsSelected}
+            onClearLocalItemSelection={clearLocalItemSelection}
+            onOptimizeSelectedLocalItems={optimizeSelectedLocalItems}
+            onSendSelectedLocalItems={sendSelectedLocalItems}
+            onRemoveSelectedLocalItems={removeSelectedLocalItems}
             onOpenBrowseItem={openBrowseItem}
             onImportItem={importItem}
             onOptimizeBrowseItem={optimizeBrowseItem}

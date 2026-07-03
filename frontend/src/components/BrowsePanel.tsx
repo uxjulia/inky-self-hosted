@@ -39,6 +39,8 @@ type BrowsePanelProps = {
   showBrowseLoading: boolean;
   displayedLibrary: LibraryItem[];
   paginatedLibrary: LibraryItem[];
+  selectedLocalItems: LibraryItem[];
+  selectedLocalItemIds: Set<number>;
   paginatedRemoteItems: BrowseItem[];
   pendingBrowseAction: PendingBrowseAction | null;
   optimizingLibraryItemId: number | null;
@@ -67,6 +69,12 @@ type BrowsePanelProps = {
   onOptimizeLibraryItem: (item: LibraryItem) => void;
   onSendToDevice: (item: LibraryItem) => void;
   onRemoveLocalItem: (item: LibraryItem) => void;
+  onToggleLocalItemSelected: (itemId: number) => void;
+  onSetVisibleLocalItemsSelected: (items: LibraryItem[], selected: boolean) => void;
+  onClearLocalItemSelection: () => void;
+  onOptimizeSelectedLocalItems: () => void;
+  onSendSelectedLocalItems: () => void;
+  onRemoveSelectedLocalItems: () => void;
   onOpenBrowseItem: (item: BrowseItem) => void;
   onImportItem: (item: BrowseItem) => void;
   onOptimizeBrowseItem: (item: BrowseItem) => void;
@@ -98,6 +106,8 @@ export function BrowsePanel({
   showBrowseLoading,
   displayedLibrary,
   paginatedLibrary,
+  selectedLocalItems,
+  selectedLocalItemIds,
   paginatedRemoteItems,
   pendingBrowseAction,
   optimizingLibraryItemId,
@@ -126,6 +136,12 @@ export function BrowsePanel({
   onOptimizeLibraryItem,
   onSendToDevice,
   onRemoveLocalItem,
+  onToggleLocalItemSelected,
+  onSetVisibleLocalItemsSelected,
+  onClearLocalItemSelection,
+  onOptimizeSelectedLocalItems,
+  onSendSelectedLocalItems,
+  onRemoveSelectedLocalItems,
   onOpenBrowseItem,
   onImportItem,
   onOptimizeBrowseItem,
@@ -133,6 +149,15 @@ export function BrowsePanel({
   onSetBrowsePage,
   onOpenResultPage
 }: BrowsePanelProps) {
+  const selectedLocalCount = selectedLocalItems.length;
+  const selectedSendableCount = selectedLocalItems.filter((item) => !item.is_missing).length;
+  const selectedOptimizableCount = selectedLocalItems.filter(
+    (item) => !item.is_missing && canOptimizeLibraryItem(item)
+  ).length;
+  const selectedRemovableCount = selectedLocalItems.filter((item) => !isMountedLibraryItem(item)).length;
+  const allVisibleSelected =
+    paginatedLibrary.length > 0 && paginatedLibrary.every((item) => selectedLocalItemIds.has(item.id));
+
   return (
     <section className="panel browse-panel">
       <div className="panel-header">
@@ -234,6 +259,47 @@ export function BrowsePanel({
           <span>Drop files here or click to browse</span>
         </section>
       )}
+      {isLocalSource && (paginatedLibrary.length > 0 || selectedLocalCount > 0) && (
+        <div className="bulk-action-bar">
+          <label className="bulk-select-toggle">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              disabled={paginatedLibrary.length === 0}
+              onChange={(event) => onSetVisibleLocalItemsSelected(paginatedLibrary, event.target.checked)}
+            />
+            <span>{selectedLocalCount > 0 ? `${selectedLocalCount} selected` : "Select page"}</span>
+          </label>
+          {selectedLocalCount > 0 && (
+            <div className="bulk-actions">
+              <button
+                type="button"
+                onClick={onOptimizeSelectedLocalItems}
+                disabled={busy || selectedOptimizableCount === 0}
+              >
+                <Paintbrush size={15} />
+                Optimize {selectedOptimizableCount}
+              </button>
+              <button type="button" onClick={onSendSelectedLocalItems} disabled={busy || selectedSendableCount === 0}>
+                <Send size={15} />
+                Send {selectedSendableCount}
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                onClick={onRemoveSelectedLocalItems}
+                disabled={busy || selectedRemovableCount === 0}
+              >
+                <Trash2 size={15} />
+                Delete {selectedRemovableCount}
+              </button>
+              <button type="button" onClick={onClearLocalItemSelection}>
+                Clear
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       <div className="table-list">
         {error && (
           <div className="empty-state status-state error-state">
@@ -270,8 +336,21 @@ export function BrowsePanel({
                 : "Send to device";
             const fileType = libraryFileType(item);
             const coverUrl = item.is_missing ? null : item.cover_url;
+            const selected = selectedLocalItemIds.has(item.id);
             return (
-              <div className={`item-row local-library-row ${item.is_missing ? "missing-library-row" : ""}`} key={item.id}>
+              <div
+                className={`item-row local-library-row ${item.is_missing ? "missing-library-row" : ""} ${
+                  selected ? "selected-library-row" : ""
+                }`}
+                key={item.id}
+              >
+                <label className="library-select-checkbox" aria-label={`Select ${item.title}`}>
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() => onToggleLocalItemSelected(item.id)}
+                  />
+                </label>
                 <div className={coverUrl ? "item-cover" : "item-icon"}>
                   {coverUrl ? (
                     <AuthenticatedImage src={coverUrl} alt="" apiFetch={apiFetch} mediaUrl={mediaUrl} />
