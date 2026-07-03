@@ -1,0 +1,33 @@
+import type { OptimizerSettings, RemoteSourceType, Source, SourceForm } from "./appTypes";
+
+export const themeStorageKey = "inky-theme";
+export const localSourceIndexStorageKey = "inky-local-source-index";
+export const sortModeBySourceStorageKey = "inky-sort-mode-by-source";
+export const optimizerSettingsStorageKey = "inky-optimizer-settings";
+export const deviceStorageKey = "inky-device-target";
+export const transferModeStorageKey = "inky-transfer-mode";
+export const apiBaseUrlStorageKey = "inky-api-base-url";
+export const authStorageKey = "inky-basic-auth";
+export const localSourceId = -1;
+
+export const emptySourceForm: SourceForm = { type: "opds", name: "", url: "", username: "", password: "" };
+export const localSource: Source = { id: localSourceId, type: "local", name: "Local Library", url: "local://library" };
+export const sourceTypes: RemoteSourceType[] = ["opds", "webdav", "feed", "local_folder"];
+
+export const defaultOptimizerSettings: OptimizerSettings = {
+  use_original_filename: false,
+  filename_render_first: "Book Title",
+  filename_render_second: "Author",
+  quality: 70,
+  grayscale: true,
+  contrast_boost: true,
+  contrast_factor: 1.1,
+  eink_quantize: true,
+  light_novel: false,
+  split_long_sections: true,
+  section_split_word_threshold: 4000,
+  words_per_reference_page: 275,
+  remove_fonts: true,
+  remove_css: true,
+  text_cleanup: true
+};

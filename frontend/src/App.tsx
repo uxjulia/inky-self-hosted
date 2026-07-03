@@ -43,9 +43,83 @@ import {
   deleteStandaloneFile,
   getStandaloneFile,
   loadStandaloneLibrary,
-  markStandaloneFileSent,
-  type StandaloneFileRecord
+  markStandaloneFileSent
 } from "./standaloneLibrary";
+import {
+  apiBaseUrlStorageKey,
+  authStorageKey,
+  defaultOptimizerSettings,
+  deviceStorageKey,
+  emptySourceForm,
+  localSource,
+  localSourceId,
+  localSourceIndexStorageKey,
+  optimizerSettingsStorageKey,
+  sortModeBySourceStorageKey,
+  sourceTypes,
+  themeStorageKey,
+  transferModeStorageKey
+} from "./appConstants";
+import type {
+  AppView,
+  BrowseItem,
+  BrowseResult,
+  ClientLogLevel,
+  DeviceTarget,
+  FloatingTooltipPosition,
+  InkyAppMode,
+  Job,
+  LibraryItem,
+  OptimizerSettings,
+  PendingBrowseAction,
+  PreparedDictionaryDownload,
+  RecentOptimizedDownload,
+  RemoteSourceType,
+  SortMode,
+  Source,
+  SourceForm,
+  SourceType,
+  Theme,
+  ToastState,
+  TransferMode
+} from "./appTypes";
+import {
+  browseItemKey,
+  canOptimizeBrowseItem,
+  canOptimizeLibraryItem,
+  clampLocalSourceIndex,
+  clampNumber,
+  downloadBlob,
+  filenameFromContentDisposition,
+  folderNameFromPath,
+  formatBytes,
+  formatLibraryItemMeta,
+  hasEpubExtension,
+  iconForItem,
+  insertLocalSource,
+  isMountedLibraryItem,
+  libraryFileType,
+  libraryItemFilename,
+  messageFromUnknown,
+  moveSource,
+  normalizeApiBaseUrl,
+  normalizeAppMode,
+  normalizeOptimizerSettings,
+  normalizeSortModeForSource,
+  optimizedDeviceFilename,
+  preparedDictionaryDownloadFromJob,
+  readableError,
+  readableDeviceError,
+  safeDownloadStem,
+  sortBrowseItems,
+  sortLabelForMode,
+  sortLibraryItems,
+  sourceTypeLabel,
+  sourceTypeShortLabel,
+  standaloneRecordToLibraryItem
+} from "./appUtils";
+import { AuthenticatedImage } from "./components/AuthenticatedImage";
+import { JobLog } from "./components/JobLog";
 
 declare global {
   interface Window {
@@ -61,7 +135,6 @@ declare global {
 }
 
 const bundledApiBaseUrl = window.inkyDesktop?.apiBaseUrl || import.meta.env.VITE_API_BASE_URL || "";
-type InkyAppMode = "self-hosted" | "public" | "hosted";
 
 const appMode = normalizeAppMode(import.meta.env.VITE_INKY_APP_MODE);
 const isHostedApp = appMode === "hosted";
@@ -69,126 +142,6 @@ const isPublicApp = appMode === "public";
 const usesBrowserLibraryByDefault = isPublicApp || import.meta.env.VITE_INKY_LIBRARY_MODE === "browser";
 const isPublicReadOnly = isPublicApp || import.meta.env.VITE_INKY_PUBLIC_READ_ONLY === "1";
 const dictionaryToolsEnabled = import.meta.env.VITE_INKY_DICTIONARY_TOOLS === "1";
-const themeStorageKey = "inky-theme";
-const localSourceIndexStorageKey = "inky-local-source-index";
-const sortModeBySourceStorageKey = "inky-sort-mode-by-source";
-const optimizerSettingsStorageKey = "inky-optimizer-settings";
-const deviceStorageKey = "inky-device-target";
-const transferModeStorageKey = "inky-transfer-mode";
-const apiBaseUrlStorageKey = "inky-api-base-url";
-const authStorageKey = "inky-basic-auth";
-const localSourceId = -1;
-
-type AppView = "app" | "help";
-type RemoteSourceType = "opds" | "webdav" | "feed" | "local_folder";
-type SourceType = "local" | RemoteSourceType;
-type Theme = "light" | "dark";
-type DeviceTarget = "x4" | "x3";
-type TransferMode = "wifi" | "usb";
-type SortMode = "source" | "date_added" | "title_asc" | "title_desc" | "type";
-type ToastState = { message: string; tone: "success" | "error" };
-type PendingBrowseAction = { key: string; action: "save" | "send" | "optimize" };
-type FloatingTooltipPosition = { top: number; left: number };
-type FilenameRenderToken = "Book Title" | "Author";
-type OptimizerSettings = {
-  use_original_filename: boolean;
-  filename_render_first: FilenameRenderToken;
-  filename_render_second: FilenameRenderToken;
-  quality: number;
-  grayscale: boolean;
-  contrast_boost: boolean;
-  contrast_factor: number;
-  eink_quantize: boolean;
-  light_novel: boolean;
-  split_long_sections: boolean;
-  section_split_word_threshold: number;
-  words_per_reference_page: number;
-  remove_fonts: boolean;
-  remove_css: boolean;
-  text_cleanup: boolean;
-};
-
-type Source = {
-  id: number;
-  type: SourceType;
-  name: string;
-  url: string;
-  username?: string | null;
-  display_order?: number;
-};
-
-type BrowseItem = {
-  type: "navigation" | "book" | "article" | "directory" | "file";
-  title: string;
-  url?: string | null;
-  path?: string | null;
-  image_url?: string | null;
-  author?: string | null;
-  summary?: string | null;
-  published?: string | null;
-  size?: number | null;
-  media_type?: string | null;
-};
-
-type BrowseResult = {
-  source_id: number;
-  source_type: SourceType;
-  base_url: string;
-  title: string;
-  items: BrowseItem[];
-  message?: string | null;
-  next_url?: string | null;
-  previous_url?: string | null;
-};
-
-type LibraryItem = {
-  id: number;
-  source_id?: number | null;
-  kind: "epub" | "article" | "file";
-  title: string;
-  author?: string | null;
-  original_path: string;
-  optimized_path?: string | null;
-  source_url?: string | null;
-  cover_url?: string | null;
-  sent_at?: string | null;
-  is_missing?: boolean;
-  last_scan_at?: string | null;
-  created_at?: string | null;
-};
-
-type Job = {
-  id: string;
-  type: string;
-  status: string;
-  progress: number;
-  message: string;
-  error?: string | null;
-  item_id?: number | null;
-  result_json?: string | null;
-};
-
-type RecentOptimizedDownload = {
-  blob: Blob;
-  filename: string;
-};
-
-type PreparedDictionaryDownload = {
-  downloadUrl: string;
-  filename: string;
-};
-
-type SourceForm = {
-  type: RemoteSourceType;
-  name: string;
-  url: string;
-  username: string;
-  password: string;
-};
-
-const emptySourceForm: SourceForm = { type: "opds", name: "", url: "", username: "", password: "" };
-const localSource: Source = { id: localSourceId, type: "local", name: "Local Library", url: "local://library" };
-const sourceTypes: RemoteSourceType[] = ["opds", "webdav", "feed", "local_folder"];
 const isDesktopApp = Boolean(window.inkyDesktop?.selectLibraryFolder);
 const isNativeApp = Boolean(window.Capacitor?.isNativePlatform?.());
 const isIosApp = window.Capacitor?.getPlatform?.() === "ios";
@@ -200,24 +153,6 @@ const canUseWifiTransfer = !isHostedApp && !isPublicReadOnly;
 const browsePageSize = 25;
 const defaultDeviceHost = isSelfHostedBrowser ? "" : "crosspoint.local";
 const deviceHostPlaceholder = isSelfHostedBrowser ? "192.168." : "crosspoint.local";
-const defaultOptimizerSettings: OptimizerSettings = {
-  use_original_filename: false,
-  filename_render_first: "Book Title",
-  filename_render_second: "Author",
-  quality: 70,
-  grayscale: true,
-  contrast_boost: true,
-  contrast_factor: 1.1,
-  eink_quantize: true,
-  light_novel: false,
-  split_long_sections: true,
-  section_split_word_threshold: 4000,
-  words_per_reference_page: 275,
-  remove_fonts: true,
-  remove_css: true,
-  text_cleanup: true
-};
-
 export default function App() {
   const libraryLoadSeq = useRef(0);
   const browseLoadSeq = useRef(0);
@@ -1967,15 +1902,7 @@ export default function App() {
                   Download Prepared Dictionary
                 </button>
               )}
-              {jobs.length > 0 && (
-                <pre className="job-log" aria-label="Latest device job">
-                  {jobs.map((job) => (
-                    <code key={job.id} className={jobLogClassName(job)}>
-                      {formatJobLog(job)}
-                    </code>
-                  ))}
-                </pre>
-              )}
+              <JobLog jobs={jobs} />
             </section>
 
             <section className="panel source-panel">
@@ -2262,7 +2189,11 @@ export default function App() {
                       key={item.id}
                     >
                       <div className={coverUrl ? "item-cover" : "item-icon"}>
-                        {coverUrl ? <AuthenticatedImage src={coverUrl} alt="" /> : <BookOpen size={16} />}
+                        {coverUrl ? (
+                          <AuthenticatedImage src={coverUrl} alt="" apiFetch={apiFetch} mediaUrl={mediaUrl} />
+                        ) : (
+                          <BookOpen size={16} />
+                        )}
                       </div>
                       <div className="item-main">
                         <div className="item-title-line">
@@ -2345,7 +2276,11 @@ export default function App() {
                       tabIndex={opensBrowseTarget ? 0 : undefined}
                     >
                       <div className={item.image_url ? "item-cover" : "item-icon"}>
-                        {item.image_url ? <AuthenticatedImage src={item.image_url} alt="" /> : iconForItem(item)}
+                        {item.image_url ? (
+                          <AuthenticatedImage src={item.image_url} alt="" apiFetch={apiFetch} mediaUrl={mediaUrl} />
+                        ) : (
+                          iconForItem(item)
+                        )}
                       </div>
                       <div className="item-main">
                         <strong>{item.title}</strong>
@@ -2893,201 +2828,9 @@ export default function App() {
   );
 }
 
-function formatJobLog(job: Job) {
-  const status = job.error ? "error" : job.status;
-  const message = job.error || job.message || job.status;
-  const progress = message.startsWith("Uploading to device (") ? ` ${job.progress}%` : "";
-  return `[${status}] ${job.type}${progress}${message ? ` - ${message}` : ""}`;
-}
-
-function jobLogClassName(job: Job) {
-  if (job.error || job.status === "failed") return "job-log-line job-log-line-error";
-  if ((job.type === "send" || job.type === "dictionary_prepare") && job.status === "succeeded") {
-    return "job-log-line job-log-line-success";
-  }
-  return "job-log-line";
-}
-
-function preparedDictionaryDownloadFromJob(job: Job): PreparedDictionaryDownload | null {
-  if (!job.result_json) return null;
-  try {
-    const result = JSON.parse(job.result_json) as { download_url?: string; filename?: string };
-    return {
-      downloadUrl: result.download_url || `/api/dictionaries/prepared/${job.id}/download`,
-      filename: result.filename || "prepared-dictionary.zip"
-    };
-  } catch {
-    return null;
-  }
-}
-
-function standaloneRecordToLibraryItem(record: StandaloneFileRecord): LibraryItem {
-  return {
-    id: record.id,
-    kind: libraryKindForFilename(record.filename),
-    title: record.title,
-    original_path: record.filename,
-    source_url: `standalone://library/${record.id}`,
-    sent_at: record.sentAt || null,
-    is_missing: false,
-    last_scan_at: null,
-    created_at: record.createdAt
-  };
-}
-
-function libraryKindForFilename(filename: string): LibraryItem["kind"] {
-  return filename.toLowerCase().endsWith(".epub") ? "epub" : "file";
-}
-
-function formatSentDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
-}
-
-function formatLibraryItemMeta(item: LibraryItem) {
-  return [
-    item.author,
-    item.is_missing ? "Missing from mounted folder" : null,
-    item.sent_at ? `Sent on ${formatSentDate(item.sent_at)}` : null
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
-
-function libraryFileType(item: LibraryItem) {
-  const path = item.original_path.split(/[?#]/, 1)[0].toLowerCase();
-  if (path.endsWith(".epub")) return "epub";
-  if (path.endsWith(".xtc") || path.endsWith(".xtch")) return "xtc";
-  if (path.endsWith(".txt")) return "txt";
-  if (path.endsWith(".bmp")) return "bmp";
-  if (path.endsWith(".png")) return "png";
-  return null;
-}
-
-function librarySortType(item: LibraryItem) {
-  return libraryFileType(item) || item.original_path.split(/[?#]/, 1)[0].split(".").pop()?.toLowerCase() || "";
-}
-
-function libraryItemFilename(item: LibraryItem) {
-  const path = item.optimized_path || item.original_path;
-  return path.split(/[\\/]/).pop() || `${item.title || "book"}.${libraryFileType(item) || "epub"}`;
-}
-
-function filenameFromContentDisposition(value: string | null) {
-  if (!value) return "";
-  const encodedMatch = value.match(/filename\*=UTF-8''([^;]+)/i);
-  if (encodedMatch) {
-    try {
-      return decodeURIComponent(encodedMatch[1]);
-    } catch {
-      return encodedMatch[1];
-    }
-  }
-  const quotedMatch = value.match(/filename="([^"]+)"/i);
-  if (quotedMatch) return quotedMatch[1];
-  const plainMatch = value.match(/filename=([^;]+)/i);
-  return plainMatch?.[1]?.trim() || "";
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename || "optimized.epub";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function safeDownloadStem(value: string) {
-  const cleaned = value
-    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return cleaned.slice(0, 120) || "optimized";
-}
-
-function optimizedDeviceFilename(job: Job) {
-  if (!job.result_json) return "";
-  try {
-    const result = JSON.parse(job.result_json) as {
-      device_filename?: unknown;
-      optimization?: { device_filename?: unknown };
-    };
-    const filename = result.optimization?.device_filename ?? result.device_filename;
-    return typeof filename === "string" ? filename : "";
-  } catch {
-    return "";
-  }
-}
-
-function isMountedLibraryItem(item: LibraryItem) {
-  return item.source_url?.startsWith("mounted-library://") || item.source_url?.startsWith("desktop-folder://") || false;
-}
-
-function canOptimizeLibraryItem(item: LibraryItem) {
-  return hasEpubExtension(item.original_path);
-}
-
-function canOptimizeBrowseItem(item: BrowseItem) {
-  if (item.type === "article") return true;
-  return (
-    item.media_type?.toLowerCase().includes("application/epub+zip") ||
-    hasEpubExtension(item.url) ||
-    hasEpubExtension(item.path)
-  );
-}
-
-function hasEpubExtension(value: string | null | undefined) {
-  return (value || "").split(/[?#]/, 1)[0].toLowerCase().endsWith(".epub");
-}
-
-function browseItemKey(item: BrowseItem) {
-  return [item.type, item.url || item.path || "", item.title].join(":");
-}
-
 function mediaUrl(url: string) {
   const apiBaseUrl = getApiBaseUrl();
   return apiBaseUrl && url.startsWith("/api/") ? `${apiBaseUrl}${url}` : url;
-}
-
-function AuthenticatedImage({ src, alt }: { src: string; alt: string }) {
-  const [objectUrl, setObjectUrl] = useState<string | null>(null);
-  const needsAuthenticatedFetch = src.startsWith("/api/");
-
-  useEffect(() => {
-    if (!needsAuthenticatedFetch) {
-      setObjectUrl(null);
-      return;
-    }
-
-    let active = true;
-    let nextObjectUrl: string | null = null;
-
-    async function loadImage() {
-      try {
-        const response = await apiFetch(src);
-        const blob = await response.blob();
-        if (!active) return;
-        nextObjectUrl = URL.createObjectURL(blob);
-        setObjectUrl(nextObjectUrl);
-      } catch {
-        if (active) setObjectUrl(null);
-      }
-    }
-
-    loadImage();
-
-    return () => {
-      active = false;
-      if (nextObjectUrl) URL.revokeObjectURL(nextObjectUrl);
-    };
-  }, [needsAuthenticatedFetch, src]);
-
-  if (needsAuthenticatedFetch && !objectUrl) return null;
-  return <img src={objectUrl || mediaUrl(src)} alt={alt} loading="lazy" />;
 }
 
 function getInitialApiBaseUrl() {
@@ -3112,44 +2855,12 @@ function persistApiBaseUrl(value: string) {
   return apiBaseUrl;
 }
 
-function normalizeApiBaseUrl(value: string | null | undefined) {
-  return (value || "").trim().replace(/\/+$/, "");
-}
-
-function readableError(message: string) {
-  try {
-    const parsed = JSON.parse(message);
-    if (Object.prototype.hasOwnProperty.call(parsed, "detail")) {
-      const detail = String(parsed.detail || "").trim();
-      return detail || "The request failed without an error message.";
-    }
-  } catch {
-    // Keep original text below.
-  }
-  return message;
-}
-
-function readableDeviceError(message: string) {
-  const detail = readableError(message);
-  if (!detail) {
-    return "Unable to connect to device.";
-  }
-  return `Unable to connect to device. ${detail}`;
-}
-
 function getInitialTheme(): Theme {
   const stored = window.localStorage.getItem(themeStorageKey);
   if (stored === "light" || stored === "dark") {
     return stored;
   }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
-function normalizeAppMode(value: unknown): InkyAppMode {
-  if (value === "public" || value === "hosted" || value === "self-hosted") {
-    return value;
-  }
-  return "self-hosted";
 }
 
 function getInitialDevice(): DeviceTarget {
@@ -3190,65 +2901,9 @@ function getInitialOptimizerSettings(): OptimizerSettings {
   }
 }
 
-function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
-  if (!value || typeof value !== "object") return defaultOptimizerSettings;
-  const stored = value as Partial<OptimizerSettings>;
-  return {
-    use_original_filename: booleanOrDefault(
-      stored.use_original_filename,
-      defaultOptimizerSettings.use_original_filename
-    ),
-    filename_render_first: filenameRenderTokenOrDefault(
-      stored.filename_render_first,
-      defaultOptimizerSettings.filename_render_first
-    ),
-    filename_render_second: filenameRenderTokenOrDefault(
-      stored.filename_render_second,
-      defaultOptimizerSettings.filename_render_second
-    ),
-    quality: clampNumber(Number(stored.quality ?? defaultOptimizerSettings.quality), 1, 100),
-    grayscale: booleanOrDefault(stored.grayscale, defaultOptimizerSettings.grayscale),
-    contrast_boost: booleanOrDefault(stored.contrast_boost, defaultOptimizerSettings.contrast_boost),
-    contrast_factor: clampNumber(Number(stored.contrast_factor ?? defaultOptimizerSettings.contrast_factor), 0.5, 3),
-    eink_quantize: booleanOrDefault(stored.eink_quantize, defaultOptimizerSettings.eink_quantize),
-    light_novel: booleanOrDefault(stored.light_novel, defaultOptimizerSettings.light_novel),
-    split_long_sections: booleanOrDefault(stored.split_long_sections, defaultOptimizerSettings.split_long_sections),
-    section_split_word_threshold: clampNumber(
-      Number(stored.section_split_word_threshold ?? defaultOptimizerSettings.section_split_word_threshold),
-      1,
-      10000
-    ),
-    words_per_reference_page: clampNumber(
-      Number(stored.words_per_reference_page ?? defaultOptimizerSettings.words_per_reference_page),
-      1,
-      10000
-    ),
-    remove_fonts: booleanOrDefault(stored.remove_fonts, defaultOptimizerSettings.remove_fonts),
-    remove_css: booleanOrDefault(stored.remove_css, defaultOptimizerSettings.remove_css),
-    text_cleanup: booleanOrDefault(stored.text_cleanup, defaultOptimizerSettings.text_cleanup)
-  };
-}
-
-function filenameRenderTokenOrDefault(value: unknown, fallback: FilenameRenderToken): FilenameRenderToken {
-  return value === "Book Title" || value === "Author" ? value : fallback;
-}
-
-function booleanOrDefault(value: unknown, fallback: boolean) {
-  return typeof value === "boolean" ? value : fallback;
-}
-
-function clampNumber(value: number, min: number, max: number) {
-  if (!Number.isFinite(value)) return min;
-  return Math.min(max, Math.max(min, value));
-}
-
 function getInitialLocalSourceIndex() {
   const stored = Number(window.localStorage.getItem(localSourceIndexStorageKey));
   return Number.isFinite(stored) && stored >= 0 ? Math.floor(stored) : 0;
-}
-
-function clampLocalSourceIndex(index: number, remoteSourceCount: number) {
-  return Math.max(0, Math.min(index, remoteSourceCount));
 }
 
 function getStoredSortModeForSource(sourceId: number | null): SortMode {
@@ -3282,123 +2937,10 @@ function saveSortModeForSource(sourceId: number | null, sortMode: SortMode) {
   window.localStorage.setItem(sortModeBySourceStorageKey, JSON.stringify(stored));
 }
 
-function normalizeSortModeForSource(value: unknown, sourceId: number | null): SortMode {
-  if (!isSortMode(value)) return "source";
-  if (sourceId !== localSourceId && (value === "date_added" || value === "type")) return "source";
-  return value;
-}
-
 function sortStorageKeyForSource(sourceId: number | null) {
   if (sourceId === null) return null;
   return sourceId === localSourceId ? "local" : `source:${sourceId}`;
 }
-
-function isSortMode(value: unknown): value is SortMode {
-  return (
-    value === "source" || value === "date_added" || value === "type" || value === "title_asc" || value === "title_desc"
-  );
-}
-
-function insertLocalSource(sources: Source[], localSourceIndex: number) {
-  const nextSources = [...sources];
-  nextSources.splice(clampLocalSourceIndex(localSourceIndex, sources.length), 0, localSource);
-  return nextSources;
-}
-
-function iconForItem(item: BrowseItem) {
-  if (item.type === "article") return <Rss size={16} />;
-  if (item.type === "directory" || item.type === "navigation") return <Folder size={16} />;
-  return <BookOpen size={16} />;
-}
-
-function sortBrowseItems(items: BrowseItem[], sortMode: SortMode) {
-  if (sortMode === "source" || sortMode === "type" || sortMode === "date_added") return items;
-  return [...items].sort((left, right) => compareTitles(left.title, right.title, sortMode));
-}
-
-function sortLibraryItems(items: LibraryItem[], sortMode: SortMode) {
-  if (sortMode === "source") return items;
-  if (sortMode === "date_added") {
-    return [...items].sort(
-      (left, right) => compareDateAdded(left, right) || compareTitles(left.title, right.title, "title_asc")
-    );
-  }
-  if (sortMode === "type") {
-    return [...items].sort((left, right) => {
-      const typeResult = librarySortType(left).localeCompare(librarySortType(right), undefined, {
-        numeric: true,
-        sensitivity: "base"
-      });
-      return typeResult || compareTitles(left.title, right.title, "title_asc");
-    });
-  }
-  return [...items].sort((left, right) => compareTitles(left.title, right.title, sortMode));
-}
-
-function compareTitles(left: string, right: string, sortMode: SortMode) {
-  const result = left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
-  return sortMode === "title_desc" ? -result : result;
-}
-
-function compareDateAdded(left: LibraryItem, right: LibraryItem) {
-  const leftTime = timestampForSort(left.created_at);
-  const rightTime = timestampForSort(right.created_at);
-  return rightTime - leftTime;
-}
-
-function timestampForSort(value?: string | null) {
-  if (!value) return 0;
-  const timestamp = new Date(value).getTime();
-  return Number.isNaN(timestamp) ? 0 : timestamp;
-}
-
-function sortLabelForMode(sortMode: SortMode) {
-  if (sortMode === "date_added") return "Date Added";
-  if (sortMode === "type") return "Type";
-  if (sortMode === "title_asc") return "Title A-Z";
-  if (sortMode === "title_desc") return "Title Z-A";
-  return "Source order";
-}
-
-function sourceTypeLabel(type: RemoteSourceType) {
-  if (type === "local_folder") return "Local Folder";
-  return type.toUpperCase();
-}
-
-function sourceTypeShortLabel(type: SourceType) {
-  if (type === "local_folder") return "Folder";
-  return type;
-}
-
-function folderNameFromPath(path: string) {
-  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  return normalized.split("/").pop() || "Local Folder";
-}
-
-function moveSource(sources: Source[], draggedSourceId: number, targetSourceId: number, insertAfter: boolean) {
-  const draggedSource = sources.find((source) => source.id === draggedSourceId);
-  if (!draggedSource) return sources;
-
-  const nextSources = sources.filter((source) => source.id !== draggedSourceId);
-  const targetIndex = nextSources.findIndex((source) => source.id === targetSourceId);
-  if (targetIndex < 0) return sources;
-
-  nextSources.splice(targetIndex + (insertAfter ? 1 : 0), 0, draggedSource);
-  return nextSources;
-}
-
-function formatBytes(size: number) {
-  const units = ["B", "KB", "MB", "GB"];
-  let value = size;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
-}
-
-type ClientLogLevel = "info" | "warning" | "error";
 
 function createTransferLogger(transport: "usb" | "wifi", filename: string) {
   let lastLoggedPercent = -10;
@@ -3433,10 +2975,6 @@ async function logClientEvent(scope: string, message: string, level: ClientLogLe
   } catch {
     // Logging should never make a transfer fail.
   }
-}
-
-function messageFromUnknown(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
 }
 
 async function api<T = unknown>(path: string, init: RequestInit & { rawBody?: boolean } = {}): Promise<T> {
