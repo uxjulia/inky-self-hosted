@@ -68,6 +68,7 @@ const isHostedApp = appMode === "hosted";
 const isPublicApp = appMode === "public";
 const usesBrowserLibraryByDefault = isPublicApp || import.meta.env.VITE_INKY_LIBRARY_MODE === "browser";
 const isPublicReadOnly = isPublicApp || import.meta.env.VITE_INKY_PUBLIC_READ_ONLY === "1";
+const dictionaryToolsEnabled = import.meta.env.VITE_INKY_DICTIONARY_TOOLS === "1";
 const themeStorageKey = "inky-theme";
 const localSourceIndexStorageKey = "inky-local-source-index";
 const sortModeBySourceStorageKey = "inky-sort-mode-by-source";
@@ -374,7 +375,7 @@ export default function App() {
       : `Catalog Page ${remotePage}`
     : `Page ${clampedBrowsePage} of ${totalPages}`;
   const sortLabel = sortLabelForMode(activeSortMode);
-  const canPrepareDictionaries = !standaloneMode && !isHostedApp;
+  const canPrepareDictionaries = dictionaryToolsEnabled && !standaloneMode && !isHostedApp;
   const effectiveEinkQuantize = optimizerSettings.grayscale && optimizerSettings.eink_quantize;
 
   useEffect(() => {
