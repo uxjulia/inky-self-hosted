@@ -21,6 +21,11 @@ export function HelpPage({
 
   return (
     <section className="help-page">
+      <div className="help-storage-banner" role="note">
+        <strong>Note:</strong> All files are stored in your local browser and are not saved to any servers.
+        Switching browsers or clearing your browser cache will remove your library.
+      </div>
+
       <div className="help-hero">
         <div>
           <p className="eyebrow">Getting Started</p>

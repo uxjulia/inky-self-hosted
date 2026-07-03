@@ -17,6 +17,9 @@
   --color-success: #2f6f54;
   --color-success-bg: #f0faf5;
   --color-success-border: #b9dfcb;
+  --color-warning: #6f4b12;
+  --color-warning-bg: #fff7df;
+  --color-warning-border: #e8c778;
   color: var(--color-text);
   background: var(--color-bg);
   font-family:
@@ -51,6 +54,9 @@
   --color-success: #9bd4b4;
   --color-success-bg: #17251d;
   --color-success-border: #365644;
+  --color-warning: #f2d28c;
+  --color-warning-bg: #2e2514;
+  --color-warning-border: #775f2f;
   color-scheme: dark;
 }
 
@@ -268,6 +274,21 @@ h2 {
   min-height: 0;
   overflow: auto;
   padding: 12px;
+}
+
+.help-storage-banner {
+  max-width: 1080px;
+  margin: 0 auto 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-warning-border);
+  border-radius: 3px;
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  line-height: 1.45;
+}
+
+.help-storage-banner strong {
+  color: inherit;
 }
 
 .help-hero {
