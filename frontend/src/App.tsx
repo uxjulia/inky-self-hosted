@@ -1,5 +1,4 @@
 import {
-  ArrowLeftRight,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
@@ -120,6 +119,7 @@ import {
 } from "./appUtils";
 import { AuthenticatedImage } from "./components/AuthenticatedImage";
 import { JobLog } from "./components/JobLog";
+import { OptimizerSettingsModal } from "./components/OptimizerSettingsModal";
 
 declare global {
   interface Window {
@@ -2524,249 +2524,35 @@ export default function App() {
       )}
 
       {view === "app" && optimizerModalOpen && (
-        <div className="modal-backdrop" role="presentation">
-          <section
-            className="panel form-panel modal-card optimizer-modal-card"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="optimizer-modal-title"
-          >
-            <div className="panel-header">
-              <h2 id="optimizer-modal-title">EPUB Optimizer Settings</h2>
-              <button
-                type="button"
-                onClick={() => setOptimizerModalOpen(false)}
-                title="Close"
-                aria-label="Close optimizer settings"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <div className="settings-grid">
-              <label className="field filename-render-field">
-                <span>Filename render</span>
-                <div className="filename-render-control">
-                  <span className="filename-render-value">{optimizerSettings.filename_render_first}</span>
-                  <button
-                    type="button"
-                    onClick={swapFilenameRenderFields}
-                    title="Swap filename fields"
-                    aria-label="Swap filename fields"
-                    disabled={optimizerSettings.use_original_filename}
-                  >
-                    <ArrowLeftRight size={16} />
-                  </button>
-                  <span className="filename-render-value">{optimizerSettings.filename_render_second}</span>
-                </div>
-              </label>
-              <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={optimizerSettings.use_original_filename}
-                  onChange={(event) => updateOptimizerSetting("use_original_filename", event.target.checked)}
-                />
-                <span>Use Original</span>
-              </label>
-              <label className="field">
-                <span>JPEG quality</span>
-                <div className="range-field">
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    step="1"
-                    value={optimizerSettings.quality}
-                    onChange={(event) => updateQualityFromSlider(event.target.value)}
-                  />
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={qualityDraft}
-                    onChange={(event) => updateQualityDraft(event.target.value)}
-                    onBlur={commitQualityDraft}
-                    aria-label="JPEG quality"
-                  />
-                </div>
-              </label>
-              <label className="field">
-                <span>Contrast multiplier</span>
-                <div className="range-field">
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="3"
-                    step="0.1"
-                    value={optimizerSettings.contrast_factor}
-                    disabled={!optimizerSettings.contrast_boost}
-                    onChange={(event) => updateContrastFactorFromSlider(event.target.value)}
-                  />
-                  <input
-                    type="number"
-                    min="0.5"
-                    max="3"
-                    step="0.1"
-                    value={contrastFactorDraft}
-                    disabled={!optimizerSettings.contrast_boost}
-                    onChange={(event) => updateContrastFactorDraft(event.target.value)}
-                    onBlur={commitContrastFactorDraft}
-                    aria-label="Contrast multiplier"
-                  />
-                </div>
-              </label>
-              <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={optimizerSettings.grayscale}
-                  onChange={(event) => updateOptimizerSetting("grayscale", event.target.checked)}
-                />
-                <span>Convert images to grayscale</span>
-              </label>
-              <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={optimizerSettings.contrast_boost}
-                  onChange={(event) => updateOptimizerSetting("contrast_boost", event.target.checked)}
-                />
-                <span>Boost image contrast</span>
-              </label>
-              <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={effectiveEinkQuantize}
-                  disabled={!optimizerSettings.grayscale}
-                  onChange={(event) => updateOptimizerSetting("eink_quantize", event.target.checked)}
-                />
-                <span>Use 4-level e-ink grayscale</span>
-              </label>
-              {!standaloneMode && (
-                <label className="toggle-field">
-                  <input
-                    type="checkbox"
-                    checked={optimizerSettings.light_novel}
-                    onChange={(event) => updateOptimizerSetting("light_novel", event.target.checked)}
-                  />
-                  <span>Rotate and split landscape images</span>
-                </label>
-              )}
-
-              {/* <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={optimizerSettings.remove_fonts}
-                  onChange={(event) => updateOptimizerSetting("remove_fonts", event.target.checked)}
-                />
-                <span>Remove embedded fonts</span>
-              </label> */}
-              {/* <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={optimizerSettings.remove_css}
-                  onChange={(event) => updateOptimizerSetting("remove_css", event.target.checked)}
-                />
-                <span>Remove unused CSS</span>
-              </label> */}
-              <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={optimizerSettings.split_long_sections}
-                  onChange={(event) => updateOptimizerSetting("split_long_sections", event.target.checked)}
-                />
-                <span>Split long EPUB sections</span>
-              </label>
-              {/* <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={optimizerSettings.text_cleanup}
-                  onChange={(event) => updateOptimizerSetting("text_cleanup", event.target.checked)}
-                />
-                <span>Clean text punctuation and spacing</span>
-              </label> */}
-              <div className="field">
-                <div className="field-label">
-                  <label htmlFor="section-split-word-threshold">Words before section split</label>
-                  <span className="advanced-tooltip">
-                    <button
-                      ref={sectionSplitTooltipButtonRef}
-                      type="button"
-                      aria-describedby="section-split-threshold-tooltip"
-                      aria-label="Section split threshold help"
-                      onBlur={hideSectionSplitTooltip}
-                      onFocus={showSectionSplitTooltip}
-                      onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                          hideSectionSplitTooltip();
-                        }
-                      }}
-                      onMouseEnter={showSectionSplitTooltip}
-                      onMouseLeave={hideSectionSplitTooltip}
-                    >
-                      <CircleHelp size={14} />
-                    </button>
-                  </span>
-                </div>
-                <input
-                  id="section-split-word-threshold"
-                  type="number"
-                  min="1"
-                  max="10000"
-                  step="1"
-                  placeholder={String(
-                    optimizerSettings.section_split_word_threshold ??
-                      defaultOptimizerSettings.section_split_word_threshold
-                  )}
-                  value={sectionSplitThresholdDraft}
-                  disabled={!optimizerSettings.split_long_sections}
-                  onChange={(event) => updateSectionSplitThresholdDraft(event.target.value)}
-                  onBlur={commitSectionSplitThresholdDraft}
-                />
-              </div>
-              <div className="field">
-                <div className="field-label">
-                  <label htmlFor="reference-page-words">Words per page (used for Stable Page Numbers)</label>
-                  <span className="advanced-tooltip">
-                    <button
-                      ref={stablePageTooltipButtonRef}
-                      type="button"
-                      aria-describedby="stable-page-numbers-tooltip"
-                      aria-label="Stable Page Numbers help"
-                      onBlur={hideStablePageTooltip}
-                      onFocus={showStablePageTooltip}
-                      onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                          hideStablePageTooltip();
-                        }
-                      }}
-                      onMouseEnter={showStablePageTooltip}
-                      onMouseLeave={hideStablePageTooltip}
-                    >
-                      <CircleHelp size={14} />
-                    </button>
-                  </span>
-                </div>
-                <input
-                  id="reference-page-words"
-                  type="number"
-                  min="1"
-                  max="10000"
-                  step="1"
-                  value={referencePageWordsDraft}
-                  onChange={(event) => updateReferencePageWordsDraft(event.target.value)}
-                  onBlur={commitReferencePageWordsDraft}
-                />
-              </div>
-            </div>
-            <div className="modal-actions">
-              <button type="button" onClick={resetOptimizerSettings}>
-                Reset Defaults
-              </button>
-              <button className="primary" type="button" onClick={() => setOptimizerModalOpen(false)}>
-                <Save size={16} />
-                Save Settings
-              </button>
-            </div>
-          </section>
-        </div>
+        <OptimizerSettingsModal
+          optimizerSettings={optimizerSettings}
+          effectiveEinkQuantize={effectiveEinkQuantize}
+          standaloneMode={standaloneMode}
+          qualityDraft={qualityDraft}
+          contrastFactorDraft={contrastFactorDraft}
+          sectionSplitThresholdDraft={sectionSplitThresholdDraft}
+          referencePageWordsDraft={referencePageWordsDraft}
+          sectionSplitTooltipButtonRef={sectionSplitTooltipButtonRef}
+          stablePageTooltipButtonRef={stablePageTooltipButtonRef}
+          onClose={() => setOptimizerModalOpen(false)}
+          onSwapFilenameRenderFields={swapFilenameRenderFields}
+          onUpdateOptimizerSetting={updateOptimizerSetting}
+          onUpdateQualityFromSlider={updateQualityFromSlider}
+          onUpdateQualityDraft={updateQualityDraft}
+          onCommitQualityDraft={commitQualityDraft}
+          onUpdateContrastFactorFromSlider={updateContrastFactorFromSlider}
+          onUpdateContrastFactorDraft={updateContrastFactorDraft}
+          onCommitContrastFactorDraft={commitContrastFactorDraft}
+          onUpdateSectionSplitThresholdDraft={updateSectionSplitThresholdDraft}
+          onCommitSectionSplitThresholdDraft={commitSectionSplitThresholdDraft}
+          onUpdateReferencePageWordsDraft={updateReferencePageWordsDraft}
+          onCommitReferencePageWordsDraft={commitReferencePageWordsDraft}
+          onShowSectionSplitTooltip={showSectionSplitTooltip}
+          onHideSectionSplitTooltip={hideSectionSplitTooltip}
+          onShowStablePageTooltip={showStablePageTooltip}
+          onHideStablePageTooltip={hideStablePageTooltip}
+          onResetOptimizerSettings={resetOptimizerSettings}
+        />
       )}
 
       {serverModalOpen && (
