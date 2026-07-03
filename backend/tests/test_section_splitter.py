@@ -55,14 +55,14 @@ class SectionSplitterTests(unittest.TestCase):
         self.assertIn('word0_0', first_part)
         self.assertNotIn('../Images/chapter-heading.jpg', second_part)
 
-    def test_location_manifest_uses_custom_words_per_reference_page(self):
+    def test_location_manifest_uses_custom_characters_per_reference_page(self):
         opf_dir = self.tmpdir / 'OEBPS'
         opf_dir.mkdir()
         opf_path = opf_dir / 'content.opf'
         chapter_path = opf_dir / 'chapter.xhtml'
         chapter_path.write_text(
             '<html xmlns="http://www.w3.org/1999/xhtml"><body>'
-            f'<p>{" ".join(f"word{i}" for i in range(275))}</p>'
+            f'<p>{"a" * 250}</p>'
             '</body></html>',
             encoding='utf-8',
         )
@@ -86,7 +86,8 @@ class SectionSplitterTests(unittest.TestCase):
         locations, reference_pages = write_x_location_manifest(str(self.tmpdir), str(opf_path), 100)
 
         manifest = json.loads((self.tmpdir / 'META-INF' / 'x-locations.json').read_text(encoding='utf-8'))
-        self.assertEqual(manifest['wordsPerReferencePage'], 100)
+        self.assertEqual(manifest['charactersPerReferencePage'], 100)
+        self.assertEqual(manifest['totalCharacters'], 250)
         self.assertEqual(reference_pages, 3)
         self.assertEqual(locations, manifest['totalLocations'])
 

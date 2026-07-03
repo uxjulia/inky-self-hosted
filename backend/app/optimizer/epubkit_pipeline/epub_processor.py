@@ -61,7 +61,7 @@ class ProcessingOptions:
     normalize_quotes: bool = True
     split_long_sections: bool = False
     section_split_word_threshold: int = 4000
-    words_per_reference_page: int = 275
+    characters_per_reference_page: int = 1500
     filename_format: str = 'author-title'
     use_original_filename: bool = False
     filename_render_first: str = 'Book Title'
@@ -603,7 +603,7 @@ def process_epub(input_path: str, output_path: str,
         # Step 19: Generate X location sidecar (92%)
         _progress(92, "Generating X locations...")
         report.x_locations, report.x_reference_pages = write_x_location_manifest(
-            work_dir, opf_path, options.words_per_reference_page
+            work_dir, opf_path, options.characters_per_reference_page
         )
         report.crossink_image_caches = write_crossink_optimizer_manifest(work_dir, opf_path, image_cache_entries, {
             'htmlNormalized': True,

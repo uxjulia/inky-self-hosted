@@ -173,8 +173,8 @@ export default function App() {
   const [sectionSplitThresholdDraft, setSectionSplitThresholdDraft] = useState(() =>
     String(optimizerSettings.section_split_word_threshold ?? defaultOptimizerSettings.section_split_word_threshold)
   );
-  const [referencePageWordsDraft, setReferencePageWordsDraft] = useState(() =>
-    String(optimizerSettings.words_per_reference_page)
+  const [referencePageCharactersDraft, setReferencePageCharactersDraft] = useState(() =>
+    String(optimizerSettings.characters_per_reference_page)
   );
   const [apiBaseUrlDraft, setApiBaseUrlDraft] = useState(() => getInitialApiBaseUrl());
   const [standaloneMode, setStandaloneMode] = useState(initialStandaloneMode);
@@ -922,24 +922,24 @@ export default function App() {
     );
   }
 
-  function updateReferencePageWordsDraft(value: string) {
-    setReferencePageWordsDraft(value);
-    commitOptimizerNumberDraft("words_per_reference_page", value, 1, 10000, setReferencePageWordsDraft);
+  function updateReferencePageCharactersDraft(value: string) {
+    setReferencePageCharactersDraft(value);
+    commitOptimizerNumberDraft("characters_per_reference_page", value, 1, 10000, setReferencePageCharactersDraft);
   }
 
-  function commitReferencePageWordsDraft() {
+  function commitReferencePageCharactersDraft() {
     commitOptimizerNumberDraft(
-      "words_per_reference_page",
-      referencePageWordsDraft,
+      "characters_per_reference_page",
+      referencePageCharactersDraft,
       1,
       10000,
-      setReferencePageWordsDraft,
+      setReferencePageCharactersDraft,
       true
     );
   }
 
   function commitOptimizerNumberDraft<
-    K extends "quality" | "contrast_factor" | "section_split_word_threshold" | "words_per_reference_page"
+    K extends "quality" | "contrast_factor" | "section_split_word_threshold" | "characters_per_reference_page"
   >(key: K, draft: string, min: number, max: number, setDraft: (value: string) => void, force = false) {
     const trimmed = draft.trim();
     if (!trimmed || trimmed === "." || trimmed.endsWith(".")) {
@@ -963,7 +963,15 @@ export default function App() {
     setQualityDraft(String(defaultOptimizerSettings.quality));
     setContrastFactorDraft(String(defaultOptimizerSettings.contrast_factor));
     setSectionSplitThresholdDraft(String(defaultOptimizerSettings.section_split_word_threshold));
-    setReferencePageWordsDraft(String(defaultOptimizerSettings.words_per_reference_page));
+    setReferencePageCharactersDraft(String(defaultOptimizerSettings.characters_per_reference_page));
+  }
+
+  function resetFilenameRenderFields() {
+    setOptimizerSettings((current) => ({
+      ...current,
+      filename_render_first: defaultOptimizerSettings.filename_render_first,
+      filename_render_second: defaultOptimizerSettings.filename_render_second
+    }));
   }
 
   function swapFilenameRenderFields() {
@@ -1858,9 +1866,10 @@ export default function App() {
             top: `${stablePageTooltipPosition.top}px`
           }}
         >
-          Stable Page Numbers is a feature where what is considered a single page is the same regardless of the book you're reading or the font size, margins, or other
-          page layout settings you use because it simply uses the number of words to determine a page. This is a great way to compare how many pages you read across different books.
-          The average paperback book has between 250-300 words per page, therefore CrossInk defaults to 275.
+          Stable Page Numbers is a feature where what is considered a single page is the same regardless of the book
+          you're reading or the font size, margins, or other page layout settings you use because it uses visible
+          character counts to determine a page. This is a consistent way to compare how many pages you read across
+          different books.
         </div>
       )}
 
@@ -2010,11 +2019,12 @@ export default function App() {
           qualityDraft={qualityDraft}
           contrastFactorDraft={contrastFactorDraft}
           sectionSplitThresholdDraft={sectionSplitThresholdDraft}
-          referencePageWordsDraft={referencePageWordsDraft}
+          referencePageCharactersDraft={referencePageCharactersDraft}
           sectionSplitTooltipButtonRef={sectionSplitTooltipButtonRef}
           stablePageTooltipButtonRef={stablePageTooltipButtonRef}
           onClose={() => setOptimizerModalOpen(false)}
           onSwapFilenameRenderFields={swapFilenameRenderFields}
+          onResetFilenameRenderFields={resetFilenameRenderFields}
           onUpdateOptimizerSetting={updateOptimizerSetting}
           onUpdateQualityFromSlider={updateQualityFromSlider}
           onUpdateQualityDraft={updateQualityDraft}
@@ -2024,8 +2034,8 @@ export default function App() {
           onCommitContrastFactorDraft={commitContrastFactorDraft}
           onUpdateSectionSplitThresholdDraft={updateSectionSplitThresholdDraft}
           onCommitSectionSplitThresholdDraft={commitSectionSplitThresholdDraft}
-          onUpdateReferencePageWordsDraft={updateReferencePageWordsDraft}
-          onCommitReferencePageWordsDraft={commitReferencePageWordsDraft}
+          onUpdateReferencePageCharactersDraft={updateReferencePageCharactersDraft}
+          onCommitReferencePageCharactersDraft={commitReferencePageCharactersDraft}
           onShowSectionSplitTooltip={showSectionSplitTooltip}
           onHideSectionSplitTooltip={hideSectionSplitTooltip}
           onShowStablePageTooltip={showStablePageTooltip}

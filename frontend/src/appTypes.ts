@@ -9,12 +9,11 @@ export type SortMode = "source" | "date_added" | "title_asc" | "title_desc" | "t
 export type ToastState = { message: string; tone: "success" | "error" };
 export type PendingBrowseAction = { key: string; action: "save" | "send" | "optimize" };
 export type FloatingTooltipPosition = { top: number; left: number };
-export type FilenameRenderToken = "Book Title" | "Author";
 
 export type OptimizerSettings = {
   use_original_filename: boolean;
-  filename_render_first: FilenameRenderToken;
-  filename_render_second: FilenameRenderToken;
+  filename_render_first: string;
+  filename_render_second: string;
   quality: number;
   grayscale: boolean;
   contrast_boost: boolean;
@@ -23,7 +22,7 @@ export type OptimizerSettings = {
   light_novel: boolean;
   split_long_sections: boolean;
   section_split_word_threshold: number;
-  words_per_reference_page: number;
+  characters_per_reference_page: number;
   remove_fonts: boolean;
   remove_css: boolean;
   text_cleanup: boolean;

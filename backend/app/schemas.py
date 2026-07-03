@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 from .models import LibraryKind, SourceType
 
@@ -143,10 +143,25 @@ class OptimizeRequest(BaseModel):
     light_novel: bool = False
     split_long_sections: bool = True
     section_split_word_threshold: int = Field(default=4000, ge=1, le=10000)
-    words_per_reference_page: int = Field(default=275, ge=1, le=10000)
+    characters_per_reference_page: int = Field(default=1500, ge=1, le=10000)
     remove_fonts: bool = True
     remove_css: bool = True
     text_cleanup: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_words_per_reference_page(cls, data):
+        if (
+            isinstance(data, dict)
+            and "characters_per_reference_page" not in data
+            and "words_per_reference_page" in data
+        ):
+            try:
+                data = dict(data)
+                data["characters_per_reference_page"] = round(float(data["words_per_reference_page"]) * 5.5)
+            except (TypeError, ValueError):
+                pass
+        return data
 
 
 class SourceOptimizeRequest(BaseModel):

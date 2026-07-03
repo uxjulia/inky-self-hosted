@@ -40,6 +40,17 @@ class OptimizerServiceTests(unittest.TestCase):
 
             self.assertEqual(device_filename, "Original Upload.epub")
 
+    def test_device_filename_can_use_custom_render_text(self):
+        with tempfile.TemporaryDirectory(prefix="inky_optimizer_service_") as tmp:
+            tmpdir = Path(tmp)
+            epub_path = tmpdir / "source.epub"
+            write_minimal_epub(epub_path, "The Book", "O'Brian")
+
+            request = OptimizeRequest(filename_render_first="My Copy", filename_render_second="Author")
+            device_filename = preferred_output_filename(epub_path, request)
+
+            self.assertEqual(device_filename, "My Copy - O'Brian.epub")
+
     def test_use_original_filename_is_passed_to_processor(self):
         captured_options = None
 

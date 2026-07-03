@@ -3,7 +3,6 @@ import type { StandaloneFileRecord } from "./standaloneLibrary";
 import { defaultOptimizerSettings, localSource, localSourceId } from "./appConstants";
 import type {
   BrowseItem,
-  FilenameRenderToken,
   InkyAppMode,
   Job,
   LibraryItem,
@@ -189,17 +188,25 @@ export function normalizeApiBaseUrl(value: string | null | undefined) {
 
 export function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
   if (!value || typeof value !== "object") return defaultOptimizerSettings;
-  const stored = value as Partial<OptimizerSettings>;
+  const stored = value as Partial<OptimizerSettings> & { words_per_reference_page?: number };
+  const legacyCharactersPerReferencePage =
+    stored.words_per_reference_page == null ? undefined : Math.round(Number(stored.words_per_reference_page) * 5.5);
+  const storedCharactersPerReferencePage =
+    stored.characters_per_reference_page == null ? undefined : Number(stored.characters_per_reference_page);
+  const normalizedCharactersPerReferencePage =
+    storedCharactersPerReferencePage != null && storedCharactersPerReferencePage <= 500
+      ? Math.round(storedCharactersPerReferencePage * 5.5)
+      : storedCharactersPerReferencePage;
   return {
     use_original_filename: booleanOrDefault(
       stored.use_original_filename,
       defaultOptimizerSettings.use_original_filename
     ),
-    filename_render_first: filenameRenderTokenOrDefault(
+    filename_render_first: filenameRenderValueOrDefault(
       stored.filename_render_first,
       defaultOptimizerSettings.filename_render_first
     ),
-    filename_render_second: filenameRenderTokenOrDefault(
+    filename_render_second: filenameRenderValueOrDefault(
       stored.filename_render_second,
       defaultOptimizerSettings.filename_render_second
     ),
@@ -215,8 +222,12 @@ export function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
       1,
       10000
     ),
-    words_per_reference_page: clampNumber(
-      Number(stored.words_per_reference_page ?? defaultOptimizerSettings.words_per_reference_page),
+    characters_per_reference_page: clampNumber(
+      Number(
+        normalizedCharactersPerReferencePage ??
+          legacyCharactersPerReferencePage ??
+          defaultOptimizerSettings.characters_per_reference_page
+      ),
       1,
       10000
     ),
@@ -226,8 +237,9 @@ export function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
   };
 }
 
-export function filenameRenderTokenOrDefault(value: unknown, fallback: FilenameRenderToken): FilenameRenderToken {
-  return value === "Book Title" || value === "Author" ? value : fallback;
+export function filenameRenderValueOrDefault(value: unknown, fallback: string): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || fallback;
 }
 
 export function booleanOrDefault(value: unknown, fallback: boolean) {

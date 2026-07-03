@@ -1100,11 +1100,9 @@ progress {
   padding: 0;
 }
 
-.filename-render-value {
+.filename-render-input {
   min-width: 0;
   min-height: 36px;
-  display: flex;
-  align-items: center;
   padding: 8px 10px;
   border: 1px solid var(--color-border-strong);
   border-radius: 3px;
@@ -1112,6 +1110,12 @@ progress {
   color: var(--color-text);
   font-size: 15px;
   line-height: 1.2;
+}
+
+.filename-render-reset-button {
+  min-height: 24px;
+  padding: 2px 8px;
+  font-size: 12px;
 }
 
 .range-field {

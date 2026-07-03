@@ -170,7 +170,7 @@ export function HelpPage({
               <p>Optimized EPUBs include extra data and cleanup that CrossInk can use while reading.</p>
               <ul>
                 <li>
-                  Page locations let CrossInk jump and resume using stable word-based positions instead of fragile
+                  Page locations let CrossInk jump and resume using stable content-based positions instead of fragile
                   screen pages.
                 </li>
                 <li>

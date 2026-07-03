@@ -2,14 +2,14 @@ import JSZip from "jszip";
 
 export type BrowserOptimizerSettings = {
   use_original_filename: boolean;
-  filename_render_first: "Book Title" | "Author";
-  filename_render_second: "Book Title" | "Author";
+  filename_render_first: string;
+  filename_render_second: string;
   quality: number;
   grayscale: boolean;
   contrast_boost: boolean;
   contrast_factor: number;
   eink_quantize: boolean;
-  words_per_reference_page: number;
+  characters_per_reference_page: number;
   split_long_sections: boolean;
   section_split_word_threshold: number;
   remove_fonts: boolean;
@@ -55,7 +55,7 @@ const fontExtensionPattern = /\.(ttf|otf|woff2?|eot)$/i;
 const crossInkLocationManifestPath = "META-INF/x-locations.json";
 const crossInkOptimizerManifestPath = "META-INF/crossink/optimizer-v1.json";
 const wordsPerLocation = 64;
-const defaultWordsPerReferencePage = 275;
+const defaultCharactersPerReferencePage = 1500;
 const orphanIntroWordLimit = 50;
 const headingTags = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
 const mediaTags = new Set(["audio", "canvas", "embed", "iframe", "image", "img", "object", "picture", "svg", "video"]);
@@ -193,7 +193,7 @@ export async function optimizeEpubInBrowser(
   });
 
   progress?.(84, "Writing CrossInk metadata");
-  const locations = buildCrossInkLocationManifest(updatedOpf, opfPath, xhtmlFiles, settings.words_per_reference_page);
+  const locations = buildCrossInkLocationManifest(updatedOpf, opfPath, xhtmlFiles, settings.characters_per_reference_page);
   if (locations) {
     out.file(crossInkLocationManifestPath, JSON.stringify(locations), {
       compression: "DEFLATE",
@@ -1043,33 +1043,38 @@ function buildCrossInkLocationManifest(
   opfText: string,
   opfPath: string,
   xhtmlFiles: Record<string, string>,
-  configuredWordsPerReferencePage = defaultWordsPerReferencePage
+  configuredCharactersPerReferencePage = defaultCharactersPerReferencePage
 ) {
-  const wordsPerReferencePage = normalizeWordsPerReferencePage(configuredWordsPerReferencePage);
+  const charactersPerReferencePage = normalizeCharactersPerReferencePage(configuredCharactersPerReferencePage);
   const spine = parseSpineHrefs(opfText, opfPath);
   if (spine.length === 0) return null;
   let nextLocation = 1;
   let totalWords = 0;
-  const chapterGroups = buildChapterGroups(spine, xhtmlFiles, wordsPerReferencePage);
+  let totalCharacters = 0;
+  const chapterGroups = buildChapterGroups(spine, xhtmlFiles, charactersPerReferencePage);
   const entries = spine.map((href, index) => {
     const text = extractVisibleText(xhtmlFiles[href] || "");
     const words = countWords(text);
+    const characters = countReferenceCharacters(text);
     const locationCount = Math.ceil(words / wordsPerLocation);
-    const startReferencePage = Math.floor(totalWords / wordsPerReferencePage) + 1;
-    const referencePageCount = Math.max(1, Math.ceil(words / wordsPerReferencePage));
+    const startReferencePage = Math.floor(totalCharacters / charactersPerReferencePage) + 1;
+    const referencePageCount = Math.max(1, Math.ceil(characters / charactersPerReferencePage));
     const section = {
       index,
       href,
       wordStart: totalWords,
       wordCount: words,
+      characterStart: totalCharacters,
+      characterCount: characters,
       startLocation: locationCount > 0 ? nextLocation : 0,
       endLocation: locationCount > 0 ? nextLocation + locationCount - 1 : 0,
-      startReferencePage: words > 0 ? startReferencePage : 0,
-      endReferencePage: words > 0 ? startReferencePage + referencePageCount - 1 : 0,
+      startReferencePage: characters > 0 ? startReferencePage : 0,
+      endReferencePage: characters > 0 ? startReferencePage + referencePageCount - 1 : 0,
       chapterGroup: chapterGroups.groupByHref.get(href) ?? index
     };
     nextLocation += locationCount;
     totalWords += words;
+    totalCharacters += characters;
     return section;
   });
 
@@ -1077,11 +1082,13 @@ function buildCrossInkLocationManifest(
     format: "x-locations",
     version: 1,
     generator: "inky-browser-optimizer",
+    referencePageUnit: "character",
     wordsPerLocation,
-    wordsPerReferencePage,
+    charactersPerReferencePage,
     totalWords,
+    totalCharacters,
     totalLocations: Math.max(0, nextLocation - 1),
-    totalReferencePages: Math.ceil(totalWords / wordsPerReferencePage),
+    totalReferencePages: Math.ceil(totalCharacters / charactersPerReferencePage),
     spine: entries,
     chapterGroups: chapterGroups.groups
   };
@@ -1090,29 +1097,44 @@ function buildCrossInkLocationManifest(
 function buildChapterGroups(
   spine: string[],
   xhtmlFiles: Record<string, string>,
-  wordsPerReferencePage = defaultWordsPerReferencePage
+  charactersPerReferencePage = defaultCharactersPerReferencePage
 ) {
   const byChapterHref = new Map<
     string,
-    { href: string; startSpineIndex: number; endSpineIndex: number; wordStart: number; wordCount: number }
+    {
+      href: string;
+      startSpineIndex: number;
+      endSpineIndex: number;
+      wordStart: number;
+      wordCount: number;
+      characterStart: number;
+      characterCount: number;
+    }
   >();
   const groupByHref = new Map<string, number>();
   let totalWords = 0;
+  let totalCharacters = 0;
 
   spine.forEach((href, spineIndex) => {
     const chapterHref = originalChapterHref(href);
-    const words = countWords(extractVisibleText(xhtmlFiles[href] || ""));
+    const text = extractVisibleText(xhtmlFiles[href] || "");
+    const words = countWords(text);
+    const characters = countReferenceCharacters(text);
     const group = byChapterHref.get(chapterHref) || {
       href: chapterHref,
       startSpineIndex: spineIndex,
       endSpineIndex: spineIndex,
       wordStart: totalWords,
-      wordCount: 0
+      wordCount: 0,
+      characterStart: totalCharacters,
+      characterCount: 0
     };
     group.endSpineIndex = spineIndex;
     group.wordCount += words;
+    group.characterCount += characters;
     byChapterHref.set(chapterHref, group);
     totalWords += words;
+    totalCharacters += characters;
   });
 
   const groups = Array.from(byChapterHref.values()).map((group, index) => {
@@ -1126,16 +1148,27 @@ function buildChapterGroups(
       endSpineIndex: group.endSpineIndex,
       wordStart: group.wordStart,
       wordCount: group.wordCount,
-      startReferencePage: group.wordCount > 0 ? Math.floor(group.wordStart / wordsPerReferencePage) + 1 : 0,
-      endReferencePage: group.wordCount > 0 ? Math.ceil((group.wordStart + group.wordCount) / wordsPerReferencePage) : 0
+      characterStart: group.characterStart,
+      characterCount: group.characterCount,
+      startReferencePage:
+        group.characterCount > 0 ? Math.floor(group.characterStart / charactersPerReferencePage) + 1 : 0,
+      endReferencePage:
+        group.characterCount > 0
+          ? Math.ceil((group.characterStart + group.characterCount) / charactersPerReferencePage)
+          : 0
     };
   });
 
   return { groups, groupByHref };
 }
 
-function normalizeWordsPerReferencePage(value: number) {
-  return Number.isFinite(value) ? Math.max(1, Math.min(10000, Math.round(value))) : defaultWordsPerReferencePage;
+function normalizeCharactersPerReferencePage(value: number) {
+  return Number.isFinite(value) ? Math.max(1, Math.min(10000, Math.round(value))) : defaultCharactersPerReferencePage;
+}
+
+function countReferenceCharacters(text: string) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  return Array.from(normalized).length;
 }
 
 function originalChapterHref(href: string) {
@@ -1218,12 +1251,21 @@ function textFromFirst(doc: Document, localName: string) {
 
 function formatOutputFilename(inputFilename: string, metadata: Metadata, settings: BrowserOptimizerSettings) {
   if (settings.use_original_filename) return sanitizeFilename(inputFilename);
-  const values: Record<BrowserOptimizerSettings["filename_render_first"], string> = {
-    "Book Title": metadata.title || inputFilename.replace(/\.epub$/i, ""),
-    Author: metadata.author
-  };
-  const parts = [values[settings.filename_render_first], values[settings.filename_render_second]].filter(Boolean);
+  const fallbackTitle = metadata.title || inputFilename.replace(/\.epub$/i, "");
+  const parts = [
+    resolveFilenameRenderValue(settings.filename_render_first, { title: fallbackTitle, author: metadata.author }),
+    resolveFilenameRenderValue(settings.filename_render_second, { title: fallbackTitle, author: metadata.author })
+  ].filter(Boolean);
   return `${sanitizeFilename(parts.join(" - ") || inputFilename.replace(/\.epub$/i, "book"))}.epub`;
+}
+
+function resolveFilenameRenderValue(template: string, metadata: Metadata) {
+  return template
+    .trim()
+    .replaceAll("Book Title", metadata.title || "")
+    .replaceAll("Author", metadata.author || "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function sanitizeFilename(value: string) {

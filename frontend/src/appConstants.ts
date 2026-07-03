@@ -15,18 +15,18 @@ export const localSource: Source = { id: localSourceId, type: "local", name: "Lo
 export const sourceTypes: RemoteSourceType[] = ["opds", "webdav", "feed", "local_folder"];
 
 export const defaultOptimizerSettings: OptimizerSettings = {
-  use_original_filename: false,
+  use_original_filename: true,
   filename_render_first: "Book Title",
   filename_render_second: "Author",
   quality: 70,
   grayscale: true,
   contrast_boost: true,
-  contrast_factor: 1.1,
+  contrast_factor: 1.2,
   eink_quantize: true,
   light_novel: false,
   split_long_sections: true,
   section_split_word_threshold: 4000,
-  words_per_reference_page: 275,
+  characters_per_reference_page: 1500,
   remove_fonts: true,
   remove_css: true,
   text_cleanup: true

@@ -10,11 +10,12 @@ type OptimizerSettingsModalProps = {
   qualityDraft: string;
   contrastFactorDraft: string;
   sectionSplitThresholdDraft: string;
-  referencePageWordsDraft: string;
+  referencePageCharactersDraft: string;
   sectionSplitTooltipButtonRef: RefObject<HTMLButtonElement | null>;
   stablePageTooltipButtonRef: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
   onSwapFilenameRenderFields: () => void;
+  onResetFilenameRenderFields: () => void;
   onUpdateOptimizerSetting: <K extends keyof OptimizerSettings>(key: K, value: OptimizerSettings[K]) => void;
   onUpdateQualityFromSlider: (value: string) => void;
   onUpdateQualityDraft: (value: string) => void;
@@ -24,8 +25,8 @@ type OptimizerSettingsModalProps = {
   onCommitContrastFactorDraft: () => void;
   onUpdateSectionSplitThresholdDraft: (value: string) => void;
   onCommitSectionSplitThresholdDraft: () => void;
-  onUpdateReferencePageWordsDraft: (value: string) => void;
-  onCommitReferencePageWordsDraft: () => void;
+  onUpdateReferencePageCharactersDraft: (value: string) => void;
+  onCommitReferencePageCharactersDraft: () => void;
   onShowSectionSplitTooltip: () => void;
   onHideSectionSplitTooltip: () => void;
   onShowStablePageTooltip: () => void;
@@ -40,11 +41,12 @@ export function OptimizerSettingsModal({
   qualityDraft,
   contrastFactorDraft,
   sectionSplitThresholdDraft,
-  referencePageWordsDraft,
+  referencePageCharactersDraft,
   sectionSplitTooltipButtonRef,
   stablePageTooltipButtonRef,
   onClose,
   onSwapFilenameRenderFields,
+  onResetFilenameRenderFields,
   onUpdateOptimizerSetting,
   onUpdateQualityFromSlider,
   onUpdateQualityDraft,
@@ -54,14 +56,18 @@ export function OptimizerSettingsModal({
   onCommitContrastFactorDraft,
   onUpdateSectionSplitThresholdDraft,
   onCommitSectionSplitThresholdDraft,
-  onUpdateReferencePageWordsDraft,
-  onCommitReferencePageWordsDraft,
+  onUpdateReferencePageCharactersDraft,
+  onCommitReferencePageCharactersDraft,
   onShowSectionSplitTooltip,
   onHideSectionSplitTooltip,
   onShowStablePageTooltip,
   onHideStablePageTooltip,
   onResetOptimizerSettings
 }: OptimizerSettingsModalProps) {
+  const filenameRenderEdited =
+    optimizerSettings.filename_render_first !== defaultOptimizerSettings.filename_render_first ||
+    optimizerSettings.filename_render_second !== defaultOptimizerSettings.filename_render_second;
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section
@@ -85,10 +91,28 @@ export function OptimizerSettingsModal({
             />
             <span>Use Original Filename</span>
           </label>
-          <label className="field filename-render-field">
-            <span>Filename render</span>
+          <div className="field filename-render-field">
+            <div className="field-label">
+              <label htmlFor="filename-render-first">Filename render</label>
+              {filenameRenderEdited && (
+                <button
+                  className="filename-render-reset-button"
+                  type="button"
+                  onClick={onResetFilenameRenderFields}
+                >
+                  Reset
+                </button>
+              )}
+            </div>
             <div className="filename-render-control">
-              <span className="filename-render-value">{optimizerSettings.filename_render_first}</span>
+              <input
+                id="filename-render-first"
+                className="filename-render-input"
+                value={optimizerSettings.filename_render_first}
+                disabled={optimizerSettings.use_original_filename}
+                onChange={(event) => onUpdateOptimizerSetting("filename_render_first", event.target.value)}
+                placeholder={defaultOptimizerSettings.filename_render_first}
+              />
               <button
                 type="button"
                 onClick={onSwapFilenameRenderFields}
@@ -98,9 +122,16 @@ export function OptimizerSettingsModal({
               >
                 <ArrowLeftRight size={16} />
               </button>
-              <span className="filename-render-value">{optimizerSettings.filename_render_second}</span>
+              <input
+                className="filename-render-input"
+                value={optimizerSettings.filename_render_second}
+                disabled={optimizerSettings.use_original_filename}
+                onChange={(event) => onUpdateOptimizerSetting("filename_render_second", event.target.value)}
+                placeholder={defaultOptimizerSettings.filename_render_second}
+                aria-label="Second filename field"
+              />
             </div>
-          </label>
+          </div>
           <label className="field">
             <span>JPEG quality</span>
             <div className="range-field">
@@ -192,47 +223,9 @@ export function OptimizerSettingsModal({
             />
             <span>Split long EPUB sections</span>
           </label>
-          {/* <div className="field">
-            <div className="field-label">
-              <label htmlFor="section-split-word-threshold">Words before section split</label>
-              <span className="advanced-tooltip">
-                <button
-                  ref={sectionSplitTooltipButtonRef}
-                  type="button"
-                  aria-describedby="section-split-threshold-tooltip"
-                  aria-label="Section split threshold help"
-                  onBlur={onHideSectionSplitTooltip}
-                  onFocus={onShowSectionSplitTooltip}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      onHideSectionSplitTooltip();
-                    }
-                  }}
-                  onMouseEnter={onShowSectionSplitTooltip}
-                  onMouseLeave={onHideSectionSplitTooltip}
-                >
-                  <CircleHelp size={14} />
-                </button>
-              </span>
-            </div>
-            <input
-              id="section-split-word-threshold"
-              type="number"
-              min="1"
-              max="10000"
-              step="1"
-              placeholder={String(
-                optimizerSettings.section_split_word_threshold ?? defaultOptimizerSettings.section_split_word_threshold
-              )}
-              value={sectionSplitThresholdDraft}
-              disabled={!optimizerSettings.split_long_sections}
-              onChange={(event) => onUpdateSectionSplitThresholdDraft(event.target.value)}
-              onBlur={onCommitSectionSplitThresholdDraft}
-            />
-          </div> */}
           <div className="field">
             <div className="field-label">
-              <label htmlFor="reference-page-words">Stable Page Numbers: Words per page</label>
+              <label htmlFor="reference-page-characters">Stable Page Numbers: Characters per page</label>
               <span className="advanced-tooltip">
                 <button
                   ref={stablePageTooltipButtonRef}
@@ -254,14 +247,14 @@ export function OptimizerSettingsModal({
               </span>
             </div>
             <input
-              id="reference-page-words"
+              id="reference-page-characters"
               type="number"
               min="1"
               max="10000"
               step="1"
-              value={referencePageWordsDraft}
-              onChange={(event) => onUpdateReferencePageWordsDraft(event.target.value)}
-              onBlur={onCommitReferencePageWordsDraft}
+              value={referencePageCharactersDraft}
+              onChange={(event) => onUpdateReferencePageCharactersDraft(event.target.value)}
+              onBlur={onCommitReferencePageCharactersDraft}
             />
           </div>
         </div>
