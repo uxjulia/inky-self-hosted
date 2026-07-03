@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import SessionLocal
+from .dictionary_prep import prepare_dictionary_zip
 from .library import format_upload_bytes, send_file_to_device
 from .models import Job, JobStatus, LibraryItem, utc_now
 from .optimizer.service import optimize_epub, preferred_output_filename
@@ -112,6 +113,37 @@ def run_send_path_job(job_id: str, source_path: str, request: DeviceSendRequest)
     except Exception as exc:
         set_job(job_id, status=JobStatus.failed.value, progress=100, message="Send failed", error=str(exc))
     finally:
+        db.close()
+
+
+def run_dictionary_prepare_job(job_id: str, source_zip: str) -> None:
+    db = SessionLocal()
+    try:
+        job = db.get(Job, job_id)
+        if not job:
+            return
+        job.status = JobStatus.running.value
+        job.progress = 2
+        job.message = "Preparing dictionary"
+        db.commit()
+
+        def progress(percent: int, message: str) -> None:
+            set_job(job_id, progress=max(0, min(100, percent)), message=message)
+
+        output_dir = get_settings().dictionaries_dir / "prepared" / job_id
+        result = prepare_dictionary_zip(Path(source_zip), output_dir, progress)
+        result["download_url"] = f"/api/dictionaries/prepared/{job_id}/download"
+        set_job(
+            job_id,
+            status=JobStatus.succeeded.value,
+            progress=100,
+            message="Dictionary prepared",
+            result_json=json.dumps(result),
+        )
+    except Exception as exc:
+        set_job(job_id, status=JobStatus.failed.value, progress=100, message="Dictionary prep failed", error=str(exc))
+    finally:
+        Path(source_zip).unlink(missing_ok=True)
         db.close()
 
 

@@ -469,6 +469,7 @@ h2 {
 }
 
 .optimizer-settings-button,
+.dictionary-tools-button,
 .recent-download-button {
   width: 100%;
 }
@@ -1060,6 +1061,10 @@ progress {
 
 .optimizer-modal-card {
   width: min(620px, 100%);
+}
+
+.dictionary-modal-card {
+  width: min(520px, 100%);
 }
 
 .settings-grid {

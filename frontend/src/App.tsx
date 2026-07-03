@@ -171,6 +171,11 @@ type RecentOptimizedDownload = {
   filename: string;
 };
 
+type PreparedDictionaryDownload = {
+  downloadUrl: string;
+  filename: string;
+};
+
 type SourceForm = {
   type: RemoteSourceType;
   name: string;
@@ -235,6 +240,8 @@ export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [recentOptimizedDownload, setRecentOptimizedDownload] = useState<RecentOptimizedDownload | null>(null);
+  const [recentPreparedDictionaryDownload, setRecentPreparedDictionaryDownload] =
+    useState<PreparedDictionaryDownload | null>(null);
   const [optimizingLibraryItemId, setOptimizingLibraryItemId] = useState<number | null>(null);
   const [form, setForm] = useState<SourceForm>(emptySourceForm);
   const [deviceUrl, setDeviceUrl] = useState(defaultDeviceHost);
@@ -266,6 +273,8 @@ export default function App() {
   const [testingDevice, setTestingDevice] = useState(false);
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
   const [optimizerModalOpen, setOptimizerModalOpen] = useState(false);
+  const [dictionaryModalOpen, setDictionaryModalOpen] = useState(false);
+  const [dictionaryZipFile, setDictionaryZipFile] = useState<File | null>(null);
   const [serverModalOpen, setServerModalOpen] = useState(false);
   const [stablePageTooltipPosition, setStablePageTooltipPosition] = useState<FloatingTooltipPosition | null>(null);
   const [editingSource, setEditingSource] = useState<Source | null>(null);
@@ -342,6 +351,7 @@ export default function App() {
       : `Catalog Page ${remotePage}`
     : `Page ${clampedBrowsePage} of ${totalPages}`;
   const sortLabel = sortLabelForMode(activeSortMode);
+  const canPrepareDictionaries = !standaloneMode && !isHostedApp;
 
   useEffect(() => {
     checkAuth();
@@ -375,6 +385,10 @@ export default function App() {
           showToast(job.error || job.message || "Send failed", "error");
         } else if (job.type === "send") {
           showToast("Sent to device");
+        } else if (job.type === "dictionary_prepare") {
+          const download = preparedDictionaryDownloadFromJob(job);
+          if (download) setRecentPreparedDictionaryDownload(download);
+          showToast("Prepared dictionary ready to download");
         }
         await loadLibrary();
       }
@@ -1477,6 +1491,49 @@ export default function App() {
     downloadBlob(recentOptimizedDownload.blob, recentOptimizedDownload.filename);
   }
 
+  async function prepareDictionaryZip(event: FormEvent) {
+    event.preventDefault();
+    if (!dictionaryZipFile || !canPrepareDictionaries) return;
+
+    setBusy(true);
+    try {
+      await runAction(
+        async () => {
+          setRecentPreparedDictionaryDownload(null);
+          const formData = new FormData();
+          formData.append("file", dictionaryZipFile, dictionaryZipFile.name);
+          const job = await api<Job>("/api/dictionaries/prepare", {
+            method: "POST",
+            body: formData,
+            rawBody: true
+          });
+          trackJob(job);
+          setDictionaryModalOpen(false);
+          setDictionaryZipFile(null);
+          showToast("Dictionary prep queued");
+        },
+        { toastOnError: true }
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function downloadPreparedDictionaryFile() {
+    if (!recentPreparedDictionaryDownload) return;
+    await runAction(
+      async () => {
+        const response = await apiFetch(recentPreparedDictionaryDownload.downloadUrl);
+        const blob = await response.blob();
+        const filename =
+          filenameFromContentDisposition(response.headers.get("content-disposition")) ||
+          recentPreparedDictionaryDownload.filename;
+        downloadBlob(blob, filename);
+      },
+      { toastOnError: true }
+    );
+  }
+
   async function probeDevice() {
     setDeviceError("");
     setDeviceStatus("");
@@ -1817,6 +1874,17 @@ export default function App() {
                 <SlidersHorizontal size={16} />
                 EPUB Optimizer Settings
               </button>
+              {canPrepareDictionaries && (
+                <button
+                  className="icon-text dictionary-tools-button"
+                  type="button"
+                  onClick={() => setDictionaryModalOpen(true)}
+                  title="Dictionary Tools"
+                >
+                  <BookOpen size={16} />
+                  Dictionary Tools
+                </button>
+              )}
               {recentOptimizedDownload && (
                 <button
                   className="icon-text recent-download-button"
@@ -1826,6 +1894,17 @@ export default function App() {
                 >
                   <Download size={16} />
                   Download Optimized EPUB
+                </button>
+              )}
+              {recentPreparedDictionaryDownload && (
+                <button
+                  className="icon-text recent-download-button"
+                  type="button"
+                  onClick={downloadPreparedDictionaryFile}
+                  title={`Download ${recentPreparedDictionaryDownload.filename}`}
+                >
+                  <Download size={16} />
+                  Download Prepared Dictionary
                 </button>
               )}
               {jobs.length > 0 && (
@@ -2379,6 +2458,56 @@ export default function App() {
         </div>
       )}
 
+      {view === "app" && dictionaryModalOpen && canPrepareDictionaries && (
+        <div className="modal-backdrop" role="presentation">
+          <form
+            className="panel form-panel modal-card dictionary-modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dictionary-modal-title"
+            onSubmit={prepareDictionaryZip}
+          >
+            <div className="panel-header">
+              <h2 id="dictionary-modal-title">Dictionary Tools</h2>
+              <button
+                type="button"
+                onClick={() => setDictionaryModalOpen(false)}
+                title="Close"
+                aria-label="Close dictionary tools"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <label className="field">
+              <span>StarDict ZIP</span>
+              <input
+                type="file"
+                accept=".zip,application/zip"
+                onChange={(event) => setDictionaryZipFile(event.target.files?.[0] || null)}
+              />
+            </label>
+            <p className="form-help">
+              Unzip this folder into <code>/.dictionaries/</code> on your CrossInk SD card.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setDictionaryModalOpen(false);
+                  setDictionaryZipFile(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button className="primary" type="submit" disabled={busy || !dictionaryZipFile}>
+                <BookOpen size={16} />
+                Prepare Dictionary
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {view === "app" && optimizerModalOpen && (
         <div className="modal-backdrop" role="presentation">
           <section
@@ -2652,8 +2781,23 @@ function formatJobLog(job: Job) {
 
 function jobLogClassName(job: Job) {
   if (job.error || job.status === "failed") return "job-log-line job-log-line-error";
-  if (job.type === "send" && job.status === "succeeded") return "job-log-line job-log-line-success";
+  if ((job.type === "send" || job.type === "dictionary_prepare") && job.status === "succeeded") {
+    return "job-log-line job-log-line-success";
+  }
   return "job-log-line";
+}
+
+function preparedDictionaryDownloadFromJob(job: Job): PreparedDictionaryDownload | null {
+  if (!job.result_json) return null;
+  try {
+    const result = JSON.parse(job.result_json) as { download_url?: string; filename?: string };
+    return {
+      downloadUrl: result.download_url || `/api/dictionaries/prepared/${job.id}/download`,
+      filename: result.filename || "prepared-dictionary.zip"
+    };
+  } catch {
+    return null;
+  }
 }
 
 function standaloneRecordToLibraryItem(record: StandaloneFileRecord): LibraryItem {

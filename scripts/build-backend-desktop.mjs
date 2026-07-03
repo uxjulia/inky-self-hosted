@@ -49,6 +49,8 @@ await run([
   "--noconfirm",
   "--clean",
   "--hidden-import",
+  "app.dictionary_prep",
+  "--hidden-import",
   "epub_processor",
   "--hidden-import",
   "image_processor",

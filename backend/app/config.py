@@ -45,6 +45,10 @@ class Settings(BaseSettings):
         return self.data_dir / "imports"
 
     @property
+    def dictionaries_dir(self) -> Path:
+        return self.data_dir / "dictionaries"
+
+    @property
     def auth_enabled(self) -> bool:
         return bool(self.auth_username and self.auth_password)
 
@@ -60,3 +64,4 @@ def ensure_data_dirs() -> None:
     settings.originals_dir.mkdir(parents=True, exist_ok=True)
     settings.optimized_dir.mkdir(parents=True, exist_ok=True)
     settings.imports_dir.mkdir(parents=True, exist_ok=True)
+    settings.dictionaries_dir.mkdir(parents=True, exist_ok=True)

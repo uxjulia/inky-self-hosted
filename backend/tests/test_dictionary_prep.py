@@ -1,0 +1,244 @@
+import gzip
+import importlib
+import os
+import struct
+import sys
+import tempfile
+import time
+import unittest
+import zipfile
+from pathlib import Path
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from fastapi.testclient import TestClient
+
+from app.config import get_settings
+from app.dictionary_prep import DictionaryPrepError, prepare_dictionary_zip
+
+
+class DictionaryPrepServiceTests(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory(prefix="inky_dictionary_prep_")
+        self.root = Path(self.tmpdir.name)
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_dict_dz_generates_prepared_indexes(self):
+        source = self._zip_dictionary(dict_dz=True)
+        result = prepare_dictionary_zip(source, self.root / "out")
+
+        names = self._zip_names(Path(result["output_path"]))
+        self.assertIn("sample/sample.dict", names)
+        self.assertNotIn("sample/sample.dict.dz", names)
+        self.assertIn("sample/sample.idx.oft", names)
+        self.assertIn("sample/sample.idx.oft.cspt", names)
+
+    def test_uncompressed_dict_remains_valid(self):
+        source = self._zip_dictionary(dict_dz=False)
+        result = prepare_dictionary_zip(source, self.root / "out")
+
+        names = self._zip_names(Path(result["output_path"]))
+        self.assertIn("sample/sample.dict", names)
+        self.assertIn("sample/sample.idx.oft", names)
+        self.assertNotIn("sample/sample.dict.dz", names)
+
+    def test_root_level_stardict_files_are_packaged_under_stem_folder(self):
+        source = self.root / "root.zip"
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.writestr("sample.ifo", _ifo_bytes("sample"))
+            archive.writestr("sample.idx", _idx_bytes())
+            archive.writestr("sample.dict", b"alpha definition")
+
+        result = prepare_dictionary_zip(source, self.root / "out")
+
+        names = self._zip_names(Path(result["output_path"]))
+        self.assertIn("sample/sample.ifo", names)
+        self.assertIn("sample/sample.idx.oft", names)
+
+    def test_syn_dz_generates_syn_indexes(self):
+        source = self._zip_dictionary(dict_dz=True, syn_dz=True)
+        result = prepare_dictionary_zip(source, self.root / "out")
+
+        names = self._zip_names(Path(result["output_path"]))
+        self.assertIn("sample/sample.syn", names)
+        self.assertNotIn("sample/sample.syn.dz", names)
+        self.assertIn("sample/sample.syn.oft", names)
+        self.assertIn("sample/sample.syn.oft.cspt", names)
+
+    def test_missing_idx_fails_clearly(self):
+        source = self._zip_dictionary(include_idx=False)
+
+        with self.assertRaisesRegex(DictionaryPrepError, "missing required file: sample.idx"):
+            prepare_dictionary_zip(source, self.root / "out")
+
+    def test_multiple_ifo_stems_fail_clearly(self):
+        source = self.root / "multi.zip"
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.writestr("sample/sample.ifo", _ifo_bytes("sample"))
+            archive.writestr("sample/other.ifo", _ifo_bytes("other"))
+            archive.writestr("sample/sample.idx", _idx_bytes())
+            archive.writestr("sample/sample.dict", b"first")
+
+        with self.assertRaisesRegex(DictionaryPrepError, "multiple .ifo stems"):
+            prepare_dictionary_zip(source, self.root / "out")
+
+    def test_zip_slip_entries_are_rejected(self):
+        source = self.root / "unsafe.zip"
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.writestr("../evil.ifo", b"bad")
+
+        with self.assertRaisesRegex(DictionaryPrepError, "unsafe path"):
+            prepare_dictionary_zip(source, self.root / "out")
+
+    def _zip_dictionary(
+        self,
+        *,
+        dict_dz: bool = True,
+        syn_dz: bool = False,
+        include_idx: bool = True,
+    ) -> Path:
+        source = self.root / "dictionary.zip"
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.writestr("sample/sample.ifo", _ifo_bytes("sample"))
+            if include_idx:
+                archive.writestr("sample/sample.idx", _idx_bytes())
+            if dict_dz:
+                archive.writestr("sample/sample.dict.dz", _gzip_bytes(b"alpha definition\nbeta definition"))
+            else:
+                archive.writestr("sample/sample.dict", b"alpha definition\nbeta definition")
+            if syn_dz:
+                archive.writestr("sample/sample.syn.dz", _gzip_bytes(_syn_bytes()))
+        return source
+
+    def _zip_names(self, path: Path) -> set[str]:
+        with zipfile.ZipFile(path) as archive:
+            return set(archive.namelist())
+
+
+class DictionaryPrepareApiTests(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory(prefix="inky_dictionary_api_")
+        self.root = Path(self.tmpdir.name)
+        self.env = patch.dict(
+            os.environ,
+            {
+                "INKY_DATABASE_URL": f"sqlite:///{self.root / 'inky.db'}",
+                "INKY_DATA_DIR": str(self.root / "data"),
+                "INKY_AUTH_USERNAME": "",
+                "INKY_AUTH_PASSWORD": "",
+                "INKY_PUBLIC_READ_ONLY": "0",
+            },
+            clear=False,
+        )
+        self.env.start()
+        get_settings.cache_clear()
+
+    def tearDown(self):
+        import app.db as db_module
+
+        db_module.engine.dispose()
+        self.env.stop()
+        get_settings.cache_clear()
+        self.tmpdir.cleanup()
+
+    def test_prepare_endpoint_creates_downloadable_job(self):
+        source = self._zip_dictionary()
+        app = self._reload_app()
+
+        with TestClient(app) as client, source.open("rb") as upload:
+            response = client.post(
+                "/api/dictionaries/prepare",
+                files={"file": ("dictionary.zip", upload, "application/zip")},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            job = self._wait_for_job(client, response.json()["id"])
+            self.assertEqual(job["status"], "succeeded", job)
+
+            download = client.get(f"/api/dictionaries/prepared/{job['id']}/download")
+            self.assertEqual(download.status_code, 200, download.text)
+            self.assertEqual(download.headers["content-type"], "application/zip")
+            self.assertGreater(len(download.content), 0)
+
+    def test_failed_prepare_job_records_useful_error(self):
+        source = self._zip_dictionary(include_idx=False)
+        app = self._reload_app()
+
+        with TestClient(app) as client, source.open("rb") as upload:
+            response = client.post(
+                "/api/dictionaries/prepare",
+                files={"file": ("dictionary.zip", upload, "application/zip")},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            job = self._wait_for_job(client, response.json()["id"])
+            self.assertEqual(job["status"], "failed", job)
+            self.assertIn("missing required file: sample.idx", job["error"])
+
+    def test_public_read_only_allows_prepare_endpoint(self):
+        source = self._zip_dictionary()
+        os.environ["INKY_PUBLIC_READ_ONLY"] = "1"
+        get_settings.cache_clear()
+        app = self._reload_app()
+
+        with TestClient(app) as client, source.open("rb") as upload:
+            response = client.post(
+                "/api/dictionaries/prepare",
+                files={"file": ("dictionary.zip", upload, "application/zip")},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            job = self._wait_for_job(client, response.json()["id"])
+            self.assertEqual(job["status"], "succeeded", job)
+
+    def _reload_app(self):
+        import app.db as db_module
+        import app.jobs as jobs_module
+
+        db_module.engine.dispose()
+        importlib.reload(db_module)
+        importlib.reload(jobs_module)
+        import app.main as main_module
+
+        return importlib.reload(main_module).app
+
+    def _wait_for_job(self, client: TestClient, job_id: str) -> dict:
+        for _ in range(40):
+            job = client.get(f"/api/jobs/{job_id}").json()
+            if job["status"] in {"succeeded", "failed"}:
+                return job
+            time.sleep(0.05)
+        self.fail(f"job {job_id} did not finish")
+
+    def _zip_dictionary(self, *, include_idx: bool = True) -> Path:
+        source = self.root / "dictionary.zip"
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.writestr("sample/sample.ifo", _ifo_bytes("sample"))
+            if include_idx:
+                archive.writestr("sample/sample.idx", _idx_bytes())
+            archive.writestr("sample/sample.dict.dz", _gzip_bytes(b"alpha definition"))
+        return source
+
+
+def _ifo_bytes(stem: str) -> bytes:
+    return f"StarDict's dict ifo file\nversion=2.4.2\nbookname={stem}\nwordcount=2\nidxfilesize=23\n".encode()
+
+
+def _idx_bytes() -> bytes:
+    return b"alpha\x00" + struct.pack(">II", 0, 5) + b"beta\x00" + struct.pack(">II", 5, 4)
+
+
+def _syn_bytes() -> bytes:
+    return b"first\x00" + struct.pack(">I", 0) + b"second\x00" + struct.pack(">I", 1)
+
+
+def _gzip_bytes(data: bytes) -> bytes:
+    with tempfile.TemporaryDirectory(prefix="inky_gzip_") as tmp:
+        path = Path(tmp) / "item.gz"
+        with gzip.open(path, "wb") as handle:
+            handle.write(data)
+        return path.read_bytes()
+
+
+if __name__ == "__main__":
+    unittest.main()

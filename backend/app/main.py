@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import tempfile
@@ -22,7 +23,7 @@ from .auth import require_basic_auth
 from .config import ensure_data_dirs, get_settings
 from .connectors import browse_source, search_source
 from .db import SessionLocal, get_db, init_db
-from .jobs import create_job, run_optimize_job, run_send_job, run_send_path_job
+from .jobs import create_job, run_dictionary_prepare_job, run_optimize_job, run_send_job, run_send_path_job
 from .library import (
     copy_uploaded_file,
     delete_library_item,
@@ -65,6 +66,7 @@ from .utils import join_remote, safe_filename
 
 PUBLIC_TEMP_OPTIMIZE_PATH = "/api/optimizer/epub"
 PUBLIC_SOURCE_OPTIMIZE_SUFFIX = "/optimize-epub"
+PUBLIC_DICTIONARY_PREP_PATH = "/api/dictionaries/prepare"
 PUBLIC_TEMP_OPTIMIZE_SEMAPHORE = asyncio.Semaphore(1)
 
 app = FastAPI(title="Inky API", version="0.1.0", dependencies=[Depends(require_basic_auth)])
@@ -83,6 +85,7 @@ async def block_public_writes(request: Request, call_next):
         request.method == "POST"
         and (
             request.url.path == PUBLIC_TEMP_OPTIMIZE_PATH
+            or request.url.path == PUBLIC_DICTIONARY_PREP_PATH
             or (request.url.path.startswith("/api/sources/") and request.url.path.endswith(PUBLIC_SOURCE_OPTIMIZE_SUFFIX))
         )
     )
@@ -294,6 +297,52 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
         return copy_uploaded_file(db, temp_path, file.filename or "upload.epub")
     finally:
         temp_path.unlink(missing_ok=True)
+
+
+@app.post("/api/dictionaries/prepare", response_model=JobRead)
+async def prepare_dictionary(
+    background: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> Job:
+    filename = file.filename or "dictionary.zip"
+    if Path(filename).suffix.lower() != ".zip":
+        raise HTTPException(status_code=400, detail="only StarDict ZIP files can be prepared")
+
+    uploads_dir = get_settings().dictionaries_dir / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(suffix=".zip", prefix="dictionary-", dir=uploads_dir, delete=False) as temp:
+        temp_path = Path(temp.name)
+        while chunk := await file.read(1024 * 1024):
+            temp.write(chunk)
+
+    job = create_job(db, "dictionary_prepare")
+    background.add_task(run_dictionary_prepare_job, job.id, str(temp_path))
+    return job
+
+
+@app.get("/api/dictionaries/prepared/{job_id}/download")
+def download_prepared_dictionary(job_id: str, db: Session = Depends(get_db)) -> FileResponse:
+    job = db.get(Job, job_id)
+    if not job or job.type != "dictionary_prepare":
+        raise HTTPException(status_code=404, detail="dictionary prepare job not found")
+    if job.status != "succeeded" or not job.result_json:
+        raise HTTPException(status_code=400, detail="dictionary is not ready")
+
+    try:
+        result = json.loads(job.result_json)
+        output_path = Path(result["output_path"]).resolve()
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail="dictionary job result is invalid") from exc
+
+    prepared_root = (get_settings().dictionaries_dir / "prepared").resolve()
+    if output_path != prepared_root and prepared_root not in output_path.parents:
+        raise HTTPException(status_code=404, detail="prepared dictionary not found")
+    if not output_path.is_file():
+        raise HTTPException(status_code=404, detail="prepared dictionary not found")
+
+    filename = str(result.get("filename") or output_path.name)
+    return FileResponse(output_path, media_type="application/zip", filename=filename)
 
 
 @app.post(PUBLIC_TEMP_OPTIMIZE_PATH)
