@@ -1,7 +1,6 @@
 import {
   BookOpen,
   CircleHelp,
-  Download,
   Folder,
   Home,
   LogIn,
@@ -12,11 +11,7 @@ import {
   Rss,
   Save,
   Server,
-  SlidersHorizontal,
-  TabletSmartphone,
   Sun,
-  Usb,
-  Wifi,
   X
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -101,7 +96,7 @@ import {
   standaloneRecordToLibraryItem
 } from "./appUtils";
 import { BrowsePanel } from "./components/BrowsePanel";
-import { JobLog } from "./components/JobLog";
+import { DevicePanel } from "./components/DevicePanel";
 import { OptimizerSettingsModal } from "./components/OptimizerSettingsModal";
 import { SourcePanel } from "./components/SourcePanel";
 
@@ -1737,157 +1732,32 @@ export default function App() {
       ) : (
         <section className="layout">
           <aside className="sidebar">
-            <section className="panel device-panel">
-              <div className="panel-header">
-                <div className="heading-line">
-                  <TabletSmartphone size={16} />
-                  <h2>Device</h2>
-                </div>
-                <button type="button" onClick={probeDevice} title="Test Connection" disabled={testingDevice}>
-                  {testingDevice ? (
-                    <RefreshCw className="spin" size={15} />
-                  ) : transferMode === "usb" ? (
-                    <Usb size={15} />
-                  ) : (
-                    <Wifi size={15} />
-                  )}
-                  {testingDevice ? "Searching" : "Test Connection"}
-                </button>
-              </div>
-              {deviceError && (
-                <div className="empty-state status-state error-state">
-                  <span>{readableError(deviceError)}</span>
-                  <button
-                    className="border-0"
-                    type="button"
-                    onClick={() => setDeviceError("")}
-                    title="Dismiss device error"
-                    aria-label="Dismiss device error"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              )}
-              {deviceStatus && (
-                <div className="empty-state status-state success-state">
-                  <span>{deviceStatus}</span>
-                  <button
-                    type="button"
-                    onClick={() => setDeviceStatus("")}
-                    title="Dismiss connection status"
-                    aria-label="Dismiss connection status"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              )}
-              <label className="field">
-                <span>Transfer method</span>
-                {canUseWifiTransfer ? (
-                  <div className="segmented transfer-mode-segmented">
-                    <button
-                      type="button"
-                      className={transferMode === "wifi" ? "active" : ""}
-                      onClick={() => setTransferMode("wifi")}
-                    >
-                      <Wifi size={14} />
-                      Wi-Fi
-                    </button>
-                    <button
-                      type="button"
-                      className={transferMode === "usb" ? "active" : ""}
-                      onClick={() => setTransferMode("usb")}
-                    >
-                      <Usb size={14} />
-                      USB
-                    </button>
-                  </div>
-                ) : (
-                  <div className="segmented transfer-mode-segmented">
-                    <span className="active selected-option">
-                      <Usb size={14} />
-                      USB
-                    </span>
-                  </div>
-                )}
-              </label>
-              {canUseWifiTransfer && transferMode === "wifi" && (
-                <label className="field">
-                  <span>Device host</span>
-                  <input
-                    value={deviceUrl}
-                    onChange={(event) => {
-                      setDeviceError("");
-                      setDeviceStatus("");
-                      setDeviceUrl(event.target.value);
-                    }}
-                    placeholder={deviceHostPlaceholder}
-                  />
-                </label>
-              )}
-              <label className="field">
-                <span>Destination folder (created if needed)</span>
-                <input
-                  value={destinationPath}
-                  onChange={(event) => setDestinationPath(event.target.value)}
-                  placeholder="/"
-                />
-              </label>
-              <label className="field">
-                <span>Optimize for</span>
-                <div className="segmented">
-                  <button type="button" className={device === "x4" ? "active" : ""} onClick={() => setDevice("x4")}>
-                    X4
-                  </button>
-                  <button type="button" className={device === "x3" ? "active" : ""} onClick={() => setDevice("x3")}>
-                    X3
-                  </button>
-                </div>
-              </label>
-              <button
-                className="icon-text optimizer-settings-button"
-                type="button"
-                onClick={() => setOptimizerModalOpen(true)}
-                title="EPUB Optimizer Settings"
-              >
-                <SlidersHorizontal size={16} />
-                EPUB Optimizer Settings
-              </button>
-              {canPrepareDictionaries && (
-                <button
-                  className="icon-text dictionary-tools-button"
-                  type="button"
-                  onClick={() => setDictionaryModalOpen(true)}
-                  title="Dictionary Tools"
-                >
-                  <BookOpen size={16} />
-                  Dictionary Tools
-                </button>
-              )}
-              {recentOptimizedDownload && (
-                <button
-                  className="icon-text recent-download-button"
-                  type="button"
-                  onClick={downloadRecentOptimizedFile}
-                  title={`Download ${recentOptimizedDownload.filename}`}
-                >
-                  <Download size={16} />
-                  Download Optimized EPUB
-                </button>
-              )}
-              {recentPreparedDictionaryDownload && (
-                <button
-                  className="icon-text recent-download-button"
-                  type="button"
-                  onClick={downloadPreparedDictionaryFile}
-                  title={`Download ${recentPreparedDictionaryDownload.filename}`}
-                >
-                  <Download size={16} />
-                  Download Prepared Dictionary
-                </button>
-              )}
-              <JobLog jobs={jobs} />
-            </section>
+            <DevicePanel
+              testingDevice={testingDevice}
+              transferMode={transferMode}
+              canUseWifiTransfer={canUseWifiTransfer}
+              deviceError={deviceError}
+              deviceStatus={deviceStatus}
+              deviceUrl={deviceUrl}
+              deviceHostPlaceholder={deviceHostPlaceholder}
+              destinationPath={destinationPath}
+              device={device}
+              canPrepareDictionaries={canPrepareDictionaries}
+              recentOptimizedDownload={recentOptimizedDownload}
+              recentPreparedDictionaryDownload={recentPreparedDictionaryDownload}
+              jobs={jobs}
+              onProbeDevice={probeDevice}
+              onSetDeviceError={setDeviceError}
+              onSetDeviceStatus={setDeviceStatus}
+              onSetTransferMode={setTransferMode}
+              onSetDeviceUrl={setDeviceUrl}
+              onSetDestinationPath={setDestinationPath}
+              onSetDevice={setDevice}
+              onOpenOptimizerSettings={() => setOptimizerModalOpen(true)}
+              onOpenDictionaryTools={() => setDictionaryModalOpen(true)}
+              onDownloadRecentOptimizedFile={downloadRecentOptimizedFile}
+              onDownloadPreparedDictionaryFile={downloadPreparedDictionaryFile}
+            />
 
             <SourcePanel
               allSources={allSources}
