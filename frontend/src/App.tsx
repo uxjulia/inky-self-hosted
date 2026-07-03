@@ -100,6 +100,7 @@ type OptimizerSettings = {
   eink_quantize: boolean;
   light_novel: boolean;
   split_long_sections: boolean;
+  section_split_word_threshold: number;
   words_per_reference_page: number;
   remove_fonts: boolean;
   remove_css: boolean;
@@ -209,6 +210,7 @@ const defaultOptimizerSettings: OptimizerSettings = {
   eink_quantize: true,
   light_novel: false,
   split_long_sections: true,
+  section_split_word_threshold: 4000,
   words_per_reference_page: 275,
   remove_fonts: true,
   remove_css: true,
@@ -219,6 +221,7 @@ export default function App() {
   const libraryLoadSeq = useRef(0);
   const browseLoadSeq = useRef(0);
   const stablePageTooltipButtonRef = useRef<HTMLButtonElement | null>(null);
+  const sectionSplitTooltipButtonRef = useRef<HTMLButtonElement | null>(null);
   const [view, setView] = useState<AppView>(() => getInitialView());
   const [authChecked, setAuthChecked] = useState(false);
   const [authEnabled, setAuthEnabled] = useState(false);
@@ -251,6 +254,9 @@ export default function App() {
   const [optimizerSettings, setOptimizerSettings] = useState<OptimizerSettings>(() => getInitialOptimizerSettings());
   const [qualityDraft, setQualityDraft] = useState(() => String(optimizerSettings.quality));
   const [contrastFactorDraft, setContrastFactorDraft] = useState(() => String(optimizerSettings.contrast_factor));
+  const [sectionSplitThresholdDraft, setSectionSplitThresholdDraft] = useState(() =>
+    String(optimizerSettings.section_split_word_threshold ?? defaultOptimizerSettings.section_split_word_threshold)
+  );
   const [referencePageWordsDraft, setReferencePageWordsDraft] = useState(() =>
     String(optimizerSettings.words_per_reference_page)
   );
@@ -277,6 +283,7 @@ export default function App() {
   const [dictionaryZipFile, setDictionaryZipFile] = useState<File | null>(null);
   const [serverModalOpen, setServerModalOpen] = useState(false);
   const [stablePageTooltipPosition, setStablePageTooltipPosition] = useState<FloatingTooltipPosition | null>(null);
+  const [sectionSplitTooltipPosition, setSectionSplitTooltipPosition] = useState<FloatingTooltipPosition | null>(null);
   const [editingSource, setEditingSource] = useState<Source | null>(null);
   const [draggedSourceId, setDraggedSourceId] = useState<number | null>(null);
   const [dragOverSourceId, setDragOverSourceId] = useState<number | null>(null);
@@ -290,9 +297,8 @@ export default function App() {
   const trimmedSearchQuery = searchQuery.trim();
   const activeBrowseResult = searchResult || browseResult;
   const showBrowseLoading = !isLocalSource && (browseLoading || searching);
-  function updateStablePageTooltipPosition() {
-    const button = stablePageTooltipButtonRef.current;
-    if (!button) return;
+  function tooltipPositionForButton(button: HTMLButtonElement | null) {
+    if (!button) return null;
     const rect = button.getBoundingClientRect();
     const gutter = 12;
     const width = Math.min(340, window.innerWidth - gutter * 2);
@@ -300,10 +306,18 @@ export default function App() {
     const left = Math.min(Math.max(gutter, rect.right - width), window.innerWidth - width - gutter);
     const preferredTop = rect.top - estimatedHeight - 8;
     const top =
-      preferredTop >= gutter
-        ? preferredTop
-        : Math.min(rect.bottom + 8, window.innerHeight - estimatedHeight - gutter);
-    setStablePageTooltipPosition({ top: Math.max(gutter, top), left });
+      preferredTop >= gutter ? preferredTop : Math.min(rect.bottom + 8, window.innerHeight - estimatedHeight - gutter);
+    return { top: Math.max(gutter, top), left };
+  }
+
+  function updateStablePageTooltipPosition() {
+    const position = tooltipPositionForButton(stablePageTooltipButtonRef.current);
+    if (position) setStablePageTooltipPosition(position);
+  }
+
+  function updateSectionSplitTooltipPosition() {
+    const position = tooltipPositionForButton(sectionSplitTooltipButtonRef.current);
+    if (position) setSectionSplitTooltipPosition(position);
   }
 
   function showStablePageTooltip() {
@@ -312,6 +326,14 @@ export default function App() {
 
   function hideStablePageTooltip() {
     setStablePageTooltipPosition(null);
+  }
+
+  function showSectionSplitTooltip() {
+    updateSectionSplitTooltipPosition();
+  }
+
+  function hideSectionSplitTooltip() {
+    setSectionSplitTooltipPosition(null);
   }
 
   const displayedLibrary = useMemo(() => {
@@ -436,6 +458,7 @@ export default function App() {
   useEffect(() => {
     if (!optimizerModalOpen) {
       hideStablePageTooltip();
+      hideSectionSplitTooltip();
     }
   }, [optimizerModalOpen]);
 
@@ -448,6 +471,16 @@ export default function App() {
       window.removeEventListener("scroll", updateStablePageTooltipPosition, true);
     };
   }, [stablePageTooltipPosition]);
+
+  useEffect(() => {
+    if (!sectionSplitTooltipPosition) return;
+    window.addEventListener("resize", updateSectionSplitTooltipPosition);
+    window.addEventListener("scroll", updateSectionSplitTooltipPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateSectionSplitTooltipPosition);
+      window.removeEventListener("scroll", updateSectionSplitTooltipPosition, true);
+    };
+  }, [sectionSplitTooltipPosition]);
 
   useEffect(() => {
     const clampedIndex = clampLocalSourceIndex(localSourceIndex, sources.length);
@@ -956,6 +989,22 @@ export default function App() {
     commitOptimizerNumberDraft("contrast_factor", contrastFactorDraft, 0.5, 3, setContrastFactorDraft, true);
   }
 
+  function updateSectionSplitThresholdDraft(value: string) {
+    setSectionSplitThresholdDraft(value);
+    commitOptimizerNumberDraft("section_split_word_threshold", value, 1, 10000, setSectionSplitThresholdDraft);
+  }
+
+  function commitSectionSplitThresholdDraft() {
+    commitOptimizerNumberDraft(
+      "section_split_word_threshold",
+      sectionSplitThresholdDraft,
+      1,
+      10000,
+      setSectionSplitThresholdDraft,
+      true
+    );
+  }
+
   function updateReferencePageWordsDraft(value: string) {
     setReferencePageWordsDraft(value);
     commitOptimizerNumberDraft("words_per_reference_page", value, 1, 10000, setReferencePageWordsDraft);
@@ -972,23 +1021,18 @@ export default function App() {
     );
   }
 
-  function commitOptimizerNumberDraft<K extends "quality" | "contrast_factor" | "words_per_reference_page">(
-    key: K,
-    draft: string,
-    min: number,
-    max: number,
-    setDraft: (value: string) => void,
-    force = false
-  ) {
+  function commitOptimizerNumberDraft<
+    K extends "quality" | "contrast_factor" | "section_split_word_threshold" | "words_per_reference_page"
+  >(key: K, draft: string, min: number, max: number, setDraft: (value: string) => void, force = false) {
     const trimmed = draft.trim();
     if (!trimmed || trimmed === "." || trimmed.endsWith(".")) {
-      if (force) setDraft(String(optimizerSettings[key]));
+      if (force) setDraft(String(optimizerSettings[key] ?? defaultOptimizerSettings[key]));
       return;
     }
 
     const parsed = Number(trimmed);
     if (!Number.isFinite(parsed)) {
-      if (force) setDraft(String(optimizerSettings[key]));
+      if (force) setDraft(String(optimizerSettings[key] ?? defaultOptimizerSettings[key]));
       return;
     }
 
@@ -1001,6 +1045,7 @@ export default function App() {
     setOptimizerSettings(defaultOptimizerSettings);
     setQualityDraft(String(defaultOptimizerSettings.quality));
     setContrastFactorDraft(String(defaultOptimizerSettings.contrast_factor));
+    setSectionSplitThresholdDraft(String(defaultOptimizerSettings.section_split_word_threshold));
     setReferencePageWordsDraft(String(defaultOptimizerSettings.words_per_reference_page));
   }
 
@@ -2384,6 +2429,20 @@ export default function App() {
         </div>
       )}
 
+      {sectionSplitTooltipPosition && (
+        <div
+          id="section-split-threshold-tooltip"
+          className="advanced-tooltip-content"
+          role="tooltip"
+          style={{
+            left: `${sectionSplitTooltipPosition.left}px`,
+            top: `${sectionSplitTooltipPosition.top}px`
+          }}
+        >
+          Placeholder tooltip content for the long-section split threshold.
+        </div>
+      )}
+
       {view === "app" && sourceModalOpen && (
         <div className="modal-backdrop" role="presentation">
           <form
@@ -2641,6 +2700,45 @@ export default function App() {
                 />
                 <span>Split long EPUB sections</span>
               </label>
+              <div className="field">
+                <div className="field-label">
+                  <label htmlFor="section-split-word-threshold">Words before section split</label>
+                  <span className="advanced-tooltip">
+                    <button
+                      ref={sectionSplitTooltipButtonRef}
+                      type="button"
+                      aria-describedby="section-split-threshold-tooltip"
+                      aria-label="Section split threshold help"
+                      onBlur={hideSectionSplitTooltip}
+                      onFocus={showSectionSplitTooltip}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          hideSectionSplitTooltip();
+                        }
+                      }}
+                      onMouseEnter={showSectionSplitTooltip}
+                      onMouseLeave={hideSectionSplitTooltip}
+                    >
+                      <CircleHelp size={14} />
+                    </button>
+                  </span>
+                </div>
+                <input
+                  id="section-split-word-threshold"
+                  type="number"
+                  min="1"
+                  max="10000"
+                  step="1"
+                  placeholder={String(
+                    optimizerSettings.section_split_word_threshold ??
+                      defaultOptimizerSettings.section_split_word_threshold
+                  )}
+                  value={sectionSplitThresholdDraft}
+                  disabled={!optimizerSettings.split_long_sections}
+                  onChange={(event) => updateSectionSplitThresholdDraft(event.target.value)}
+                  onBlur={commitSectionSplitThresholdDraft}
+                />
+              </div>
               <label className="toggle-field">
                 <input
                   type="checkbox"
@@ -3086,6 +3184,11 @@ function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
     eink_quantize: booleanOrDefault(stored.eink_quantize, defaultOptimizerSettings.eink_quantize),
     light_novel: booleanOrDefault(stored.light_novel, defaultOptimizerSettings.light_novel),
     split_long_sections: booleanOrDefault(stored.split_long_sections, defaultOptimizerSettings.split_long_sections),
+    section_split_word_threshold: clampNumber(
+      Number(stored.section_split_word_threshold ?? defaultOptimizerSettings.section_split_word_threshold),
+      1,
+      10000
+    ),
     words_per_reference_page: clampNumber(
       Number(stored.words_per_reference_page ?? defaultOptimizerSettings.words_per_reference_page),
       1,

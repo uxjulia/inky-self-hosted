@@ -11,6 +11,7 @@ export type BrowserOptimizerSettings = {
   eink_quantize: boolean;
   words_per_reference_page: number;
   split_long_sections: boolean;
+  section_split_word_threshold: number;
   remove_fonts: boolean;
   remove_css: boolean;
   text_cleanup: boolean;
@@ -55,7 +56,6 @@ const crossInkLocationManifestPath = "META-INF/x-locations.json";
 const crossInkOptimizerManifestPath = "META-INF/crossink/optimizer-v1.json";
 const wordsPerLocation = 64;
 const defaultWordsPerReferencePage = 275;
-const sectionSplitWordThreshold = 6000;
 const orphanIntroWordLimit = 50;
 const headingTags = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
 const mediaTags = new Set(["audio", "canvas", "embed", "iframe", "image", "img", "object", "picture", "svg", "video"]);
@@ -152,7 +152,7 @@ export async function optimizeEpubInBrowser(
   let updatedOpf = processOpf(opfText, opfPath, imageRenameMap, settings);
   if (settings.split_long_sections) {
     progress?.(78, "Splitting long EPUB sections");
-    const splitResult = splitLongSpineSections(updatedOpf, opfPath, xhtmlFiles, sectionSplitWordThreshold);
+    const splitResult = splitLongSpineSections(updatedOpf, opfPath, xhtmlFiles, settings.section_split_word_threshold);
     updatedOpf = splitResult.opfText;
     for (const [path, text] of Object.entries(splitResult.xhtmlFiles)) {
       xhtmlFiles[path] = text;

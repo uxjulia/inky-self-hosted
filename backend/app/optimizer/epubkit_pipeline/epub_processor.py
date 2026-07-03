@@ -60,7 +60,7 @@ class ProcessingOptions:
     text_cleanup: bool = True
     normalize_quotes: bool = True
     split_long_sections: bool = False
-    section_split_word_threshold: int = 6000
+    section_split_word_threshold: int = 4000
     words_per_reference_page: int = 275
     filename_format: str = 'author-title'
     use_original_filename: bool = False

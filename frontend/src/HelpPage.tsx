@@ -179,8 +179,8 @@ export function HelpPage({
                 </li>
                 <li>TOC, cover, image, and metadata cleanup help books open cleaner and use less device memory.</li>
                 <li>
-                  Optional long-section splitting can break EPUB sections over 2,000 visible words into smaller sections
-                  for faster on-device rendering. This does not affect your visible chapters or table of contents.
+                  Optional long-section splitting can break large EPUB sections into smaller sections for faster
+                  on-device rendering. This does not affect your visible chapters or table of contents.
                 </li>
                 <li>
                   Images are prepared for the selected X3 or X4 screen so covers and images fit the target display
