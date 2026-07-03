@@ -699,7 +699,13 @@ h2 {
   border-radius: 3px;
   background: var(--color-panel-muted);
   color: var(--color-muted);
+  cursor: pointer;
   font-size: 13px;
+}
+
+.local-drop-zone:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .local-drop-zone.drag-over {

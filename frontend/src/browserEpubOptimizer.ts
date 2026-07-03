@@ -246,14 +246,14 @@ async function processImage(
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d", {
-    willReadFrequently: settings.grayscale || settings.contrast_boost || settings.eink_quantize
+    willReadFrequently: settings.grayscale || settings.contrast_boost
   });
   if (!context) throw new Error("Canvas is not available.");
   context.imageSmoothingQuality = "high";
   context.drawImage(image, 0, 0, width, height);
   URL.revokeObjectURL(image.src);
 
-  if (settings.grayscale || settings.contrast_boost || settings.eink_quantize) {
+  if (settings.grayscale || settings.contrast_boost) {
     const imageData = context.getImageData(0, 0, width, height);
     applyImageTone(imageData.data, settings);
     context.putImageData(imageData, 0, 0);
@@ -291,19 +291,28 @@ function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob>
 
 function applyImageTone(data: Uint8ClampedArray, settings: BrowserOptimizerSettings) {
   const contrastFactor = settings.contrast_boost ? settings.contrast_factor : 1;
+  const useEinkQuantize = settings.grayscale && settings.eink_quantize;
   for (let index = 0; index < data.length; index += 4) {
-    let value = settings.grayscale
-      ? 0.299 * data[index] + 0.587 * data[index + 1] + 0.114 * data[index + 2]
-      : (data[index] + data[index + 1] + data[index + 2]) / 3;
-    value = (value - 128) * contrastFactor + 128;
-    value = Math.max(0, Math.min(255, value));
-    if (settings.eink_quantize) {
+    if (!settings.grayscale) {
+      data[index] = clampTone((data[index] - 128) * contrastFactor + 128);
+      data[index + 1] = clampTone((data[index + 1] - 128) * contrastFactor + 128);
+      data[index + 2] = clampTone((data[index + 2] - 128) * contrastFactor + 128);
+      continue;
+    }
+
+    let value = 0.299 * data[index] + 0.587 * data[index + 1] + 0.114 * data[index + 2];
+    value = clampTone((value - 128) * contrastFactor + 128);
+    if (useEinkQuantize) {
       value = quantizeEink(value);
     }
     data[index] = value;
     data[index + 1] = value;
     data[index + 2] = value;
   }
+}
+
+function clampTone(value: number) {
+  return Math.max(0, Math.min(255, value));
 }
 
 function quantizeEink(value: number) {
@@ -588,9 +597,7 @@ function selectorMatchesUsed(selectorText: string, used: UsedSelectors) {
 
     if (trimmed.includes(":") || trimmed.includes("[")) return true;
 
-    const elements = Array.from(trimmed.matchAll(/(?:^|[\s>+~])([a-zA-Z][\w-]*)/g), (match) =>
-      match[1].toLowerCase()
-    );
+    const elements = Array.from(trimmed.matchAll(/(?:^|[\s>+~])([a-zA-Z][\w-]*)/g), (match) => match[1].toLowerCase());
     if (elements.length === 0 || elements.some((element) => used.elements.has(element))) return true;
   }
 
@@ -646,7 +653,10 @@ function removeCssItemsFromOpf(opfText: string, opfPath: string, removedCssPaths
   for (const item of Array.from(doc.getElementsByTagName("item"))) {
     const href = item.getAttribute("href") || "";
     const mediaType = item.getAttribute("media-type") || "";
-    if ((mediaType === "text/css" || cssExtensionPattern.test(href)) && removedCssPaths.has(resolvePath(opfPath, href))) {
+    if (
+      (mediaType === "text/css" || cssExtensionPattern.test(href)) &&
+      removedCssPaths.has(resolvePath(opfPath, href))
+    ) {
       item.remove();
       removed = true;
     }
@@ -1158,7 +1168,11 @@ function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function buildOptimizerManifest(device: BrowserOptimizeDevice, settings: BrowserOptimizerSettings, cssWasTreeShaken: boolean) {
+function buildOptimizerManifest(
+  device: BrowserOptimizeDevice,
+  settings: BrowserOptimizerSettings,
+  cssWasTreeShaken: boolean
+) {
   return {
     format: "crossink-optimizer",
     version: 1,

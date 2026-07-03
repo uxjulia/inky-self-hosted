@@ -33,7 +33,7 @@ import {
   X
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent, FormEvent } from "react";
+import type { DragEvent, FormEvent, KeyboardEvent } from "react";
 import { optimizeEpubInBrowser } from "./browserEpubOptimizer";
 import { probeStandaloneDevice, sendBlobToDevice } from "./deviceTransfer";
 import { HelpPage } from "./HelpPage";
@@ -220,6 +220,7 @@ const defaultOptimizerSettings: OptimizerSettings = {
 export default function App() {
   const libraryLoadSeq = useRef(0);
   const browseLoadSeq = useRef(0);
+  const localFileInputRef = useRef<HTMLInputElement | null>(null);
   const stablePageTooltipButtonRef = useRef<HTMLButtonElement | null>(null);
   const sectionSplitTooltipButtonRef = useRef<HTMLButtonElement | null>(null);
   const [view, setView] = useState<AppView>(() => getInitialView());
@@ -374,6 +375,7 @@ export default function App() {
     : `Page ${clampedBrowsePage} of ${totalPages}`;
   const sortLabel = sortLabelForMode(activeSortMode);
   const canPrepareDictionaries = !standaloneMode && !isHostedApp;
+  const effectiveEinkQuantize = optimizerSettings.grayscale && optimizerSettings.eink_quantize;
 
   useEffect(() => {
     checkAuth();
@@ -1273,6 +1275,17 @@ export default function App() {
     });
   }
 
+  function openLocalFilePicker() {
+    if (!isLocalSource) return;
+    localFileInputRef.current?.click();
+  }
+
+  function keyOpenLocalFilePicker(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openLocalFilePicker();
+  }
+
   function dragHasFiles(event: DragEvent<HTMLElement>) {
     return Array.from(event.dataTransfer.types).includes("Files");
   }
@@ -1622,7 +1635,8 @@ export default function App() {
   function defaultOptimizePayload() {
     return {
       device,
-      ...optimizerSettings
+      ...optimizerSettings,
+      eink_quantize: effectiveEinkQuantize
     };
   }
 
@@ -2128,6 +2142,7 @@ export default function App() {
                     <label className="file-button border-0" title="Upload file" aria-label="Upload file">
                       <Plus size={16} />
                       <input
+                        ref={localFileInputRef}
                         type="file"
                         multiple
                         accept={isHostedApp ? ".epub" : ".epub,.txt,.xtc,.xtch,.bmp,.png"}
@@ -2194,10 +2209,14 @@ export default function App() {
                 onDragOver={dragLocalFiles}
                 onDragLeave={leaveLocalFiles}
                 onDrop={dropLocalFiles}
-                aria-label="Drop files to add them to Local Library"
+                onClick={openLocalFilePicker}
+                onKeyDown={keyOpenLocalFilePicker}
+                role="button"
+                tabIndex={0}
+                aria-label="Add files to Local Library"
               >
                 <Upload size={18} />
-                <span>Drop files here or use the add button</span>
+                <span>Drop files here or click to browse</span>
               </section>
             )}
             <div className="table-list">
@@ -2258,7 +2277,9 @@ export default function App() {
                             type="button"
                             onClick={() => optimizeLibraryItem(item)}
                             title={optimizingItem ? `Optimizing for ${deviceLabel}` : `Optimize for ${deviceLabel}`}
-                            aria-label={optimizingItem ? `Optimizing for ${deviceLabel}` : `Optimize for ${deviceLabel}`}
+                            aria-label={
+                              optimizingItem ? `Optimizing for ${deviceLabel}` : `Optimize for ${deviceLabel}`
+                            }
                             disabled={optimizingItem}
                           >
                             {optimizingItem ? <RefreshCw className="spin" size={15} /> : <Paintbrush size={16} />}
@@ -2295,7 +2316,8 @@ export default function App() {
                   const itemKey = browseItemKey(item);
                   const savingItem = pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "save";
                   const sendingItem = pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "send";
-                  const optimizingItem = pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "optimize";
+                  const optimizingItem =
+                    pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "optimize";
                   const canOptimizeItem = canOptimizeBrowseItem(item);
                   const sendTitle = canOptimizeBrowseItem(item)
                     ? `Optimize for ${deviceLabel} & Send`
@@ -2348,14 +2370,12 @@ export default function App() {
                               type="button"
                               onClick={() => optimizeBrowseItem(item)}
                               title={optimizingItem ? `Optimizing for ${deviceLabel}` : `Optimize for ${deviceLabel}`}
-                              aria-label={optimizingItem ? `Optimizing for ${deviceLabel}` : `Optimize for ${deviceLabel}`}
+                              aria-label={
+                                optimizingItem ? `Optimizing for ${deviceLabel}` : `Optimize for ${deviceLabel}`
+                              }
                               disabled={busy}
                             >
-                              {optimizingItem ? (
-                                <RefreshCw className="spin" size={15} />
-                              ) : (
-                                <Paintbrush size={16} />
-                              )}
+                              {optimizingItem ? <RefreshCw className="spin" size={15} /> : <Paintbrush size={16} />}
                             </button>
                           )}
                           <button
@@ -2677,7 +2697,8 @@ export default function App() {
               <label className="toggle-field">
                 <input
                   type="checkbox"
-                  checked={optimizerSettings.eink_quantize}
+                  checked={effectiveEinkQuantize}
+                  disabled={!optimizerSettings.grayscale}
                   onChange={(event) => updateOptimizerSetting("eink_quantize", event.target.checked)}
                 />
                 <span>Use 4-level e-ink grayscale</span>
@@ -2692,6 +2713,23 @@ export default function App() {
                   <span>Rotate and split landscape images</span>
                 </label>
               )}
+
+              {/* <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={optimizerSettings.remove_fonts}
+                  onChange={(event) => updateOptimizerSetting("remove_fonts", event.target.checked)}
+                />
+                <span>Remove embedded fonts</span>
+              </label> */}
+              {/* <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={optimizerSettings.remove_css}
+                  onChange={(event) => updateOptimizerSetting("remove_css", event.target.checked)}
+                />
+                <span>Remove unused CSS</span>
+              </label> */}
               <label className="toggle-field">
                 <input
                   type="checkbox"
@@ -2700,6 +2738,14 @@ export default function App() {
                 />
                 <span>Split long EPUB sections</span>
               </label>
+              {/* <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={optimizerSettings.text_cleanup}
+                  onChange={(event) => updateOptimizerSetting("text_cleanup", event.target.checked)}
+                />
+                <span>Clean text punctuation and spacing</span>
+              </label> */}
               <div className="field">
                 <div className="field-label">
                   <label htmlFor="section-split-word-threshold">Words before section split</label>
@@ -2739,30 +2785,6 @@ export default function App() {
                   onBlur={commitSectionSplitThresholdDraft}
                 />
               </div>
-              <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={optimizerSettings.remove_fonts}
-                  onChange={(event) => updateOptimizerSetting("remove_fonts", event.target.checked)}
-                />
-                <span>Remove embedded fonts</span>
-              </label>
-              <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={optimizerSettings.remove_css}
-                  onChange={(event) => updateOptimizerSetting("remove_css", event.target.checked)}
-                />
-                <span>Remove unused CSS</span>
-              </label>
-              <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={optimizerSettings.text_cleanup}
-                  onChange={(event) => updateOptimizerSetting("text_cleanup", event.target.checked)}
-                />
-                <span>Clean text punctuation and spacing</span>
-              </label>
               <div className="field">
                 <div className="field-label">
                   <label htmlFor="reference-page-words">Words per page (used for Stable Page Numbers)</label>
@@ -2979,14 +3001,20 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 function safeDownloadStem(value: string) {
-  const cleaned = value.replace(/[<>:"/\\|?*\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim();
+  const cleaned = value
+    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   return cleaned.slice(0, 120) || "optimized";
 }
 
 function optimizedDeviceFilename(job: Job) {
   if (!job.result_json) return "";
   try {
-    const result = JSON.parse(job.result_json) as { device_filename?: unknown; optimization?: { device_filename?: unknown } };
+    const result = JSON.parse(job.result_json) as {
+      device_filename?: unknown;
+      optimization?: { device_filename?: unknown };
+    };
     const filename = result.optimization?.device_filename ?? result.device_filename;
     return typeof filename === "string" ? filename : "";
   } catch {
