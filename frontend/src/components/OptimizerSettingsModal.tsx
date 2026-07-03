@@ -77,6 +77,14 @@ export function OptimizerSettingsModal({
           </button>
         </div>
         <div className="settings-grid">
+          <label className="toggle-field plain-toggle-field full-width-field">
+            <input
+              type="checkbox"
+              checked={optimizerSettings.use_original_filename}
+              onChange={(event) => onUpdateOptimizerSetting("use_original_filename", event.target.checked)}
+            />
+            <span>Use Original Filename</span>
+          </label>
           <label className="field filename-render-field">
             <span>Filename render</span>
             <div className="filename-render-control">
@@ -92,14 +100,6 @@ export function OptimizerSettingsModal({
               </button>
               <span className="filename-render-value">{optimizerSettings.filename_render_second}</span>
             </div>
-          </label>
-          <label className="toggle-field">
-            <input
-              type="checkbox"
-              checked={optimizerSettings.use_original_filename}
-              onChange={(event) => onUpdateOptimizerSetting("use_original_filename", event.target.checked)}
-            />
-            <span>Use Original</span>
           </label>
           <label className="field">
             <span>JPEG quality</span>
@@ -192,7 +192,7 @@ export function OptimizerSettingsModal({
             />
             <span>Split long EPUB sections</span>
           </label>
-          <div className="field">
+          {/* <div className="field">
             <div className="field-label">
               <label htmlFor="section-split-word-threshold">Words before section split</label>
               <span className="advanced-tooltip">
@@ -229,10 +229,10 @@ export function OptimizerSettingsModal({
               onChange={(event) => onUpdateSectionSplitThresholdDraft(event.target.value)}
               onBlur={onCommitSectionSplitThresholdDraft}
             />
-          </div>
+          </div> */}
           <div className="field">
             <div className="field-label">
-              <label htmlFor="reference-page-words">Words per page (used for Stable Page Numbers)</label>
+              <label htmlFor="reference-page-words">Stable Page Numbers: Words per page</label>
               <span className="advanced-tooltip">
                 <button
                   ref={stablePageTooltipButtonRef}

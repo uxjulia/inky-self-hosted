@@ -1083,6 +1083,10 @@ progress {
   grid-column: 1 / -1;
 }
 
+.full-width-field {
+  grid-column: 1 / -1;
+}
+
 .filename-render-control {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr);
@@ -1134,6 +1138,13 @@ progress {
 
 .toggle-field span {
   min-width: 0;
+}
+
+.plain-toggle-field {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .modal-actions {

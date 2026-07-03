@@ -1518,9 +1518,9 @@ export default function App() {
           : usesBrowserLibrary
             ? await probeStandaloneDevice(resolvedDeviceUrl)
             : await api<Record<string, unknown>>("/api/devices/probe", {
-                method: "POST",
-                body: JSON.stringify({ device_url: resolvedDeviceUrl })
-              });
+              method: "POST",
+              body: JSON.stringify({ device_url: resolvedDeviceUrl })
+            });
       setDeviceStatus(
         `Successfully connected to: ${status.device || "Device"} at ${transferMode === "usb" ? "USB" : status.ip || resolvedDeviceUrl}`
       );
@@ -1858,13 +1858,13 @@ export default function App() {
             top: `${stablePageTooltipPosition.top}px`
           }}
         >
-          Stable Page Numbers remain the same regardless of the book you're reading or the font size, margins, or other
-          page layout settings you use. This is a great way to compare how many pages you read across different books.
+          Stable Page Numbers is a feature where what is considered a single page is the same regardless of the book you're reading or the font size, margins, or other
+          page layout settings you use because it simply uses the number of words to determine a page. This is a great way to compare how many pages you read across different books.
           The average paperback book has between 250-300 words per page, therefore CrossInk defaults to 275.
         </div>
       )}
 
-      {sectionSplitTooltipPosition && (
+      {/* {sectionSplitTooltipPosition && (
         <div
           id="section-split-threshold-tooltip"
           className="advanced-tooltip-content"
@@ -1874,9 +1874,9 @@ export default function App() {
             top: `${sectionSplitTooltipPosition.top}px`
           }}
         >
-          Placeholder tooltip content for the long-section split threshold.
+          The number of words used to determine when to split a large section into smaller ones. The lower this number is, the more sections that will be created.
         </div>
-      )}
+      )} */}
 
       {view === "app" && sourceModalOpen && (
         <div className="modal-backdrop" role="presentation">
