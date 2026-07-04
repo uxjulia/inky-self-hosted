@@ -14,7 +14,7 @@ type DevicePanelProps = {
   destinationPath: string;
   device: DeviceTarget;
   canPrepareDictionaries: boolean;
-  recentOptimizedDownload: RecentOptimizedDownload | null;
+  recentOptimizedDownloads: RecentOptimizedDownload[];
   recentPreparedDictionaryDownload: PreparedDictionaryDownload | null;
   jobs: Job[];
   onProbeDevice: () => void;
@@ -41,7 +41,7 @@ export function DevicePanel({
   destinationPath,
   device,
   canPrepareDictionaries,
-  recentOptimizedDownload,
+  recentOptimizedDownloads,
   recentPreparedDictionaryDownload,
   jobs,
   onProbeDevice,
@@ -180,15 +180,21 @@ export function DevicePanel({
           Dictionary Tools
         </button>
       )}
-      {recentOptimizedDownload && (
+      {recentOptimizedDownloads.length > 0 && (
         <button
           className="icon-text recent-download-button"
           type="button"
           onClick={onDownloadRecentOptimizedFile}
-          title={`Download ${recentOptimizedDownload.filename}`}
+          title={
+            recentOptimizedDownloads.length === 1
+              ? `Download ${recentOptimizedDownloads[0].filename}`
+              : `Download ${recentOptimizedDownloads.length} optimized EPUBs`
+          }
         >
           <Download size={16} />
-          Download Optimized EPUB
+          {recentOptimizedDownloads.length === 1
+            ? "Download Optimized EPUB"
+            : `Download ${recentOptimizedDownloads.length} Optimized EPUBs`}
         </button>
       )}
       {recentPreparedDictionaryDownload && (

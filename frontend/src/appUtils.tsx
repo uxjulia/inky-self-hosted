@@ -8,11 +8,13 @@ import type {
   LibraryItem,
   OptimizerSettings,
   PreparedDictionaryDownload,
+  RecentOptimizedDownload,
   RemoteSourceType,
   SortMode,
   Source,
   SourceType
 } from "./appTypes";
+import JSZip from "jszip";
 
 export function preparedDictionaryDownloadFromJob(job: Job): PreparedDictionaryDownload | null {
   if (!job.result_json) return null;
@@ -105,6 +107,41 @@ export function downloadBlob(blob: Blob, filename: string) {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export async function downloadOptimizedFiles(downloads: RecentOptimizedDownload[]) {
+  if (downloads.length === 0) return;
+  if (downloads.length === 1) {
+    downloadBlob(downloads[0].blob, downloads[0].filename);
+    return;
+  }
+
+  const zip = new JSZip();
+  const usedNames = new Set<string>();
+  downloads.forEach((download) => {
+    zip.file(uniqueZipFilename(download.filename || "optimized.epub", usedNames), download.blob);
+  });
+  const blob = await zip.generateAsync({ type: "blob" });
+  downloadBlob(blob, "optimized-epubs.zip");
+}
+
+function uniqueZipFilename(filename: string, usedNames: Set<string>) {
+  const fallback = "optimized.epub";
+  const cleaned = filename.trim() || fallback;
+  const extensionStart = cleaned.lastIndexOf(".");
+  const hasExtension = extensionStart > 0;
+  const stem = hasExtension ? cleaned.slice(0, extensionStart) : cleaned;
+  const extension = hasExtension ? cleaned.slice(extensionStart) : "";
+  let candidate = cleaned;
+  let counter = 2;
+
+  while (usedNames.has(candidate)) {
+    candidate = `${stem}-${counter}${extension}`;
+    counter += 1;
+  }
+
+  usedNames.add(candidate);
+  return candidate;
 }
 
 export function safeDownloadStem(value: string) {
