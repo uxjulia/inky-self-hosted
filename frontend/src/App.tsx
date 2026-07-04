@@ -1969,7 +1969,8 @@ export default function App() {
         Made by{" "}
         <a href="https://github.com/uxjulia" target="_blank" rel="noreferrer">
           @uxjulia
-        </a>
+        </a>{" "}
+        - {__INKY_BUILD_VERSION__}
       </footer>
 
       {stablePageTooltipPosition && (
