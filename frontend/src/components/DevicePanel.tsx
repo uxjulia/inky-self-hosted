@@ -1,4 +1,5 @@
 import { BookOpen, Download, RefreshCw, SlidersHorizontal, TabletSmartphone, Usb, Wifi, X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import type { DeviceTarget, Job, PreparedDictionaryDownload, RecentOptimizedDownload, TransferMode } from "../appTypes";
 import { readableError } from "../appUtils";
 import { JobLog } from "./JobLog";
@@ -56,6 +57,23 @@ export function DevicePanel({
   onDownloadRecentOptimizedFile,
   onDownloadPreparedDictionaryFile
 }: DevicePanelProps) {
+  const optimizedDownloadButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previousOptimizedDownloadCount = useRef(recentOptimizedDownloads.length);
+
+  useEffect(() => {
+    const previousCount = previousOptimizedDownloadCount.current;
+    previousOptimizedDownloadCount.current = recentOptimizedDownloads.length;
+    if (previousCount !== 0 || recentOptimizedDownloads.length === 0) return;
+    if (!window.matchMedia("(max-width: 760px)").matches) return;
+
+    window.requestAnimationFrame(() => {
+      optimizedDownloadButtonRef.current?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "center"
+      });
+    });
+  }, [recentOptimizedDownloads.length]);
+
   return (
     <section className="panel device-panel">
       <div className="panel-header">
@@ -182,7 +200,8 @@ export function DevicePanel({
       )}
       {recentOptimizedDownloads.length > 0 && (
         <button
-          className="icon-text recent-download-button"
+          ref={optimizedDownloadButtonRef}
+          className="icon-text recent-download-button optimized-download-button"
           type="button"
           onClick={onDownloadRecentOptimizedFile}
           title={

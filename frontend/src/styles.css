@@ -15,6 +15,7 @@
   --color-danger-bg: #fff6f5;
   --color-danger-border: #f0c5c5;
   --color-success: #2f6f54;
+  --color-on-success: #ffffff;
   --color-success-bg: #f0faf5;
   --color-success-border: #b9dfcb;
   --color-warning: #6f4b12;
@@ -52,6 +53,7 @@
   --color-danger-bg: #351c1c;
   --color-danger-border: #6b3430;
   --color-success: #9bd4b4;
+  --color-on-success: #111113;
   --color-success-bg: #17251d;
   --color-success-border: #365644;
   --color-warning: #f2d28c;
@@ -493,6 +495,18 @@ h2 {
 .dictionary-tools-button,
 .recent-download-button {
   width: 100%;
+}
+
+.optimized-download-button {
+  background: var(--color-success);
+  color: var(--color-on-success);
+  border-color: var(--color-success);
+}
+
+.optimized-download-button:hover,
+.optimized-download-button:focus-visible {
+  border-color: var(--color-success-border);
+  box-shadow: 0 0 0 2px var(--color-success-border);
 }
 
 .primary {
