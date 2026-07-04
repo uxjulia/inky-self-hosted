@@ -36,6 +36,7 @@ export function standaloneRecordToLibraryItem(record: StandaloneFileRecord): Lib
     title: record.title,
     original_path: record.filename,
     source_url: `standalone://library/${record.id}`,
+    cover_url: record.coverUrl || null,
     sent_at: record.sentAt || null,
     is_missing: false,
     last_scan_at: null,

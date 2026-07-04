@@ -1,3 +1,5 @@
+import JSZip from "jszip";
+
 const dbName = "inky-standalone-library";
 const dbVersion = 1;
 const fileStoreName = "files";
@@ -10,6 +12,7 @@ export type StandaloneFileRecord = {
   size: number;
   createdAt: string;
   sentAt?: string | null;
+  coverUrl?: string | null;
 };
 
 type StoredStandaloneFile = StandaloneFileRecord & {
@@ -40,6 +43,7 @@ export async function addStandaloneFile(file: File): Promise<StandaloneFileRecor
     size: file.size,
     createdAt: now,
     sentAt: null,
+    coverUrl: await extractEpubCoverDataUrl(file),
     blob: file
   };
 
@@ -120,4 +124,102 @@ function mediaTypeForFilename(filename: string) {
   if (lower.endsWith(".bmp")) return "image/bmp";
   if (lower.endsWith(".png")) return "image/png";
   return "application/octet-stream";
+}
+
+async function extractEpubCoverDataUrl(file: File) {
+  if (!file.name.toLowerCase().endsWith(".epub")) return null;
+
+  try {
+    const zip = await JSZip.loadAsync(file);
+    const containerText = await zip.file("META-INF/container.xml")?.async("text");
+    if (!containerText) return null;
+
+    const parser = new DOMParser();
+    const containerDoc = parser.parseFromString(containerText, "application/xml");
+    if (hasParserError(containerDoc)) return null;
+
+    const rootfile = firstElementByLocalName(containerDoc, "rootfile");
+    const opfPath = rootfile?.getAttribute("full-path");
+    if (!opfPath) return null;
+
+    const opfText = await zip.file(opfPath)?.async("text");
+    if (!opfText) return null;
+
+    const opfDoc = parser.parseFromString(opfText, "application/xml");
+    if (hasParserError(opfDoc)) return null;
+
+    const coverPath = findCoverPath(opfDoc, opfPath);
+    if (!coverPath) return null;
+
+    const coverEntry = zip.file(coverPath);
+    if (!coverEntry) return null;
+
+    const coverBlob = await coverEntry.async("blob");
+    return await blobToDataUrl(new Blob([coverBlob], { type: mediaTypeForFilename(coverPath) }));
+  } catch {
+    return null;
+  }
+}
+
+function findCoverPath(opfDoc: Document, opfPath: string) {
+  const items = Array.from(opfDoc.getElementsByTagName("*")).filter((element) => localName(element) === "item");
+  const coverId = Array.from(opfDoc.getElementsByTagName("*"))
+    .find((element) => localName(element) === "meta" && element.getAttribute("name") === "cover")
+    ?.getAttribute("content");
+
+  const coverImage = items.find((item) => (item.getAttribute("properties") || "").split(/\s+/).includes("cover-image"));
+  if (coverImage) return resolveEpubPath(opfPath, coverImage.getAttribute("href"));
+
+  if (coverId) {
+    const epub2Cover = items.find((item) => item.getAttribute("id") === coverId);
+    if (epub2Cover) return resolveEpubPath(opfPath, epub2Cover.getAttribute("href"));
+  }
+
+  const filenameCover = items.find((item) => {
+    const mediaType = item.getAttribute("media-type") || "";
+    const href = item.getAttribute("href") || "";
+    const id = item.getAttribute("id") || "";
+    return mediaType.startsWith("image/") && `${id} ${href}`.toLowerCase().includes("cover");
+  });
+  return filenameCover ? resolveEpubPath(opfPath, filenameCover.getAttribute("href")) : null;
+}
+
+function resolveEpubPath(opfPath: string, href: string | null) {
+  if (!href) return null;
+  const baseParts = opfPath.split("/");
+  baseParts.pop();
+  const parts = [...baseParts, ...href.split(/[?#]/, 1)[0].split("/")];
+  const resolved: string[] = [];
+
+  for (const part of parts) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      resolved.pop();
+    } else {
+      resolved.push(part);
+    }
+  }
+
+  return resolved.join("/");
+}
+
+function firstElementByLocalName(doc: Document, name: string) {
+  return Array.from(doc.getElementsByTagName("*")).find((element) => localName(element) === name) || null;
+}
+
+function localName(element: Element) {
+  return element.localName || element.tagName.split(":").pop() || element.tagName;
+}
+
+function hasParserError(doc: Document) {
+  return doc.getElementsByTagName("parsererror").length > 0;
+}
+
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.readAsDataURL(blob);
+  });
 }
