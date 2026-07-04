@@ -1,4 +1,6 @@
-import { Home } from "lucide-react";
+import { Home, X } from "lucide-react";
+import { useState } from "react";
+import { helpStorageBannerDismissedStorageKey } from "./appConstants";
 
 type HelpPageProps = {
   isDesktopApp: boolean;
@@ -18,13 +20,28 @@ export function HelpPage({
   onOpenApp
 }: HelpPageProps) {
   const usbOnlyMode = isHostedApp || isPublicReadOnly;
+  const [storageBannerDismissed, setStorageBannerDismissed] = useState(
+    () => window.localStorage.getItem(helpStorageBannerDismissedStorageKey) === "1"
+  );
+
+  function dismissStorageBanner() {
+    window.localStorage.setItem(helpStorageBannerDismissedStorageKey, "1");
+    setStorageBannerDismissed(true);
+  }
 
   return (
     <section className="help-page">
-      {usbOnlyMode && (<div className="help-storage-banner" role="note">
-        <strong>Note:</strong> All files are stored in your local browser and are not saved to any servers.
-        Switching browsers or clearing your browser cache will remove your library.
-      </div>)}
+      {usbOnlyMode && !storageBannerDismissed && (
+        <div className="help-storage-banner" role="note">
+          <span>
+            <strong>Note:</strong> All files are stored in your local browser and are not saved to any servers.
+            Switching browsers or clearing your browser cache will remove your library.
+          </span>
+          <button type="button" onClick={dismissStorageBanner} title="Dismiss note" aria-label="Dismiss storage note">
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       <div className="help-hero">
         <div>

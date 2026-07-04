@@ -279,6 +279,10 @@ h2 {
 }
 
 .help-storage-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
   max-width: 1080px;
   margin: 0 auto 12px;
   padding: 12px 14px;
@@ -290,6 +294,16 @@ h2 {
 }
 
 .help-storage-banner strong {
+  color: inherit;
+}
+
+.help-storage-banner button {
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
   color: inherit;
 }
 
