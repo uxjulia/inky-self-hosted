@@ -107,7 +107,7 @@ export function downloadBlob(blob: Blob, filename: string) {
   document.body.appendChild(link);
   link.click();
   link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export async function downloadOptimizedFiles(downloads: RecentOptimizedDownload[]) {
@@ -119,16 +119,28 @@ export async function downloadOptimizedFiles(downloads: RecentOptimizedDownload[
 
   const zip = new JSZip();
   const usedNames = new Set<string>();
-  downloads.forEach((download) => {
-    zip.file(uniqueZipFilename(download.filename || "optimized.epub", usedNames), download.blob);
+  for (const download of downloads) {
+    const filename = uniqueZipFilename(download.filename || "optimized.epub", usedNames);
+    zip.file(filename, await download.blob.arrayBuffer(), {
+      binary: true,
+      compression: "STORE"
+    });
+  }
+  const zipBytes = await zip.generateAsync({
+    type: "arraybuffer",
+    compression: "STORE",
+    mimeType: "application/zip"
   });
-  const blob = await zip.generateAsync({ type: "blob" });
+  const blob = new Blob([zipBytes], { type: "application/zip" });
   downloadBlob(blob, "optimized-epubs.zip");
 }
 
 function uniqueZipFilename(filename: string, usedNames: Set<string>) {
   const fallback = "optimized.epub";
-  const cleaned = filename.trim() || fallback;
+  const cleaned = filename
+    .replace(/[\\/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim() || fallback;
   const extensionStart = cleaned.lastIndexOf(".");
   const hasExtension = extensionStart > 0;
   const stem = hasExtension ? cleaned.slice(0, extensionStart) : cleaned;
