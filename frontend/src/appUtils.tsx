@@ -117,6 +117,11 @@ export async function downloadOptimizedFiles(downloads: RecentOptimizedDownload[
     return;
   }
 
+  const blob = await createOptimizedDownloadsZipBlob(downloads);
+  downloadBlob(blob, "optimized-epubs.zip");
+}
+
+export async function createOptimizedDownloadsZipBlob(downloads: RecentOptimizedDownload[]) {
   const zip = new JSZip();
   const usedNames = new Set<string>();
   for (const download of downloads) {
@@ -129,23 +134,27 @@ export async function downloadOptimizedFiles(downloads: RecentOptimizedDownload[
   const zipBytes = await zip.generateAsync({
     type: "arraybuffer",
     compression: "STORE",
+    streamFiles: false,
     mimeType: "application/zip"
   });
-  const blob = new Blob([zipBytes], { type: "application/zip" });
-  downloadBlob(blob, "optimized-epubs.zip");
+  return new Blob([zipBytes], { type: "application/zip" });
 }
 
 function uniqueZipFilename(filename: string, usedNames: Set<string>) {
   const fallback = "optimized.epub";
   const cleaned = filename
-    .replace(/[\\/]+/g, " ")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, " ")
     .replace(/\s+/g, " ")
     .trim() || fallback;
   const extensionStart = cleaned.lastIndexOf(".");
   const hasExtension = extensionStart > 0;
-  const stem = hasExtension ? cleaned.slice(0, extensionStart) : cleaned;
+  const stem =
+    (hasExtension ? cleaned.slice(0, extensionStart) : cleaned)
+      .replace(/^\.+/, "")
+      .replace(/[\s.]+$/g, "")
+      .trim() || "optimized";
   const extension = hasExtension ? cleaned.slice(extensionStart) : "";
-  let candidate = cleaned;
+  let candidate = `${stem}${extension}`;
   let counter = 2;
 
   while (usedNames.has(candidate)) {

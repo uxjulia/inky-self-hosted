@@ -1278,12 +1278,17 @@ export default function App() {
     const items = selectedLocalItems.filter((item) => !item.is_missing && canOptimizeLibraryItem(item));
     if (items.length === 0) return;
     setRecentOptimizedDownloads([]);
-    let optimizedCount = 0;
+    const optimizedDownloads: RecentOptimizedDownload[] = [];
     for (const item of items) {
-      if (await optimizeLibraryItem(item, { replaceRecentDownloads: false, showToast: false })) {
-        optimizedCount += 1;
-      }
+      const download = await optimizeLibraryItem(item, {
+        replaceRecentDownloads: false,
+        showToast: false,
+        addToRecentDownloads: false
+      });
+      if (download) optimizedDownloads.push(download);
     }
+    setRecentOptimizedDownloads(optimizedDownloads);
+    const optimizedCount = optimizedDownloads.length;
     if (optimizedCount > 0) {
       const prefix = optimizedCount === items.length ? `${optimizedCount}` : `${optimizedCount} of ${items.length}`;
       showToast(`${prefix} optimized ${optimizedCount === 1 ? "EPUB" : "EPUBs"} ready to download`);
@@ -1305,21 +1310,25 @@ export default function App() {
 
   async function optimizeLibraryItem(
     item: LibraryItem,
-    options: { replaceRecentDownloads?: boolean; showToast?: boolean } = {}
+    options: { replaceRecentDownloads?: boolean; showToast?: boolean; addToRecentDownloads?: boolean } = {}
   ) {
-    if (!canOptimizeLibraryItem(item)) return false;
+    if (!canOptimizeLibraryItem(item)) return null;
     const replaceRecentDownloads = options.replaceRecentDownloads ?? true;
     const shouldShowToast = options.showToast ?? true;
-    let optimized = false;
+    const shouldAddToRecentDownloads = options.addToRecentDownloads ?? true;
+    let optimizedDownload: RecentOptimizedDownload | null = null;
     setOptimizingLibraryItemId(item.id);
     try {
       const result = await runAction(
         async () => {
           if (usesBrowserLibrary) {
             const { record, blob } = await getStandaloneFile(item.id);
-            await prepareStandaloneBlobForSend(blob, record.filename, item.id, { replaceRecentDownloads });
+            const download = await prepareStandaloneBlobForSend(blob, record.filename, item.id, {
+              replaceRecentDownloads,
+              addToRecentDownloads: shouldAddToRecentDownloads
+            });
             if (shouldShowToast) showToast("Optimized EPUB ready to download");
-            return true;
+            return download;
           }
 
           if (replaceRecentDownloads) setRecentOptimizedDownloads([]);
@@ -1329,20 +1338,21 @@ export default function App() {
           });
           const completedJob = await waitForJobCompletion(job);
           const { blob, filename } = await downloadLibraryItemFile(item);
-          addRecentOptimizedDownload({
+          const download = {
             blob,
             filename: optimizedDeviceFilename(completedJob) || filename || libraryItemFilename(item)
-          });
+          };
+          if (shouldAddToRecentDownloads) addRecentOptimizedDownload(download);
           if (shouldShowToast) showToast("Optimized EPUB ready to download");
-          return true;
+          return download;
         },
         { toastOnError: true }
       );
-      optimized = result === true;
+      optimizedDownload = result || null;
     } finally {
       setOptimizingLibraryItemId(null);
     }
-    return optimized;
+    return optimizedDownload;
   }
 
   async function sendToDevice(item: LibraryItem) {
@@ -1413,16 +1423,17 @@ export default function App() {
     blob: Blob,
     filename: string,
     itemId: number,
-    options: { replaceRecentDownloads?: boolean } = {}
+    options: { replaceRecentDownloads?: boolean; addToRecentDownloads?: boolean } = {}
   ) {
     if (!hasEpubExtension(filename)) return { blob, filename };
     const jobId = crypto.randomUUID();
     const replaceRecentDownloads = options.replaceRecentDownloads ?? true;
+    const shouldAddToRecentDownloads = options.addToRecentDownloads ?? true;
     if (replaceRecentDownloads) setRecentOptimizedDownloads([]);
     if (canOptimizeBrowserFileOnServer()) {
       updateBrowserSendJob(jobId, itemId, 0, "Optimizing EPUB on server", "running");
       const result = await optimizeBrowserFileOnServer(blob, filename);
-      addRecentOptimizedDownload(result);
+      if (shouldAddToRecentDownloads) addRecentOptimizedDownload(result);
       updateBrowserSendJob(jobId, itemId, 100, "EPUB optimized on server", "succeeded");
       return result;
     }
@@ -1431,7 +1442,7 @@ export default function App() {
     const result = await optimizeEpubInBrowser(blob, filename, device, optimizerSettings, (progress, message) => {
       updateBrowserSendJob(jobId, itemId, progress, message, "running");
     });
-    addRecentOptimizedDownload(result);
+    if (shouldAddToRecentDownloads) addRecentOptimizedDownload(result);
     updateBrowserSendJob(jobId, itemId, 100, "EPUB optimized in browser", "succeeded");
     return result;
   }
