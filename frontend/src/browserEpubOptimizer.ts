@@ -689,7 +689,6 @@ function buildCrossInkLocationManifest(
   let nextLocation = 1;
   let totalWords = 0;
   let totalCharacters = 0;
-  const chapterGroups = buildChapterGroups(spine, xhtmlFiles, charactersPerReferencePage);
   const entries = spine.map((href, index) => {
     const text = extractVisibleText(xhtmlFiles[href] || "");
     const words = countWords(text);
@@ -707,8 +706,7 @@ function buildCrossInkLocationManifest(
       startLocation: locationCount > 0 ? nextLocation : 0,
       endLocation: locationCount > 0 ? nextLocation + locationCount - 1 : 0,
       startReferencePage: characters > 0 ? startReferencePage : 0,
-      endReferencePage: characters > 0 ? startReferencePage + referencePageCount - 1 : 0,
-      chapterGroup: chapterGroups.groupByHref.get(href) ?? index
+      endReferencePage: characters > 0 ? startReferencePage + referencePageCount - 1 : 0
     };
     nextLocation += locationCount;
     totalWords += words;
@@ -727,77 +725,8 @@ function buildCrossInkLocationManifest(
     totalCharacters,
     totalLocations: Math.max(0, nextLocation - 1),
     totalReferencePages: Math.ceil(totalCharacters / charactersPerReferencePage),
-    spine: entries,
-    chapterGroups: chapterGroups.groups
+    spine: entries
   };
-}
-
-function buildChapterGroups(
-  spine: string[],
-  xhtmlFiles: Record<string, string>,
-  charactersPerReferencePage = defaultCharactersPerReferencePage
-) {
-  const byChapterHref = new Map<
-    string,
-    {
-      href: string;
-      startSpineIndex: number;
-      endSpineIndex: number;
-      wordStart: number;
-      wordCount: number;
-      characterStart: number;
-      characterCount: number;
-    }
-  >();
-  const groupByHref = new Map<string, number>();
-  let totalWords = 0;
-  let totalCharacters = 0;
-
-  spine.forEach((href, spineIndex) => {
-    const chapterHref = originalChapterHref(href);
-    const text = extractVisibleText(xhtmlFiles[href] || "");
-    const words = countWords(text);
-    const characters = countReferenceCharacters(text);
-    const group = byChapterHref.get(chapterHref) || {
-      href: chapterHref,
-      startSpineIndex: spineIndex,
-      endSpineIndex: spineIndex,
-      wordStart: totalWords,
-      wordCount: 0,
-      characterStart: totalCharacters,
-      characterCount: 0
-    };
-    group.endSpineIndex = spineIndex;
-    group.wordCount += words;
-    group.characterCount += characters;
-    byChapterHref.set(chapterHref, group);
-    totalWords += words;
-    totalCharacters += characters;
-  });
-
-  const groups = Array.from(byChapterHref.values()).map((group, index) => {
-    for (let spineIndex = group.startSpineIndex; spineIndex <= group.endSpineIndex; spineIndex += 1) {
-      groupByHref.set(spine[spineIndex], index);
-    }
-    return {
-      index,
-      href: group.href,
-      startSpineIndex: group.startSpineIndex,
-      endSpineIndex: group.endSpineIndex,
-      wordStart: group.wordStart,
-      wordCount: group.wordCount,
-      characterStart: group.characterStart,
-      characterCount: group.characterCount,
-      startReferencePage:
-        group.characterCount > 0 ? Math.floor(group.characterStart / charactersPerReferencePage) + 1 : 0,
-      endReferencePage:
-        group.characterCount > 0
-          ? Math.ceil((group.characterStart + group.characterCount) / charactersPerReferencePage)
-          : 0
-    };
-  });
-
-  return { groups, groupByHref };
 }
 
 function normalizeCharactersPerReferencePage(value: number) {
@@ -807,10 +736,6 @@ function normalizeCharactersPerReferencePage(value: number) {
 function countReferenceCharacters(text: string) {
   const normalized = text.replace(/\s+/g, " ").trim();
   return Array.from(normalized).length;
-}
-
-function originalChapterHref(href: string) {
-  return href.replace(/__ci_section_\d+(?=\.[^/.]+$)/, "");
 }
 
 function parseSpineHrefs(opfText: string, opfPath: string) {
