@@ -25,8 +25,6 @@ export const defaultOptimizerSettings: OptimizerSettings = {
   contrast_factor: 1.2,
   eink_quantize: true,
   light_novel: false,
-  split_long_sections: true,
-  section_split_word_threshold: 4000,
   characters_per_reference_page: 1500,
   remove_fonts: true,
   remove_css: true,

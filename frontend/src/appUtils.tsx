@@ -254,12 +254,6 @@ export function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
     contrast_factor: clampNumber(Number(stored.contrast_factor ?? defaultOptimizerSettings.contrast_factor), 0.5, 3),
     eink_quantize: booleanOrDefault(stored.eink_quantize, defaultOptimizerSettings.eink_quantize),
     light_novel: booleanOrDefault(stored.light_novel, defaultOptimizerSettings.light_novel),
-    split_long_sections: booleanOrDefault(stored.split_long_sections, defaultOptimizerSettings.split_long_sections),
-    section_split_word_threshold: clampNumber(
-      Number(stored.section_split_word_threshold ?? defaultOptimizerSettings.section_split_word_threshold),
-      1,
-      10000
-    ),
     characters_per_reference_page: clampNumber(
       Number(
         normalizedCharactersPerReferencePage ??

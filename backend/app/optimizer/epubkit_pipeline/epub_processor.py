@@ -38,7 +38,6 @@ from epub_structure import (
     write_x_location_manifest, write_crossink_optimizer_manifest,
     remove_css_files_from_opf
 )
-from section_splitter import split_long_spine_sections
 
 
 @dataclass
@@ -59,8 +58,6 @@ class ProcessingOptions:
     clean_metadata: bool = True
     text_cleanup: bool = True
     normalize_quotes: bool = True
-    split_long_sections: bool = False
-    section_split_word_threshold: int = 4000
     characters_per_reference_page: int = 1500
     filename_format: str = 'author-title'
     use_original_filename: bool = False
@@ -92,9 +89,6 @@ class ProcessingReport:
     attrs_stripped: int = 0
     text_fixes_total: int = 0
     text_cleanup_summary: str = ''
-    sections_split: int = 0
-    synthetic_sections_added: int = 0
-    section_links_rewritten: int = 0
     os_artifacts_removed: int = 0
     cover_generated: bool = False
     x_locations: int = 0
@@ -140,10 +134,6 @@ class ProcessingReport:
 
         if self.text_fixes_total > 0:
             parts.append(f"Text cleanup: {self.text_cleanup_summary}")
-
-        if self.sections_split > 0:
-            total_sections = self.sections_split + self.synthetic_sections_added
-            parts.append(f"Split {self.sections_split} long EPUB section(s) into {total_sections} smaller sections")
 
         if self.os_artifacts_removed > 0:
             parts.append(f"Removed {self.os_artifacts_removed} OS artifacts")
@@ -578,14 +568,6 @@ def process_epub(input_path: str, output_path: str,
 
             report.text_fixes_total = aggregate_report.total_fixes
             report.text_cleanup_summary = aggregate_report.summary()
-
-        # Step 16: Split long spine sections (86%)
-        if options.split_long_sections:
-            _progress(86, "Splitting long EPUB sections...")
-            split_report = split_long_spine_sections(work_dir, opf_path, options.section_split_word_threshold)
-            report.sections_split = split_report.files_split
-            report.synthetic_sections_added = split_report.sections_added
-            report.section_links_rewritten = split_report.links_rewritten
 
         # Step 17: Clean metadata (88%)
         if options.clean_metadata:

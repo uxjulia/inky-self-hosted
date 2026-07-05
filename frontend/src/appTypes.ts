@@ -20,8 +20,6 @@ export type OptimizerSettings = {
   contrast_factor: number;
   eink_quantize: boolean;
   light_novel: boolean;
-  split_long_sections: boolean;
-  section_split_word_threshold: number;
   characters_per_reference_page: number;
   remove_fonts: boolean;
   remove_css: boolean;

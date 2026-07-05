@@ -139,7 +139,6 @@ export default function App() {
   const browseLoadSeq = useRef(0);
   const localFileInputRef = useRef<HTMLInputElement | null>(null);
   const stablePageTooltipButtonRef = useRef<HTMLButtonElement | null>(null);
-  const sectionSplitTooltipButtonRef = useRef<HTMLButtonElement | null>(null);
   const [view, setView] = useState<AppView>(() => getInitialView());
   const [authChecked, setAuthChecked] = useState(false);
   const [authEnabled, setAuthEnabled] = useState(false);
@@ -173,9 +172,6 @@ export default function App() {
   const [optimizerSettings, setOptimizerSettings] = useState<OptimizerSettings>(() => getInitialOptimizerSettings());
   const [qualityDraft, setQualityDraft] = useState(() => String(optimizerSettings.quality));
   const [contrastFactorDraft, setContrastFactorDraft] = useState(() => String(optimizerSettings.contrast_factor));
-  const [sectionSplitThresholdDraft, setSectionSplitThresholdDraft] = useState(() =>
-    String(optimizerSettings.section_split_word_threshold ?? defaultOptimizerSettings.section_split_word_threshold)
-  );
   const [referencePageCharactersDraft, setReferencePageCharactersDraft] = useState(() =>
     String(optimizerSettings.characters_per_reference_page)
   );
@@ -202,7 +198,6 @@ export default function App() {
   const [dictionaryZipFile, setDictionaryZipFile] = useState<File | null>(null);
   const [serverModalOpen, setServerModalOpen] = useState(false);
   const [stablePageTooltipPosition, setStablePageTooltipPosition] = useState<FloatingTooltipPosition | null>(null);
-  const [sectionSplitTooltipPosition, setSectionSplitTooltipPosition] = useState<FloatingTooltipPosition | null>(null);
   const [editingSource, setEditingSource] = useState<Source | null>(null);
   const [draggedSourceId, setDraggedSourceId] = useState<number | null>(null);
   const [dragOverSourceId, setDragOverSourceId] = useState<number | null>(null);
@@ -234,25 +229,12 @@ export default function App() {
     if (position) setStablePageTooltipPosition(position);
   }
 
-  function updateSectionSplitTooltipPosition() {
-    const position = tooltipPositionForButton(sectionSplitTooltipButtonRef.current);
-    if (position) setSectionSplitTooltipPosition(position);
-  }
-
   function showStablePageTooltip() {
     updateStablePageTooltipPosition();
   }
 
   function hideStablePageTooltip() {
     setStablePageTooltipPosition(null);
-  }
-
-  function showSectionSplitTooltip() {
-    updateSectionSplitTooltipPosition();
-  }
-
-  function hideSectionSplitTooltip() {
-    setSectionSplitTooltipPosition(null);
   }
 
   const displayedLibrary = useMemo(() => {
@@ -390,7 +372,6 @@ export default function App() {
   useEffect(() => {
     if (!optimizerModalOpen) {
       hideStablePageTooltip();
-      hideSectionSplitTooltip();
     }
   }, [optimizerModalOpen]);
 
@@ -403,16 +384,6 @@ export default function App() {
       window.removeEventListener("scroll", updateStablePageTooltipPosition, true);
     };
   }, [stablePageTooltipPosition]);
-
-  useEffect(() => {
-    if (!sectionSplitTooltipPosition) return;
-    window.addEventListener("resize", updateSectionSplitTooltipPosition);
-    window.addEventListener("scroll", updateSectionSplitTooltipPosition, true);
-    return () => {
-      window.removeEventListener("resize", updateSectionSplitTooltipPosition);
-      window.removeEventListener("scroll", updateSectionSplitTooltipPosition, true);
-    };
-  }, [sectionSplitTooltipPosition]);
 
   useEffect(() => {
     const clampedIndex = clampLocalSourceIndex(localSourceIndex, sources.length);
@@ -921,22 +892,6 @@ export default function App() {
     commitOptimizerNumberDraft("contrast_factor", contrastFactorDraft, 0.5, 3, setContrastFactorDraft, true);
   }
 
-  function updateSectionSplitThresholdDraft(value: string) {
-    setSectionSplitThresholdDraft(value);
-    commitOptimizerNumberDraft("section_split_word_threshold", value, 1, 10000, setSectionSplitThresholdDraft);
-  }
-
-  function commitSectionSplitThresholdDraft() {
-    commitOptimizerNumberDraft(
-      "section_split_word_threshold",
-      sectionSplitThresholdDraft,
-      1,
-      10000,
-      setSectionSplitThresholdDraft,
-      true
-    );
-  }
-
   function updateReferencePageCharactersDraft(value: string) {
     setReferencePageCharactersDraft(value);
     commitOptimizerNumberDraft("characters_per_reference_page", value, 1, 10000, setReferencePageCharactersDraft);
@@ -953,9 +908,14 @@ export default function App() {
     );
   }
 
-  function commitOptimizerNumberDraft<
-    K extends "quality" | "contrast_factor" | "section_split_word_threshold" | "characters_per_reference_page"
-  >(key: K, draft: string, min: number, max: number, setDraft: (value: string) => void, force = false) {
+  function commitOptimizerNumberDraft<K extends "quality" | "contrast_factor" | "characters_per_reference_page">(
+    key: K,
+    draft: string,
+    min: number,
+    max: number,
+    setDraft: (value: string) => void,
+    force = false
+  ) {
     const trimmed = draft.trim();
     if (!trimmed || trimmed === "." || trimmed.endsWith(".")) {
       if (force) setDraft(String(optimizerSettings[key] ?? defaultOptimizerSettings[key]));
@@ -977,7 +937,6 @@ export default function App() {
     setOptimizerSettings(defaultOptimizerSettings);
     setQualityDraft(String(defaultOptimizerSettings.quality));
     setContrastFactorDraft(String(defaultOptimizerSettings.contrast_factor));
-    setSectionSplitThresholdDraft(String(defaultOptimizerSettings.section_split_word_threshold));
     setReferencePageCharactersDraft(String(defaultOptimizerSettings.characters_per_reference_page));
   }
 
@@ -1990,20 +1949,6 @@ export default function App() {
         </div>
       )}
 
-      {/* {sectionSplitTooltipPosition && (
-        <div
-          id="section-split-threshold-tooltip"
-          className="advanced-tooltip-content"
-          role="tooltip"
-          style={{
-            left: `${sectionSplitTooltipPosition.left}px`,
-            top: `${sectionSplitTooltipPosition.top}px`
-          }}
-        >
-          The number of words used to determine when to split a large section into smaller ones. The lower this number is, the more sections that will be created.
-        </div>
-      )} */}
-
       {view === "app" && sourceModalOpen && (
         <div className="modal-backdrop" role="presentation">
           <form
@@ -2135,9 +2080,7 @@ export default function App() {
           standaloneMode={standaloneMode}
           qualityDraft={qualityDraft}
           contrastFactorDraft={contrastFactorDraft}
-          sectionSplitThresholdDraft={sectionSplitThresholdDraft}
           referencePageCharactersDraft={referencePageCharactersDraft}
-          sectionSplitTooltipButtonRef={sectionSplitTooltipButtonRef}
           stablePageTooltipButtonRef={stablePageTooltipButtonRef}
           onClose={() => setOptimizerModalOpen(false)}
           onSwapFilenameRenderFields={swapFilenameRenderFields}
@@ -2149,12 +2092,8 @@ export default function App() {
           onUpdateContrastFactorFromSlider={updateContrastFactorFromSlider}
           onUpdateContrastFactorDraft={updateContrastFactorDraft}
           onCommitContrastFactorDraft={commitContrastFactorDraft}
-          onUpdateSectionSplitThresholdDraft={updateSectionSplitThresholdDraft}
-          onCommitSectionSplitThresholdDraft={commitSectionSplitThresholdDraft}
           onUpdateReferencePageCharactersDraft={updateReferencePageCharactersDraft}
           onCommitReferencePageCharactersDraft={commitReferencePageCharactersDraft}
-          onShowSectionSplitTooltip={showSectionSplitTooltip}
-          onHideSectionSplitTooltip={hideSectionSplitTooltip}
           onShowStablePageTooltip={showStablePageTooltip}
           onHideStablePageTooltip={hideStablePageTooltip}
           onResetOptimizerSettings={resetOptimizerSettings}

@@ -9,9 +9,7 @@ type OptimizerSettingsModalProps = {
   standaloneMode: boolean;
   qualityDraft: string;
   contrastFactorDraft: string;
-  sectionSplitThresholdDraft: string;
   referencePageCharactersDraft: string;
-  sectionSplitTooltipButtonRef: RefObject<HTMLButtonElement | null>;
   stablePageTooltipButtonRef: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
   onSwapFilenameRenderFields: () => void;
@@ -23,12 +21,8 @@ type OptimizerSettingsModalProps = {
   onUpdateContrastFactorFromSlider: (value: string) => void;
   onUpdateContrastFactorDraft: (value: string) => void;
   onCommitContrastFactorDraft: () => void;
-  onUpdateSectionSplitThresholdDraft: (value: string) => void;
-  onCommitSectionSplitThresholdDraft: () => void;
   onUpdateReferencePageCharactersDraft: (value: string) => void;
   onCommitReferencePageCharactersDraft: () => void;
-  onShowSectionSplitTooltip: () => void;
-  onHideSectionSplitTooltip: () => void;
   onShowStablePageTooltip: () => void;
   onHideStablePageTooltip: () => void;
   onResetOptimizerSettings: () => void;
@@ -40,9 +34,7 @@ export function OptimizerSettingsModal({
   standaloneMode,
   qualityDraft,
   contrastFactorDraft,
-  sectionSplitThresholdDraft,
   referencePageCharactersDraft,
-  sectionSplitTooltipButtonRef,
   stablePageTooltipButtonRef,
   onClose,
   onSwapFilenameRenderFields,
@@ -54,12 +46,8 @@ export function OptimizerSettingsModal({
   onUpdateContrastFactorFromSlider,
   onUpdateContrastFactorDraft,
   onCommitContrastFactorDraft,
-  onUpdateSectionSplitThresholdDraft,
-  onCommitSectionSplitThresholdDraft,
   onUpdateReferencePageCharactersDraft,
   onCommitReferencePageCharactersDraft,
-  onShowSectionSplitTooltip,
-  onHideSectionSplitTooltip,
   onShowStablePageTooltip,
   onHideStablePageTooltip,
   onResetOptimizerSettings
@@ -215,14 +203,6 @@ export function OptimizerSettingsModal({
             </label>
           )}
 
-          <label className="toggle-field">
-            <input
-              type="checkbox"
-              checked={optimizerSettings.split_long_sections}
-              onChange={(event) => onUpdateOptimizerSetting("split_long_sections", event.target.checked)}
-            />
-            <span>Split long EPUB sections</span>
-          </label>
           <div className="field">
             <div className="field-label">
               <label htmlFor="reference-page-characters">Stable Page Numbers: Characters per page</label>
