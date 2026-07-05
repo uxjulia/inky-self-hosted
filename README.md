@@ -130,6 +130,10 @@ Only set `INKY_AUTH_USERNAME` and `INKY_AUTH_PASSWORD` for a private instance.
 Install all frontend and backend dependencies:
 
 ```bash
+# Required by backend SVG rasterization.
+# Debian/Ubuntu/WSL: sudo apt-get install -y libcairo2
+# macOS: brew install cairo
+
 npm install
 ```
 

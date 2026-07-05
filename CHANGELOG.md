@@ -18,3 +18,4 @@
 ### Changed
 
 - EPUB optimization now tree-shakes unused CSS rules and removes unreachable stylesheet files.
+- EPUB optimization now rasterizes SVG image resources to JPEG so CrossInk can display more dividers and artwork.

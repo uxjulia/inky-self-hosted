@@ -1,4 +1,5 @@
 beautifulsoup4==4.12.3
+cairosvg==2.7.1
 cssutils==2.11.1
 fastapi==0.115.6
 feedparser==6.0.11
@@ -9,4 +10,3 @@ pydantic-settings==2.7.1
 python-multipart==0.0.20
 sqlalchemy==2.0.36
 uvicorn[standard]==0.34.0
-

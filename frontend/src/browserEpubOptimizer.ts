@@ -46,7 +46,7 @@ type UsedSelectors = {
   elements: Set<string>;
 };
 
-const imageExtensionPattern = /\.(png|gif|webp|bmp|jpe?g)$/i;
+const imageExtensionPattern = /\.(png|gif|webp|bmp|jpe?g|svg)$/i;
 const xhtmlExtensionPattern = /\.(xhtml|html|htm)$/i;
 const cssExtensionPattern = /\.css$/i;
 const fontExtensionPattern = /\.(ttf|otf|woff2?|eot)$/i;
@@ -103,7 +103,7 @@ export async function optimizeEpubInBrowser(
 
     if (imageExtensionPattern.test(path)) {
       try {
-        const result = await processImage(await entry.async("arraybuffer"), device, settings);
+        const result = await processImage(await entry.async("arraybuffer"), device, settings, imageMimeType(path));
         const outputPath = imageRenameMap.get(path) || path;
         out.file(outputPath, result.blob, {
           compression: "DEFLATE",
@@ -111,6 +111,7 @@ export async function optimizeEpubInBrowser(
           createFolders: false
         });
       } catch {
+        imageRenameMap.delete(path);
         out.file(path, await entry.async("arraybuffer"), {
           compression: "DEFLATE",
           compressionOptions: { level: 8 },
@@ -217,10 +218,11 @@ function buildImageRenameMap(entries: [string, JSZip.JSZipObject][]) {
 async function processImage(
   data: ArrayBuffer,
   device: BrowserOptimizeDevice,
-  settings: BrowserOptimizerSettings
+  settings: BrowserOptimizerSettings,
+  mimeType = ""
 ): Promise<ImageProcessResult> {
   const dimensions = device === "x4" ? { width: 800, height: 480 } : { width: 792, height: 528 };
-  const image = await loadImage(data);
+  const image = await loadImage(data, mimeType);
   const scale = Math.min(1, dimensions.width / image.naturalWidth, dimensions.height / image.naturalHeight);
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
   const height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -232,6 +234,8 @@ async function processImage(
   });
   if (!context) throw new Error("Canvas is not available.");
   context.imageSmoothingQuality = "high";
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, width, height);
   context.drawImage(image, 0, 0, width, height);
   URL.revokeObjectURL(image.src);
 
@@ -245,9 +249,9 @@ async function processImage(
   return { blob, width, height };
 }
 
-function loadImage(data: ArrayBuffer): Promise<HTMLImageElement> {
+function loadImage(data: ArrayBuffer, mimeType = ""): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(new Blob([data]));
+    const url = URL.createObjectURL(new Blob([data], mimeType ? { type: mimeType } : undefined));
     const image = new Image();
     image.onload = () => resolve(image);
     image.onerror = () => {
@@ -256,6 +260,16 @@ function loadImage(data: ArrayBuffer): Promise<HTMLImageElement> {
     };
     image.src = url;
   });
+}
+
+function imageMimeType(path: string) {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".svg")) return "image/svg+xml";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".bmp")) return "image/bmp";
+  return "image/jpeg";
 }
 
 function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
