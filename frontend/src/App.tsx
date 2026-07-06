@@ -2062,9 +2062,17 @@ export default function App() {
                 onChange={(event) => setDictionaryZipFile(event.target.files?.[0] || null)}
               />
             </label>
-            <p className="form-help">
-              Unzip this folder into <code>/.dictionaries/</code> on your CrossInk SD card.
-            </p>
+            <div className="form-help dictionary-help">
+              <p>Upload one zipped StarDict dictionary. The ZIP can contain the files directly or inside one folder.</p>
+              <p>
+                Required files must share the same name: <code>.ifo</code>, <code>.idx</code>, and <code>.dict</code> or{" "}
+                <code>.dict.dz</code>. Synonym files like <code>.syn</code> or <code>.syn.dz</code> are optional.
+              </p>
+              <p>
+                After preparation, download the new ZIP and unzip its folder into <code>/.dictionaries/</code> on your
+                CrossInk SD card.
+              </p>
+            </div>
             <div className="modal-actions">
               <button
                 type="button"
