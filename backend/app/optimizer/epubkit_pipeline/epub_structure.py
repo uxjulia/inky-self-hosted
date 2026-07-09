@@ -175,7 +175,7 @@ def write_x_location_manifest(
     manifest = {
         'format': 'x-locations',
         'version': 1,
-        'generator': 'auto-epub-optimizer-cli',
+        'generator': 'inky-backend-optimizer',
         'unit': 'word',
         'referencePageUnit': 'character',
         'wordsPerLocation': X_LOCATION_WORDS_PER_UNIT,

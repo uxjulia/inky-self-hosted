@@ -19,7 +19,12 @@ import type { DragEvent, FormEvent, KeyboardEvent } from "react";
 import { optimizeEpubInBrowser } from "./browserEpubOptimizer";
 import { probeStandaloneDevice, sendBlobToDevice } from "./deviceTransfer";
 import { HelpPage } from "./HelpPage";
-import { probeSerialDevice, sendBlobToSerialDevice, serialTransferSupported } from "./serialTransfer";
+import {
+  isSerialTransferCanceled,
+  probeSerialDevice,
+  sendBlobToSerialDevice,
+  serialTransferSupported
+} from "./serialTransfer";
 import {
   addStandaloneFile,
   deleteStandaloneFile,
@@ -139,6 +144,7 @@ export default function App() {
   const browseLoadSeq = useRef(0);
   const localFileInputRef = useRef<HTMLInputElement | null>(null);
   const stablePageTooltipButtonRef = useRef<HTMLButtonElement | null>(null);
+  const usbSendAbortControllerRef = useRef<AbortController | null>(null);
   const [view, setView] = useState<AppView>(() => getInitialView());
   const [authChecked, setAuthChecked] = useState(false);
   const [authEnabled, setAuthEnabled] = useState(false);
@@ -160,6 +166,7 @@ export default function App() {
   const [selectedLocalItemIds, setSelectedLocalItemIds] = useState<Set<number>>(() => new Set());
   const [jobs, setJobs] = useState<Job[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [cancelableUsbSendJobId, setCancelableUsbSendJobId] = useState<string | null>(null);
   const [recentOptimizedDownloads, setRecentOptimizedDownloads] = useState<RecentOptimizedDownload[]>([]);
   const [recentPreparedDictionaryDownload, setRecentPreparedDictionaryDownload] =
     useState<PreparedDictionaryDownload | null>(null);
@@ -1299,7 +1306,8 @@ export default function App() {
   async function sendSelectedLocalItems() {
     const items = selectedLocalItems.filter((item) => !item.is_missing);
     for (const item of items) {
-      await sendToDevice(item);
+      const sent = await sendToDevice(item);
+      if (!sent) return;
     }
     clearLocalItemSelection();
   }
@@ -1356,7 +1364,7 @@ export default function App() {
   }
 
   async function sendToDevice(item: LibraryItem) {
-    await runAction(async () => {
+    const result = await runAction(async () => {
       if (transferMode === "usb") {
         if (usesBrowserLibrary) {
           const { record, blob } = await getStandaloneFile(item.id);
@@ -1365,13 +1373,13 @@ export default function App() {
           await markStandaloneFileSent(item.id);
           showToast("Sent to device");
           await loadLibrary();
-          return;
+          return true;
         }
 
         await sendLibraryItemViaUsb(item);
         showToast("Sent to device");
         await loadLibrary();
-        return;
+        return true;
       }
 
       if (usesBrowserLibrary) {
@@ -1402,7 +1410,7 @@ export default function App() {
         updateBrowserSendJob(jobId, item.id, 100, "Sent to device", "succeeded");
         showToast("Sent to device");
         await loadLibrary();
-        return;
+        return true;
       }
 
       const job = await api<Job>(`/api/library/${item.id}/send`, {
@@ -1416,7 +1424,9 @@ export default function App() {
       });
       trackJob(job);
       showToast("Send queued");
+      return true;
     });
+    return result === true;
   }
 
   async function prepareStandaloneBlobForSend(
@@ -1491,8 +1501,11 @@ export default function App() {
   async function sendBlobViaUsb(blob: Blob, filename: string, itemId: number) {
     const jobId = crypto.randomUUID();
     const transferLog = createTransferLogger("usb", filename);
+    const controller = new AbortController();
     let lastProgress = 0;
     let lastMessage = "Preparing USB upload";
+    usbSendAbortControllerRef.current = controller;
+    setCancelableUsbSendJobId(jobId);
     updateBrowserSendJob(jobId, itemId, 0, "Preparing USB upload", "running");
     transferLog(0, `Starting USB upload to ${destinationPath || "/"}`);
     try {
@@ -1506,14 +1519,25 @@ export default function App() {
           updateBrowserSendJob(jobId, itemId, progress, message, "running");
           transferLog(progress, message);
         },
-        (message) => transferLog(null, message)
+        (message) => transferLog(null, message),
+        controller.signal
       );
       transferLog(100, "USB upload complete");
     } catch (error) {
+      if (controller.signal.aborted || isSerialTransferCanceled(error)) {
+        updateBrowserSendJob(jobId, itemId, lastProgress, "USB send canceled", "canceled");
+        transferLog(null, "USB upload canceled", "warning");
+        throw new Error("USB send canceled");
+      }
       const message = messageFromUnknown(error);
       updateBrowserSendJob(jobId, itemId, lastProgress, message, "failed");
       transferLog(null, `USB upload failed after ${lastMessage}: ${message}`, "error");
       throw error;
+    } finally {
+      if (usbSendAbortControllerRef.current === controller) {
+        usbSendAbortControllerRef.current = null;
+      }
+      setCancelableUsbSendJobId((current) => (current === jobId ? null : current));
     }
     updateBrowserSendJob(jobId, itemId, 100, "Sent to device over USB", "succeeded");
   }
@@ -1626,6 +1650,10 @@ export default function App() {
     try {
       return await action();
     } catch (caught) {
+      if (isSerialTransferCanceled(caught)) {
+        setError("");
+        return undefined;
+      }
       const message = caught instanceof Error ? caught.message : String(caught);
       setError(message);
       if (options.toastOnError) showToast(readableError(message), "error");
@@ -1658,6 +1686,12 @@ export default function App() {
         item_id: itemId
       }
     ]);
+  }
+
+  function cancelUsbSend() {
+    const controller = usbSendAbortControllerRef.current;
+    if (!controller || controller.signal.aborted) return;
+    controller.abort();
   }
 
   function openHelp() {
@@ -1832,6 +1866,7 @@ export default function App() {
               recentOptimizedDownloads={recentOptimizedDownloads}
               recentPreparedDictionaryDownload={recentPreparedDictionaryDownload}
               jobs={jobs}
+              canCancelUsbSend={Boolean(cancelableUsbSendJobId)}
               onProbeDevice={probeDevice}
               onSetDeviceError={setDeviceError}
               onSetDeviceStatus={setDeviceStatus}
@@ -1843,6 +1878,7 @@ export default function App() {
               onOpenDictionaryTools={() => setDictionaryModalOpen(true)}
               onDownloadRecentOptimizedFile={downloadRecentOptimizedFile}
               onDownloadPreparedDictionaryFile={downloadPreparedDictionaryFile}
+              onCancelUsbSend={cancelUsbSend}
             />
 
             <SourcePanel

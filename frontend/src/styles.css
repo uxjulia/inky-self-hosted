@@ -1070,6 +1070,16 @@ h2 {
   color: var(--color-danger);
 }
 
+.job-log-line-canceled {
+  color: var(--color-muted);
+}
+
+.cancel-send-button {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: var(--color-panel);
+}
+
 .help-card code {
   background: var(--color-border-strong);
   padding: 2px;

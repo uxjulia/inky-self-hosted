@@ -40,11 +40,16 @@ const serialWriteTimeoutMs = 45000;
 const serialOpenDrainMs = 200;
 const serialCloseTimeoutMs = 1500;
 const maxIdleSerialBufferBytes = 8192;
+const serialTransferCanceledMessage = "USB send canceled";
 let activeSerialOperation: Promise<unknown> | null = null;
 let retainedSerialConnection: SerialConnection | null = null;
 
 export function serialTransferSupported() {
   return Boolean(navigator.serial);
+}
+
+export function isSerialTransferCanceled(error: unknown) {
+  return error instanceof Error && error.message === serialTransferCanceledMessage;
 }
 
 export async function probeSerialDevice(): Promise<Record<string, unknown>> {
@@ -71,17 +76,25 @@ export async function sendBlobToSerialDevice(
   filename: string,
   destinationPath: string,
   progress?: SerialTransferProgress,
-  diagnostic?: SerialTransferDiagnostic
+  diagnostic?: SerialTransferDiagnostic,
+  signal?: AbortSignal
 ): Promise<SerialTransferResult> {
   return withSerialOperation(async () => {
+    throwIfSerialTransferCanceled(signal);
     const connection = await openSerialConnection();
     const finalName = deviceFilename(filename);
     const devicePath = joinSerialPath(destinationPath, finalName);
+    const closeOnAbort = () => {
+      void closeSerialConnection(connection);
+    };
+    signal?.addEventListener("abort", closeOnAbort, { once: true });
 
     try {
+      throwIfSerialTransferCanceled(signal);
       progress?.(2, "Connected over USB");
-      await ensureSerialFolder(connection, destinationPath, progress);
-      await writeSerialFile(connection, devicePath, blob, progress, diagnostic);
+      await ensureSerialFolder(connection, destinationPath, progress, signal);
+      await writeSerialFile(connection, devicePath, blob, progress, diagnostic, signal);
+      throwIfSerialTransferCanceled(signal);
       progress?.(100, "Sent to device");
       return {
         destination_path: normalizeSerialDestinationPath(destinationPath),
@@ -90,7 +103,12 @@ export async function sendBlobToSerialDevice(
       };
     } catch (error) {
       await closeSerialConnection(connection);
+      if (signal?.aborted || isSerialTransferCanceled(error)) {
+        throw createSerialTransferCanceledError();
+      }
       throw error;
+    } finally {
+      signal?.removeEventListener("abort", closeOnAbort);
     }
   });
 }
@@ -110,15 +128,27 @@ class SerialConnection {
     return !this.closed && Boolean(this.port.readable && this.port.writable);
   }
 
-  async write(data: Uint8Array, timeoutMs = serialWriteTimeoutMs, label = "serial write", onStillWaiting?: () => void) {
+  async write(
+    data: Uint8Array,
+    timeoutMs = serialWriteTimeoutMs,
+    label = "serial write",
+    onStillWaiting?: () => void,
+    signal?: AbortSignal
+  ) {
+    throwIfSerialTransferCanceled(signal);
     if (!this.port.writable) throw new Error("Serial port is not writable.");
     const writer = this.port.writable.getWriter();
     let didTimeout = false;
     const waitTimer = window.setTimeout(() => onStillWaiting?.(), 3000);
+    const abortWrite = () => {
+      void writer.abort(createSerialTransferCanceledError());
+    };
+    signal?.addEventListener("abort", abortWrite, { once: true });
     try {
       await withTimeout(writer.write(data), timeoutMs, label, () => {
         didTimeout = true;
       });
+      throwIfSerialTransferCanceled(signal);
     } catch (error) {
       if (didTimeout) {
         try {
@@ -130,6 +160,7 @@ class SerialConnection {
       throw error;
     } finally {
       window.clearTimeout(waitTimer);
+      signal?.removeEventListener("abort", abortWrite);
       try {
         writer.releaseLock();
       } catch {
@@ -138,7 +169,8 @@ class SerialConnection {
     }
   }
 
-  readByte(timeoutMs = 30000): Promise<number> {
+  readByte(timeoutMs = 30000, signal?: AbortSignal): Promise<number> {
+    throwIfSerialTransferCanceled(signal);
     return new Promise((resolve, reject) => {
       if (this.buffer.length > 0) {
         resolve(this.buffer.shift() as number);
@@ -146,29 +178,43 @@ class SerialConnection {
       }
 
       let timer = 0;
-      const waiter = (value: number) => {
+      let abortRead = () => {};
+      const cleanup = () => {
         window.clearTimeout(timer);
+        signal?.removeEventListener("abort", abortRead);
+      };
+      const waiter = (value: number) => {
+        cleanup();
         if (value === -1) reject(new Error("Serial port closed."));
         else resolve(value);
       };
+      abortRead = () => {
+        const index = this.waiters.indexOf(waiter);
+        if (index !== -1) this.waiters.splice(index, 1);
+        cleanup();
+        reject(createSerialTransferCanceledError());
+      };
 
       this.waiters.push(waiter);
+      signal?.addEventListener("abort", abortRead, { once: true });
       timer = window.setTimeout(() => {
         const index = this.waiters.indexOf(waiter);
         if (index !== -1) this.waiters.splice(index, 1);
+        signal?.removeEventListener("abort", abortRead);
         reject(new Error("Serial read timed out."));
       }, timeoutMs);
     });
   }
 
-  async readLine(timeoutMs = 5000) {
+  async readLine(timeoutMs = 5000, signal?: AbortSignal) {
     const deadline = Date.now() + timeoutMs;
     let line = "";
 
     while (true) {
+      throwIfSerialTransferCanceled(signal);
       const remaining = deadline - Date.now();
       if (remaining <= 0) throw new Error("Timed out reading serial response.");
-      const byte = await this.readByte(remaining);
+      const byte = await this.readByte(remaining, signal);
       if (byte === 0x0a) return line;
       if (byte !== 0x0d) line += String.fromCharCode(byte);
     }
@@ -287,26 +333,35 @@ async function closeSerialConnection(connection: SerialConnection) {
 async function ensureSerialFolder(
   connection: SerialConnection,
   destinationPath: string,
-  progress?: SerialTransferProgress
+  progress?: SerialTransferProgress,
+  signal?: AbortSignal
 ) {
   const segments = destinationFolderSegments(destinationPath);
   let current = "/sdcard";
 
   for (const segment of segments) {
+    throwIfSerialTransferCanceled(signal);
     current = `${current}/${segment}`;
     progress?.(4, `Creating ${current.replace("/sdcard", "") || "/"}`);
-    await serialMkdir(connection, current);
+    await serialMkdir(connection, current, signal);
   }
 }
 
-async function serialMkdir(connection: SerialConnection, path: string) {
+async function serialMkdir(connection: SerialConnection, path: string, signal?: AbortSignal) {
   const pathBytes = textEncoder.encode(path);
-  await connection.write(new Uint8Array([...commandMagic, 0x4b, ...u16le(pathBytes.length), ...pathBytes]));
+  await connection.write(
+    new Uint8Array([...commandMagic, 0x4b, ...u16le(pathBytes.length), ...pathBytes]),
+    serialWriteTimeoutMs,
+    `mkdir ${path}`,
+    undefined,
+    signal
+  );
   const response = await readUntil(
     connection,
     (line) => line === "OK" || line.startsWith("ERR:"),
     5000,
-    `mkdir ${path}`
+    `mkdir ${path}`,
+    signal
   );
   if (response !== "OK" && response !== "ERR:mkdir_failed") throw new Error(response);
 }
@@ -316,15 +371,22 @@ async function writeSerialFile(
   fullPath: string,
   blob: Blob,
   progress?: SerialTransferProgress,
-  diagnostic?: SerialTransferDiagnostic
+  diagnostic?: SerialTransferDiagnostic,
+  signal?: AbortSignal
 ) {
+  throwIfSerialTransferCanceled(signal);
   const data = new Uint8Array(await blob.arrayBuffer());
+  throwIfSerialTransferCanceled(signal);
   const pathBytes = textEncoder.encode(fullPath);
   const checksum = crc32(data);
 
-  progress?.(8, `Uploading ${fullPath.split("/").pop() || "file"}`);
+  progress?.(0, `Uploading 0 B of ${formatBytes(data.length)}`);
   await connection.write(
-    new Uint8Array([...commandMagic, 0x57, ...u16le(pathBytes.length), ...pathBytes, ...u32le(data.length)])
+    new Uint8Array([...commandMagic, 0x57, ...u16le(pathBytes.length), ...pathBytes, ...u32le(data.length)]),
+    serialWriteTimeoutMs,
+    `start write ${fullPath}`,
+    undefined,
+    signal
   );
   await readUntil(
     connection,
@@ -333,50 +395,56 @@ async function writeSerialFile(
       return line === "READY";
     },
     10000,
-    `write ${fullPath}`
+    `write ${fullPath}`,
+    signal
   );
 
   const chunkSize = 256;
   for (let sent = 0; sent < data.length;) {
+    throwIfSerialTransferCanceled(signal);
     const end = Math.min(sent + chunkSize, data.length);
     await connection.write(
       data.slice(sent, end),
       serialWriteTimeoutMs,
-      `serial write at ${formatBytes(sent)} of ${formatBytes(data.length)}`,
+      `serial write at ${formatUploadProgress(sent, data.length)}`,
       () => {
-        diagnostic?.(`Waiting for browser to write ${formatBytes(sent)} of ${formatBytes(data.length)}`);
-      }
+        diagnostic?.(`Waiting for browser to write ${formatUploadProgress(sent, data.length)}`);
+      },
+      signal
     );
     sent = end;
     progress?.(
-      10 + Math.floor((sent / Math.max(1, data.length)) * 85),
-      `Uploading ${formatBytes(sent)} of ${formatBytes(data.length)}`
+      Math.floor((sent / Math.max(1, data.length)) * 100),
+      `Uploading ${formatUploadProgress(sent, data.length)}`
     );
     await readAck(
       connection,
       serialAckTimeoutMs,
-      `upload ACK after ${formatBytes(sent)} of ${formatBytes(data.length)}`,
+      `upload ACK after ${formatUploadProgress(sent, data.length)}`,
       () => {
-        diagnostic?.(`Waiting for device to confirm ${formatBytes(sent)} of ${formatBytes(data.length)}`);
+        diagnostic?.(`Waiting for device to confirm ${formatUploadProgress(sent, data.length)}`);
       },
       (line) => {
         if (line.startsWith("BUSY:write:")) {
-          diagnostic?.(`Device writing to SD (${formatBytes(sent)} of ${formatBytes(data.length)}): ${line}`);
+          diagnostic?.(`Device writing to SD (${formatUploadProgress(sent, data.length)}): ${line}`);
         } else if (line.startsWith("BUSY:read:")) {
           diagnostic?.(
-            `Device waiting for serial bytes (${formatBytes(sent)} of ${formatBytes(data.length)}): ${line}`
+            `Device waiting for serial bytes (${formatUploadProgress(sent, data.length)}): ${line}`
           );
         }
-      }
+      },
+      signal
     );
   }
 
-  await connection.write(new Uint8Array(u32le(checksum)));
+  throwIfSerialTransferCanceled(signal);
+  await connection.write(new Uint8Array(u32le(checksum)), serialWriteTimeoutMs, "write checksum", undefined, signal);
   const response = await readUntil(
     connection,
     (line) => line === "OK" || line.startsWith("ERR:"),
     30000,
-    `finish ${fullPath}`
+    `finish ${fullPath}`,
+    signal
   );
   if (response !== "OK") throw new Error(response);
 }
@@ -386,19 +454,21 @@ async function readAck(
   timeoutMs: number,
   label: string,
   onStillWaiting?: () => void,
-  onDeviceStatus?: (line: string) => void
+  onDeviceStatus?: (line: string) => void,
+  signal?: AbortSignal
 ) {
   let deadline = Date.now() + timeoutMs;
   let waitTimer = window.setTimeout(() => onStillWaiting?.(), 3000);
 
   try {
     while (true) {
+      throwIfSerialTransferCanceled(signal);
       const remaining = deadline - Date.now();
       if (remaining <= 0) throw new Error(`Timed out waiting for ${label}.`);
 
       let byte: number;
       try {
-        byte = await connection.readByte(remaining);
+        byte = await connection.readByte(remaining, signal);
       } catch (error) {
         if (error instanceof Error && error.message === "Serial read timed out.") {
           throw new Error(`Timed out waiting for ${label}.`);
@@ -407,7 +477,7 @@ async function readAck(
       }
       if (byte === 0x06) return;
 
-      const line = await readLineAfterFirstByte(connection, byte, Math.max(1, deadline - Date.now()));
+      const line = await readLineAfterFirstByte(connection, byte, Math.max(1, deadline - Date.now()), signal);
       if (line.startsWith("BUSY:")) {
         onDeviceStatus?.(line);
         deadline = Date.now() + timeoutMs;
@@ -422,16 +492,22 @@ async function readAck(
   }
 }
 
-async function readLineAfterFirstByte(connection: SerialConnection, firstByte: number, timeoutMs: number) {
+async function readLineAfterFirstByte(
+  connection: SerialConnection,
+  firstByte: number,
+  timeoutMs: number,
+  signal?: AbortSignal
+) {
   if (firstByte === 0x0a) return "";
 
   const deadline = Date.now() + timeoutMs;
   let line = firstByte === 0x0d ? "" : String.fromCharCode(firstByte);
   while (true) {
+    throwIfSerialTransferCanceled(signal);
     const remaining = deadline - Date.now();
     if (remaining <= 0) return line;
 
-    const byte = await connection.readByte(remaining);
+    const byte = await connection.readByte(remaining, signal);
     if (byte === 0x0a) return line;
     if (byte !== 0x0d) line += String.fromCharCode(byte);
   }
@@ -441,14 +517,16 @@ async function readUntil(
   connection: SerialConnection,
   predicate: (line: string) => boolean,
   timeoutMs: number,
-  label: string
+  label: string,
+  signal?: AbortSignal
 ) {
   const deadline = Date.now() + timeoutMs;
 
   while (true) {
+    throwIfSerialTransferCanceled(signal);
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new Error(`Timed out waiting for ${label} response.`);
-    const line = await connection.readLine(remaining);
+    const line = await connection.readLine(remaining, signal);
     if (!line || isSerialLog(line)) continue;
     if (predicate(line)) return line;
   }
@@ -569,7 +647,19 @@ function crc32(data: Uint8Array) {
   return (c ^ 0xffffffff) >>> 0;
 }
 
-function formatBytes(size: number) {
+function createSerialTransferCanceledError() {
+  return new Error(serialTransferCanceledMessage);
+}
+
+function throwIfSerialTransferCanceled(signal?: AbortSignal) {
+  if (signal?.aborted) throw createSerialTransferCanceledError();
+}
+
+function formatUploadProgress(sent: number, total: number) {
+  return `${formatBytes(sent, 3)} of ${formatBytes(total)}`;
+}
+
+function formatBytes(size: number, maximumFractionDigits = 1) {
   const units = ["B", "KB", "MB", "GB"];
   let value = size;
   let unit = 0;
@@ -577,5 +667,12 @@ function formatBytes(size: number) {
     value /= 1024;
     unit += 1;
   }
-  return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+  return `${formatNumber(value, unit === 0 ? 0 : maximumFractionDigits)} ${units[unit]}`;
+}
+
+function formatNumber(value: number, maximumFractionDigits: number) {
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits
+  });
 }

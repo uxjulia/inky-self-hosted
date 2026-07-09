@@ -18,6 +18,7 @@ type DevicePanelProps = {
   recentOptimizedDownloads: RecentOptimizedDownload[];
   recentPreparedDictionaryDownload: PreparedDictionaryDownload | null;
   jobs: Job[];
+  canCancelUsbSend: boolean;
   onProbeDevice: () => void;
   onSetDeviceError: (value: string) => void;
   onSetDeviceStatus: (value: string) => void;
@@ -29,6 +30,7 @@ type DevicePanelProps = {
   onOpenDictionaryTools: () => void;
   onDownloadRecentOptimizedFile: () => void;
   onDownloadPreparedDictionaryFile: () => void;
+  onCancelUsbSend: () => void;
 };
 
 export function DevicePanel({
@@ -45,6 +47,7 @@ export function DevicePanel({
   recentOptimizedDownloads,
   recentPreparedDictionaryDownload,
   jobs,
+  canCancelUsbSend,
   onProbeDevice,
   onSetDeviceError,
   onSetDeviceStatus,
@@ -55,7 +58,8 @@ export function DevicePanel({
   onOpenOptimizerSettings,
   onOpenDictionaryTools,
   onDownloadRecentOptimizedFile,
-  onDownloadPreparedDictionaryFile
+  onDownloadPreparedDictionaryFile,
+  onCancelUsbSend
 }: DevicePanelProps) {
   const optimizedDownloadButtonRef = useRef<HTMLButtonElement | null>(null);
   const previousOptimizedDownloadCount = useRef(recentOptimizedDownloads.length);
@@ -225,6 +229,17 @@ export function DevicePanel({
         >
           <Download size={16} />
           Download Prepared Dictionary
+        </button>
+      )}
+      {canCancelUsbSend && (
+        <button
+          className="icon-text cancel-send-button"
+          type="button"
+          onClick={onCancelUsbSend}
+          title="Cancel USB Send"
+        >
+          <X size={16} />
+          Cancel USB Send
         </button>
       )}
       <JobLog jobs={jobs} />
