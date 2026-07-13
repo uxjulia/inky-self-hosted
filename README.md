@@ -118,7 +118,12 @@ INKY_DATA_DIR=/data
 INKY_DATABASE_URL=sqlite:////data/inky.db
 INKY_PUBLIC_READ_ONLY=1
 VITE_INKY_APP_MODE=public
+VITE_INKY_DICTIONARY_TOOLS=1
 ```
+
+`VITE_` variables are baked into the React frontend during the Docker build. If
+you change one in Railway, redeploy the service so Railway rebuilds the frontend
+bundle.
 
 Attach a Railway volume mounted at `/data` if you want the library database and
 uploaded files to survive redeploys.
