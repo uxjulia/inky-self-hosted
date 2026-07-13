@@ -3,10 +3,13 @@ from __future__ import annotations
 import gzip
 import shutil
 import struct
+import tarfile
 import tempfile
 import zipfile
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
+
+import zstandard
 
 from .utils import safe_filename
 
@@ -28,11 +31,11 @@ _CSPT_STRIDE = 16
 
 def prepare_dictionary_zip(source_zip: Path, output_dir: Path, progress: ProgressCallback | None = None) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    _report(progress, 5, "Reading dictionary ZIP")
+    _report(progress, 5, "Reading dictionary archive")
 
     with tempfile.TemporaryDirectory(prefix="dictionary-", dir=output_dir) as work_path:
         work_dir = Path(work_path)
-        _extract_safe_zip(source_zip, work_dir)
+        _extract_safe_archive(source_zip, work_dir)
         _report(progress, 20, "Validating StarDict files")
 
         dictionary_dir, stem = _locate_dictionary(work_dir)
@@ -81,6 +84,22 @@ def _report(progress: ProgressCallback | None, percent: int, message: str) -> No
         progress(percent, message)
 
 
+def is_supported_dictionary_archive(filename: str) -> bool:
+    normalized = filename.lower()
+    return normalized.endswith(".zip") or normalized.endswith(".tar.zst")
+
+
+def dictionary_archive_suffix(filename: str) -> str:
+    return ".tar.zst" if filename.lower().endswith(".tar.zst") else Path(filename).suffix or ".zip"
+
+
+def _extract_safe_archive(source_archive: Path, destination: Path) -> None:
+    if source_archive.name.lower().endswith(".tar.zst"):
+        _extract_safe_tar_zst(source_archive, destination)
+        return
+    _extract_safe_zip(source_archive, destination)
+
+
 def _extract_safe_zip(source_zip: Path, destination: Path) -> None:
     try:
         with zipfile.ZipFile(source_zip) as archive:
@@ -99,13 +118,48 @@ def _extract_safe_zip(source_zip: Path, destination: Path) -> None:
         raise DictionaryPrepError("invalid dictionary zip") from exc
 
 
+def _extract_safe_tar_zst(source_tar_zst: Path, destination: Path) -> None:
+    try:
+        with source_tar_zst.open("rb") as compressed:
+            reader = zstandard.ZstdDecompressor().stream_reader(compressed)
+            with reader, tarfile.open(fileobj=reader, mode="r|") as archive:
+                for member in archive:
+                    relative_path = _safe_archive_member_path(member.name)
+                    if relative_path is None:
+                        continue
+                    target = destination / relative_path
+                    if member.isdir():
+                        target.mkdir(parents=True, exist_ok=True)
+                        continue
+                    if not member.isfile():
+                        raise DictionaryPrepError(f"unsupported tar member in archive: {member.name}")
+                    extracted = archive.extractfile(member)
+                    if extracted is None:
+                        raise DictionaryPrepError(f"unable to read tar member: {member.name}")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with extracted, target.open("wb") as dest:
+                        shutil.copyfileobj(extracted, dest)
+    except (tarfile.TarError, zstandard.ZstdError) as exc:
+        raise DictionaryPrepError("invalid dictionary tar.zst") from exc
+
+
 def _safe_zip_member_path(name: str) -> Path | None:
+    return _safe_archive_member_path(name)
+
+
+def _safe_archive_member_path(name: str) -> Path | None:
     path = PurePosixPath(name)
     if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
-        raise DictionaryPrepError(f"unsafe path in zip: {name}")
+        raise DictionaryPrepError(f"unsafe path in archive: {name}")
     if not path.parts:
         return None
+    if _is_macos_metadata_path(path.parts):
+        return None
     return Path(*path.parts)
+
+
+def _is_macos_metadata_path(parts: tuple[str, ...]) -> bool:
+    return parts[0] == "__MACOSX" or parts[-1] == ".DS_Store" or parts[-1].startswith("._")
 
 
 def _locate_dictionary(work_dir: Path) -> tuple[Path, str]:

@@ -2091,15 +2091,18 @@ export default function App() {
               </button>
             </div>
             <label className="field">
-              <span>StarDict ZIP</span>
+              <span>StarDict archive</span>
               <input
                 type="file"
-                accept=".zip,application/zip"
+                accept=".zip,.tar.zst,.zst,application/zip,application/x-zip-compressed,application/zstd,application/x-zstd"
                 onChange={(event) => setDictionaryZipFile(event.target.files?.[0] || null)}
               />
             </label>
             <div className="form-help dictionary-help">
-              <p>Upload one zipped StarDict dictionary. The ZIP can contain the files directly or inside one folder.</p>
+              <p>
+                Upload one StarDict dictionary as a <code>.zip</code> or <code>.tar.zst</code> archive. It can contain
+                the files directly or inside one folder.
+              </p>
               <p>
                 Required files must share the same name: <code>.ifo</code>, <code>.idx</code>, and <code>.dict</code> or{" "}
                 <code>.dict.dz</code>. Synonym files like <code>.syn</code> or <code>.syn.dz</code> are optional.

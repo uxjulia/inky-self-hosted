@@ -1,14 +1,18 @@
 import gzip
+import io
 import importlib
 import os
 import struct
 import sys
+import tarfile
 import tempfile
 import time
 import unittest
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
+
+import zstandard
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -45,6 +49,24 @@ class DictionaryPrepServiceTests(unittest.TestCase):
         self.assertIn("sample/sample.idx.oft", names)
         self.assertNotIn("sample/sample.dict.dz", names)
 
+    def test_tar_zst_generates_prepared_indexes(self):
+        source = self.root / "dictionary.tar.zst"
+        _write_tar_zst(
+            source,
+            {
+                "sample/sample.ifo": _ifo_bytes("sample"),
+                "sample/sample.idx": _idx_bytes(),
+                "sample/sample.dict.dz": _gzip_bytes(b"alpha definition\nbeta definition"),
+            },
+        )
+
+        result = prepare_dictionary_zip(source, self.root / "out")
+
+        names = self._zip_names(Path(result["output_path"]))
+        self.assertIn("sample/sample.dict", names)
+        self.assertIn("sample/sample.idx.oft", names)
+        self.assertIn("sample/sample.idx.oft.cspt", names)
+
     def test_root_level_stardict_files_are_packaged_under_stem_folder(self):
         source = self.root / "root.zip"
         with zipfile.ZipFile(source, "w") as archive:
@@ -57,6 +79,25 @@ class DictionaryPrepServiceTests(unittest.TestCase):
         names = self._zip_names(Path(result["output_path"]))
         self.assertIn("sample/sample.ifo", names)
         self.assertIn("sample/sample.idx.oft", names)
+
+    def test_macos_metadata_entries_are_ignored(self):
+        source = self.root / "macos.zip"
+        with zipfile.ZipFile(source, "w") as archive:
+            archive.writestr("sample/sample.ifo", _ifo_bytes("sample"))
+            archive.writestr("__MACOSX/sample/._sample.ifo", b"finder metadata")
+            archive.writestr("sample/sample.idx", _idx_bytes())
+            archive.writestr("__MACOSX/sample/._sample.idx", b"finder metadata")
+            archive.writestr("sample/sample.dict", b"alpha definition")
+            archive.writestr("__MACOSX/sample/._sample.dict", b"finder metadata")
+            archive.writestr("sample/.DS_Store", b"finder metadata")
+
+        result = prepare_dictionary_zip(source, self.root / "out")
+
+        names = self._zip_names(Path(result["output_path"]))
+        self.assertIn("sample/sample.ifo", names)
+        self.assertIn("sample/sample.idx", names)
+        self.assertNotIn("sample/._sample.ifo", names)
+        self.assertNotIn("sample/.DS_Store", names)
 
     def test_syn_dz_generates_syn_indexes(self):
         source = self._zip_dictionary(dict_dz=True, syn_dz=True)
@@ -191,6 +232,27 @@ class DictionaryPrepareApiTests(unittest.TestCase):
             job = self._wait_for_job(client, response.json()["id"])
             self.assertEqual(job["status"], "succeeded", job)
 
+    def test_prepare_endpoint_accepts_tar_zst(self):
+        source = self.root / "dictionary.tar.zst"
+        _write_tar_zst(
+            source,
+            {
+                "sample/sample.ifo": _ifo_bytes("sample"),
+                "sample/sample.idx": _idx_bytes(),
+                "sample/sample.dict.dz": _gzip_bytes(b"alpha definition"),
+            },
+        )
+        app = self._reload_app()
+
+        with TestClient(app) as client, source.open("rb") as upload:
+            response = client.post(
+                "/api/dictionaries/prepare",
+                files={"file": ("dictionary.tar.zst", upload, "application/zstd")},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            job = self._wait_for_job(client, response.json()["id"])
+            self.assertEqual(job["status"], "succeeded", job)
+
     def _reload_app(self):
         import app.db as db_module
         import app.jobs as jobs_module
@@ -238,6 +300,16 @@ def _gzip_bytes(data: bytes) -> bytes:
         with gzip.open(path, "wb") as handle:
             handle.write(data)
         return path.read_bytes()
+
+
+def _write_tar_zst(path: Path, entries: dict[str, bytes]) -> None:
+    tar_bytes = io.BytesIO()
+    with tarfile.open(fileobj=tar_bytes, mode="w") as archive:
+        for name, data in entries.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    path.write_bytes(zstandard.ZstdCompressor().compress(tar_bytes.getvalue()))
 
 
 if __name__ == "__main__":

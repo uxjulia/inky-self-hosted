@@ -23,6 +23,7 @@ from .auth import require_basic_auth
 from .config import ensure_data_dirs, get_settings
 from .connectors import browse_source, search_source
 from .db import SessionLocal, get_db, init_db
+from .dictionary_prep import dictionary_archive_suffix, is_supported_dictionary_archive
 from .jobs import create_job, run_dictionary_prepare_job, run_optimize_job, run_send_job, run_send_path_job
 from .library import (
     copy_uploaded_file,
@@ -306,12 +307,17 @@ async def prepare_dictionary(
     db: Session = Depends(get_db),
 ) -> Job:
     filename = file.filename or "dictionary.zip"
-    if Path(filename).suffix.lower() != ".zip":
-        raise HTTPException(status_code=400, detail="only StarDict ZIP files can be prepared")
+    if not is_supported_dictionary_archive(filename):
+        raise HTTPException(status_code=400, detail="only StarDict ZIP or TAR.ZST files can be prepared")
 
     uploads_dir = get_settings().dictionaries_dir / "uploads"
     uploads_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(suffix=".zip", prefix="dictionary-", dir=uploads_dir, delete=False) as temp:
+    with tempfile.NamedTemporaryFile(
+        suffix=dictionary_archive_suffix(filename),
+        prefix="dictionary-",
+        dir=uploads_dir,
+        delete=False,
+    ) as temp:
         temp_path = Path(temp.name)
         while chunk := await file.read(1024 * 1024):
             temp.write(chunk)
