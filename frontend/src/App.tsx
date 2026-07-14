@@ -1018,15 +1018,26 @@ export default function App() {
 
   async function sendBrowseItem(item: BrowseItem) {
     if (!selectedSourceId || selectedSourceId === localSourceId) return;
-    if (usesBrowserLibrary) {
-      showToast("Public mode can send files added to this browser's Local Library.", "error");
-      return;
-    }
     setPendingBrowseAction({ key: browseItemKey(item), action: "send" });
     setBusy(true);
     try {
       await runAction(
         async () => {
+          if (usesBrowserLibrary) {
+            if (transferMode !== "usb") {
+              throw new Error("Public source sends are only available over USB.");
+            }
+            if (!canOptimizeBrowseItem(item)) {
+              throw new Error("Public source sends currently support EPUBs and RSS articles.");
+            }
+            setRecentOptimizedDownloads([]);
+            const download = await optimizeBrowseItemForDownload(item);
+            addRecentOptimizedDownload(download);
+            await sendBlobViaUsb(download.blob, download.filename, 0);
+            showToast("Sent to device");
+            return;
+          }
+
           if (transferMode === "usb") {
             const imported = await importBrowseItem(item);
             if (!imported) return;
@@ -1082,19 +1093,7 @@ export default function App() {
       await runAction(
         async () => {
           setRecentOptimizedDownloads([]);
-          const response = await apiFetch(`/api/sources/${selectedSourceId}/optimize-epub`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              item,
-              settings: defaultOptimizePayload()
-            })
-          });
-          const blob = await response.blob();
-          const filename =
-            filenameFromContentDisposition(response.headers.get("content-disposition")) ||
-            `${safeDownloadStem(item.title || "optimized")}.epub`;
-          addRecentOptimizedDownload({ blob, filename });
+          addRecentOptimizedDownload(await optimizeBrowseItemForDownload(item));
           showToast("Optimized EPUB ready to download");
         },
         { toastOnError: true }
@@ -1103,6 +1102,26 @@ export default function App() {
       setPendingBrowseAction(null);
       setBusy(false);
     }
+  }
+
+  async function optimizeBrowseItemForDownload(item: BrowseItem): Promise<RecentOptimizedDownload> {
+    if (!selectedSourceId || selectedSourceId === localSourceId) {
+      throw new Error("Select a source before optimizing.");
+    }
+    const response = await apiFetch(`/api/sources/${selectedSourceId}/optimize-epub`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        item,
+        settings: defaultOptimizePayload()
+      })
+    });
+    return {
+      blob: await response.blob(),
+      filename:
+        filenameFromContentDisposition(response.headers.get("content-disposition")) ||
+        `${safeDownloadStem(item.title || "optimized")}.epub`
+    };
   }
 
   async function importBrowseItem(item: BrowseItem): Promise<LibraryItem | null> {
