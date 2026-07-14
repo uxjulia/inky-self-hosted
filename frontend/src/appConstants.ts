@@ -26,6 +26,10 @@ export const defaultOptimizerSettings: OptimizerSettings = {
   eink_quantize: true,
   light_novel: false,
   characters_per_reference_page: 1500,
+  split_long_sections: true,
+  section_split_word_threshold: 2000,
+  section_split_byte_threshold: 65536,
+  section_split_hard_byte_limit: 98304,
   remove_fonts: true,
   remove_css: true,
   text_cleanup: true

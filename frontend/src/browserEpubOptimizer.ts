@@ -10,6 +10,10 @@ export type BrowserOptimizerSettings = {
   contrast_factor: number;
   eink_quantize: boolean;
   characters_per_reference_page: number;
+  split_long_sections: boolean;
+  section_split_word_threshold: number;
+  section_split_byte_threshold: number;
+  section_split_hard_byte_limit: number;
   remove_fonts: boolean;
   remove_css: boolean;
   text_cleanup: boolean;
@@ -54,6 +58,7 @@ const crossInkLocationManifestPath = "META-INF/x-locations.json";
 const crossInkOptimizerManifestPath = "META-INF/crossink/optimizer-v1.json";
 const wordsPerLocation = 64;
 const defaultCharactersPerReferencePage = 1500;
+const splitSuffixPattern = /__ci_section_\d{3}(?=\.[^.]+$)/i;
 
 export async function optimizeEpubInBrowser(
   file: Blob,
@@ -146,6 +151,16 @@ export async function optimizeEpubInBrowser(
 
   progress?.(72, "Updating EPUB metadata");
   let updatedOpf = processOpf(opfText, opfPath, imageRenameMap, settings);
+  const splitResult = splitLongXhtmlSections(xhtmlFiles, settings);
+  for (const [path, text] of Object.entries(splitResult.xhtmlFiles)) {
+    xhtmlFiles[path] = text;
+    out.file(path, text, {
+      compression: "DEFLATE",
+      compressionOptions: { level: 8 },
+      createFolders: false
+    });
+  }
+  updatedOpf = addSplitSectionsToOpf(updatedOpf, opfPath, splitResult.splitSections);
   let remainingCssFiles = cssFiles;
   let cssWasTreeShaken = false;
   if (settings.remove_css) {
@@ -394,6 +409,143 @@ function processOpfRegex(opfText: string, imageRenameMap: Map<string, string>, s
     );
   }
   return next;
+}
+
+type SplitSections = Record<string, string[]>;
+
+function sectionSplitPath(path: string, partIndex: number) {
+  if (partIndex === 0) return path;
+  const dot = path.lastIndexOf(".");
+  const suffix = `__ci_section_${String(partIndex + 1).padStart(3, "0")}`;
+  return dot > 0 ? `${path.slice(0, dot)}${suffix}${path.slice(dot)}` : `${path}${suffix}.xhtml`;
+}
+
+function splitBaseHref(href: string) {
+  return href.replace(splitSuffixPattern, "");
+}
+
+function isSafeSplitElement(node: Node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) return true;
+  const name = (node as Element).localName.toLowerCase();
+  return ["p", "div", "section", "article", "aside", "blockquote", "ul", "ol", "li", "h1", "h2", "h3", "h4", "h5", "h6", "hr"].includes(name);
+}
+
+function isHeadingNode(node: Node) {
+  return node.nodeType === Node.ELEMENT_NODE && /^h[1-6]$/i.test((node as Element).localName);
+}
+
+function keepsSplitCluster(node: Node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) return false;
+  const element = node as Element;
+  const name = element.localName.toLowerCase();
+  return ["table", "figure", "svg"].includes(name) || Boolean(element.querySelector("table,figure,svg"));
+}
+
+function splitLongXhtmlSections(
+  xhtmlFiles: Record<string, string>,
+  settings: BrowserOptimizerSettings
+): { xhtmlFiles: Record<string, string>; splitSections: SplitSections } {
+  if (!settings.split_long_sections) return { xhtmlFiles: {}, splitSections: {} };
+  const parser = new DOMParser();
+  const serializer = new XMLSerializer();
+  const out: Record<string, string> = {};
+  const splitSections: SplitSections = {};
+  const wordThreshold = Math.max(1, Math.round(settings.section_split_word_threshold || 2000));
+  const byteThreshold = Math.max(4096, Math.round(settings.section_split_byte_threshold || 65536));
+  const hardByteLimit = Math.max(byteThreshold, Math.round(settings.section_split_hard_byte_limit || 98304));
+
+  for (const [path, text] of Object.entries(xhtmlFiles)) {
+    const visibleText = extractVisibleText(text);
+    if (countWords(visibleText) <= wordThreshold && new TextEncoder().encode(text).length <= byteThreshold) continue;
+    const doc = parser.parseFromString(text, "application/xhtml+xml");
+    if (doc.getElementsByTagName("parsererror").length > 0 || !doc.body || doc.body.childNodes.length < 2) continue;
+
+    const chunks: Node[][] = [];
+    let current: Node[] = [];
+    let currentWords = 0;
+    let currentBytes = 0;
+    const flush = () => {
+      if (!current.length) return;
+      chunks.push(current);
+      current = [];
+      currentWords = 0;
+      currentBytes = 0;
+    };
+
+    for (const child of Array.from(doc.body.childNodes)) {
+      const childText = child.textContent || "";
+      const childWords = countWords(childText);
+      const childBytes = new TextEncoder().encode(serializer.serializeToString(child)).length;
+      const wouldExceed = current.length > 0 && (currentWords + childWords > wordThreshold || currentBytes + childBytes > byteThreshold);
+      const canBreakBefore = current.length > 0 && isSafeSplitElement(child) && !keepsSplitCluster(child) && !isHeadingNode(current[current.length - 1]);
+      if (wouldExceed && canBreakBefore) flush();
+
+      current.push(child);
+      currentWords += childWords;
+      currentBytes += childBytes;
+
+      const canBreakAfter = current.length > 1 && isSafeSplitElement(child) && !keepsSplitCluster(child) && !isHeadingNode(child);
+      if (currentBytes >= hardByteLimit && canBreakAfter) flush();
+    }
+    flush();
+    if (chunks.length < 2) continue;
+
+    splitSections[path] = [];
+    chunks.forEach((chunk, partIndex) => {
+      const partPath = sectionSplitPath(path, partIndex);
+      const partDoc = doc.cloneNode(true) as Document;
+      while (partDoc.body.firstChild) partDoc.body.removeChild(partDoc.body.firstChild);
+      for (const node of chunk) partDoc.body.appendChild(partDoc.importNode(node, true));
+      out[partPath] = serializer.serializeToString(partDoc);
+      splitSections[path].push(partPath);
+    });
+  }
+  return { xhtmlFiles: out, splitSections };
+}
+
+function addSplitSectionsToOpf(opfText: string, opfPath: string, splitSections: SplitSections) {
+  if (Object.keys(splitSections).length === 0) return opfText;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(opfText, "application/xml");
+  if (doc.getElementsByTagName("parsererror").length > 0) return opfText;
+  const manifest = Array.from(doc.getElementsByTagName("manifest"))[0];
+  const spine = Array.from(doc.getElementsByTagName("spine"))[0];
+  if (!manifest || !spine) return opfText;
+
+  const byPath = new Map<string, { id: string; item: Element }>();
+  for (const item of Array.from(doc.getElementsByTagName("item"))) {
+    const id = item.getAttribute("id");
+    const href = item.getAttribute("href");
+    if (id && href) byPath.set(resolvePath(opfPath, href), { id, item });
+  }
+  const usedIds = new Set(Array.from(doc.getElementsByTagName("item")).map((item) => item.getAttribute("id") || ""));
+  for (const [originalPath, parts] of Object.entries(splitSections)) {
+    const original = byPath.get(originalPath);
+    if (!original || parts.length < 2) continue;
+    const newIds: string[] = [];
+    for (let i = 1; i < parts.length; i++) {
+      let id = `${original.id}-ci-${i + 1}`;
+      while (usedIds.has(id)) id += "x";
+      usedIds.add(id);
+      const item = doc.createElement("item");
+      item.setAttribute("id", id);
+      item.setAttribute("href", relativePath(opfPath, parts[i]));
+      item.setAttribute("media-type", "application/xhtml+xml");
+      manifest.appendChild(item);
+      newIds.push(id);
+    }
+    const itemref = Array.from(doc.getElementsByTagName("itemref")).find((ref) => ref.getAttribute("idref") === original.id);
+    if (!itemref) continue;
+    let insertAfter = itemref;
+    for (const id of newIds) {
+      const ref = doc.createElement("itemref");
+      ref.setAttribute("idref", id);
+      if (insertAfter.nextSibling) spine.insertBefore(ref, insertAfter.nextSibling);
+      else spine.appendChild(ref);
+      insertAfter = ref;
+    }
+  }
+  return new XMLSerializer().serializeToString(doc);
 }
 
 function treeShakeCssFiles(
@@ -689,6 +841,9 @@ function buildCrossInkLocationManifest(
   let nextLocation = 1;
   let totalWords = 0;
   let totalCharacters = 0;
+  const splitBases = new Set(spine.map(splitBaseHref).filter((base, index) => base !== spine[index]));
+  const groupByBase = new Map(Array.from(splitBases).sort().map((base, index) => [base, index]));
+  const chapterGroups = new Map<number, Record<string, string | number>>();
   const entries = spine.map((href, index) => {
     const text = extractVisibleText(xhtmlFiles[href] || "");
     const words = countWords(text);
@@ -696,7 +851,7 @@ function buildCrossInkLocationManifest(
     const locationCount = Math.ceil(words / wordsPerLocation);
     const startReferencePage = Math.floor(totalCharacters / charactersPerReferencePage) + 1;
     const referencePageCount = Math.max(1, Math.ceil(characters / charactersPerReferencePage));
-    const section = {
+    const section: Record<string, string | number> = {
       index,
       href,
       wordStart: totalWords,
@@ -708,13 +863,45 @@ function buildCrossInkLocationManifest(
       startReferencePage: characters > 0 ? startReferencePage : 0,
       endReferencePage: characters > 0 ? startReferencePage + referencePageCount - 1 : 0
     };
+    const baseHref = splitBaseHref(href);
+    const chapterGroup = groupByBase.get(baseHref);
+    if (chapterGroup != null) {
+      section.chapterGroup = chapterGroup;
+      const group = chapterGroups.get(chapterGroup) || {
+        index: chapterGroup,
+        title: relativeBasename(baseHref).replace(/\.[^.]+$/, ""),
+        firstSpineIndex: index,
+        lastSpineIndex: index,
+        startLocation: section.startLocation,
+        endLocation: section.endLocation,
+        wordStart: totalWords,
+        wordCount: 0,
+        characterStart: totalCharacters,
+        characterCount: 0,
+        referencePageStart: section.startReferencePage,
+        referencePageEnd: section.endReferencePage
+      };
+      group.firstSpineIndex = Math.min(Number(group.firstSpineIndex), index);
+      group.lastSpineIndex = Math.max(Number(group.lastSpineIndex), index);
+      if (Number(section.startLocation) > 0 && (!Number(group.startLocation) || Number(section.startLocation) < Number(group.startLocation))) {
+        group.startLocation = section.startLocation;
+      }
+      group.endLocation = Math.max(Number(group.endLocation), Number(section.endLocation));
+      group.wordCount = Number(group.wordCount) + words;
+      group.characterCount = Number(group.characterCount) + characters;
+      if (Number(section.startReferencePage) > 0 && (!Number(group.referencePageStart) || Number(section.startReferencePage) < Number(group.referencePageStart))) {
+        group.referencePageStart = section.startReferencePage;
+      }
+      group.referencePageEnd = Math.max(Number(group.referencePageEnd), Number(section.endReferencePage));
+      chapterGroups.set(chapterGroup, group);
+    }
     nextLocation += locationCount;
     totalWords += words;
     totalCharacters += characters;
     return section;
   });
 
-  return {
+  const manifest: Record<string, unknown> = {
     format: "x-locations",
     version: 1,
     generator: "inky-browser-optimizer",
@@ -727,6 +914,10 @@ function buildCrossInkLocationManifest(
     totalReferencePages: Math.ceil(totalCharacters / charactersPerReferencePage),
     spine: entries
   };
+  if (chapterGroups.size > 0) {
+    manifest.chapterGroups = Array.from(chapterGroups.values()).sort((a, b) => Number(a.index) - Number(b.index));
+  }
+  return manifest;
 }
 
 function normalizeCharactersPerReferencePage(value: number) {
