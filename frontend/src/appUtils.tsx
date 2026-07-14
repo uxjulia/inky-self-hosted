@@ -286,6 +286,22 @@ export function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
     ),
     remove_fonts: booleanOrDefault(stored.remove_fonts, defaultOptimizerSettings.remove_fonts),
     remove_css: booleanOrDefault(stored.remove_css, defaultOptimizerSettings.remove_css),
+    split_long_sections: booleanOrDefault(stored.split_long_sections, defaultOptimizerSettings.split_long_sections),
+    section_split_word_threshold: clampNumber(
+      Number(stored.section_split_word_threshold ?? defaultOptimizerSettings.section_split_word_threshold),
+      1,
+      50000
+    ),
+    section_split_byte_threshold: clampNumber(
+      Number(stored.section_split_byte_threshold ?? defaultOptimizerSettings.section_split_byte_threshold),
+      4096,
+      1048576
+    ),
+    section_split_hard_byte_limit: clampNumber(
+      Number(stored.section_split_hard_byte_limit ?? defaultOptimizerSettings.section_split_hard_byte_limit),
+      4096,
+      2097152
+    ),
     text_cleanup: booleanOrDefault(stored.text_cleanup, defaultOptimizerSettings.text_cleanup)
   };
 }

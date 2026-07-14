@@ -21,6 +21,10 @@ export type OptimizerSettings = {
   eink_quantize: boolean;
   light_novel: boolean;
   characters_per_reference_page: number;
+  split_long_sections: boolean;
+  section_split_word_threshold: number;
+  section_split_byte_threshold: number;
+  section_split_hard_byte_limit: number;
   remove_fonts: boolean;
   remove_css: boolean;
   text_cleanup: boolean;
