@@ -406,6 +406,7 @@ export function BrowsePanel({
             const sendingItem = pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "send";
             const optimizingItem = pendingBrowseAction?.key === itemKey && pendingBrowseAction.action === "optimize";
             const canOptimizeItem = canOptimizeBrowseItem(item);
+            const canSaveItem = !usesBrowserLibrary;
             const sendTitle = canOptimizeBrowseItem(item) ? `Optimize for ${deviceLabel} & Send` : "Send to device";
             const sendingTitle = canOptimizeBrowseItem(item)
               ? `Optimizing for ${deviceLabel} & sending`
@@ -447,15 +448,17 @@ export function BrowsePanel({
                 </div>
                 {isSendableItem && (
                   <div className="row-actions">
-                    <button
-                      type="button"
-                      onClick={() => onImportItem(item)}
-                      title={savingItem ? "Saving to Local Library" : "Save to Local Library"}
-                      aria-label={savingItem ? "Saving to Local Library" : "Save to Local Library"}
-                      disabled={busy}
-                    >
-                      {savingItem ? <RefreshCw className="spin" size={15} /> : <Save size={16} />}
-                    </button>
+                    {canSaveItem && (
+                      <button
+                        type="button"
+                        onClick={() => onImportItem(item)}
+                        title={savingItem ? "Saving to Local Library" : "Save to Local Library"}
+                        aria-label={savingItem ? "Saving to Local Library" : "Save to Local Library"}
+                        disabled={busy}
+                      >
+                        {savingItem ? <RefreshCw className="spin" size={15} /> : <Save size={16} />}
+                      </button>
+                    )}
                     {canOptimizeItem && (
                       <button
                         type="button"
