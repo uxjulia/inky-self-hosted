@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .db import SessionLocal
 from .dictionary_prep import prepare_dictionary_zip
-from .library import format_upload_bytes, send_file_to_device
+from .library import send_file_to_device
 from .models import Job, JobStatus, LibraryItem, utc_now
 from .optimizer.service import optimize_epub, preferred_output_filename
 from .schemas import DeviceSendRequest, OptimizeRequest
@@ -174,7 +174,7 @@ def _send_file(job_id: str, job: Job, file_path: Path, request: DeviceSendReques
     set_job(
         job_id,
         progress=0,
-        message=f"Uploading to device (0 KB of {format_upload_bytes(file_path.stat().st_size)})",
+        message="Uploading to device",
     )
 
     def send_progress(percent: int, message: str) -> None:

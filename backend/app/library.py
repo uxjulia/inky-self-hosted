@@ -680,24 +680,11 @@ class _ProgressFile:
             percent = min(100, int((self._sent / self._total_bytes) * 100))
             if percent > self._last_percent:
                 self._last_percent = percent
-                message = (
-                    f"Uploading to device ({format_upload_bytes(self._sent)} "
-                    f"of {format_upload_bytes(self._total_bytes)})"
-                )
-                self._progress(percent, message)
+                self._progress(percent, "Uploading to device")
         return chunk
 
     def __getattr__(self, name):
         return getattr(self._handle, name)
-
-
-def format_upload_bytes(byte_count: int) -> str:
-    if byte_count <= 0:
-        return "0 KB"
-    kb = max(1, (byte_count + 1023) // 1024)
-    if kb < 1000:
-        return f"{kb} KB"
-    return f"{byte_count / (1024 * 1024):.2f} MB"
 
 
 def _join_device_folder(parent: str, segment: str) -> str:

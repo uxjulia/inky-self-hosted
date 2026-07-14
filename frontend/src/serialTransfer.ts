@@ -380,7 +380,7 @@ async function writeSerialFile(
   const pathBytes = textEncoder.encode(fullPath);
   const checksum = crc32(data);
 
-  progress?.(0, `Uploading 0 B of ${formatBytes(data.length)}`);
+  progress?.(0, "Uploading to device");
   await connection.write(
     new Uint8Array([...commandMagic, 0x57, ...u16le(pathBytes.length), ...pathBytes, ...u32le(data.length)]),
     serialWriteTimeoutMs,
@@ -413,10 +413,7 @@ async function writeSerialFile(
       signal
     );
     sent = end;
-    progress?.(
-      Math.floor((sent / Math.max(1, data.length)) * 100),
-      `Uploading ${formatUploadProgress(sent, data.length)}`
-    );
+    progress?.(Math.floor((sent / Math.max(1, data.length)) * 100), "Uploading to device");
     await readAck(
       connection,
       serialAckTimeoutMs,
