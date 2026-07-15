@@ -358,7 +358,16 @@ def process_image(image_bytes: bytes, filename: str, options: ImageOptions = Non
 
         # If the original image is already a non-progressive JPEG and did not need
         # resizing for device constraints, keep it when re-encoding makes it bigger.
-        if len(images) == 1 and original_is_safe_jpeg and not resized_for_device and len(output_bytes) > original_size:
+        # Do not bypass explicit visual transforms; a larger grayscale/contrast
+        # result is still the result the user asked for.
+        visual_transform_requested = options.grayscale or options.contrast_boost or options.light_novel_mode
+        if (
+            len(images) == 1
+            and original_is_safe_jpeg
+            and not resized_for_device
+            and not visual_transform_requested
+            and len(output_bytes) > original_size
+        ):
             pxc_bytes, width, height = build_crossink_pxc_bytes(image_bytes)
             results.append(ImageResult(
                 output_bytes=image_bytes,
