@@ -2113,14 +2113,14 @@ export default function App() {
               <span>StarDict archive</span>
               <input
                 type="file"
-                accept=".zip,.tar.zst,.zst,application/zip,application/x-zip-compressed,application/zstd,application/x-zstd"
+                accept=".zip,.tar.zst,.zst,.rar,application/zip,application/x-zip-compressed,application/zstd,application/x-zstd,application/vnd.rar,application/x-rar-compressed"
                 onChange={(event) => setDictionaryZipFile(event.target.files?.[0] || null)}
               />
             </label>
             <div className="form-help dictionary-help">
               <p>
-                Upload one StarDict dictionary as a <code>.zip</code> or <code>.tar.zst</code> archive. It can contain
-                the files directly or inside one folder.
+                Upload one StarDict dictionary as a <code>.zip</code>, <code>.tar.zst</code>, or <code>.rar</code>{" "}
+                archive. It can contain the files directly or inside one folder.
               </p>
               <p>
                 Required files must share the same name: <code>.ifo</code>, <code>.idx</code>, and <code>.dict</code> or{" "}

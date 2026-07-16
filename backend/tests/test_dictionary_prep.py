@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
-from app.dictionary_prep import DictionaryPrepError, prepare_dictionary_zip
+from app.dictionary_prep import DictionaryPrepError, is_supported_dictionary_archive, prepare_dictionary_zip
 
 
 class DictionaryPrepServiceTests(unittest.TestCase):
@@ -66,6 +66,31 @@ class DictionaryPrepServiceTests(unittest.TestCase):
         self.assertIn("sample/sample.dict", names)
         self.assertIn("sample/sample.idx.oft", names)
         self.assertIn("sample/sample.idx.oft.cspt", names)
+
+    def test_rar_generates_prepared_indexes(self):
+        source = self.root / "dictionary.rar"
+        source.write_bytes(b"fake rar bytes")
+        archive = _FakeRarArchive(
+            {
+                "sample/sample.ifo": _ifo_bytes("sample"),
+                "sample/sample.idx": _idx_bytes(),
+                "sample/sample.dict.dz": _gzip_bytes(b"alpha definition\nbeta definition"),
+            }
+        )
+
+        with patch("app.dictionary_prep.rarfile.RarFile", return_value=archive):
+            result = prepare_dictionary_zip(source, self.root / "out")
+
+        names = self._zip_names(Path(result["output_path"]))
+        self.assertIn("sample/sample.dict", names)
+        self.assertIn("sample/sample.idx.oft", names)
+        self.assertIn("sample/sample.idx.oft.cspt", names)
+
+    def test_supported_archive_suffixes_include_rar(self):
+        self.assertTrue(is_supported_dictionary_archive("dictionary.zip"))
+        self.assertTrue(is_supported_dictionary_archive("dictionary.tar.zst"))
+        self.assertTrue(is_supported_dictionary_archive("dictionary.rar"))
+        self.assertFalse(is_supported_dictionary_archive("dictionary.7z"))
 
     def test_root_level_stardict_files_are_packaged_under_stem_folder(self):
         source = self.root / "root.zip"
@@ -310,6 +335,34 @@ def _write_tar_zst(path: Path, entries: dict[str, bytes]) -> None:
             info.size = len(data)
             archive.addfile(info, io.BytesIO(data))
     path.write_bytes(zstandard.ZstdCompressor().compress(tar_bytes.getvalue()))
+
+
+class _FakeRarInfo:
+    def __init__(self, filename: str):
+        self.filename = filename
+
+    def isdir(self) -> bool:
+        return self.filename.endswith("/")
+
+    def is_file(self) -> bool:
+        return not self.isdir()
+
+
+class _FakeRarArchive:
+    def __init__(self, entries: dict[str, bytes]):
+        self.entries = entries
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def infolist(self) -> list[_FakeRarInfo]:
+        return [_FakeRarInfo(name) for name in self.entries]
+
+    def open(self, member: _FakeRarInfo):
+        return io.BytesIO(self.entries[member.filename])
 
 
 if __name__ == "__main__":

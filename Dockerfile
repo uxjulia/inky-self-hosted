@@ -19,7 +19,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libcairo2 libxml2 libxslt1.1 \
+  && apt-get install -y --no-install-recommends libcairo2 libxml2 libxslt1.1 unar \
   && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt ./backend/requirements.txt

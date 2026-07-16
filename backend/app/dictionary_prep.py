@@ -9,6 +9,7 @@ import zipfile
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
+import rarfile
 import zstandard
 
 from .utils import safe_filename
@@ -86,7 +87,7 @@ def _report(progress: ProgressCallback | None, percent: int, message: str) -> No
 
 def is_supported_dictionary_archive(filename: str) -> bool:
     normalized = filename.lower()
-    return normalized.endswith(".zip") or normalized.endswith(".tar.zst")
+    return normalized.endswith(".zip") or normalized.endswith(".tar.zst") or normalized.endswith(".rar")
 
 
 def dictionary_archive_suffix(filename: str) -> str:
@@ -96,6 +97,9 @@ def dictionary_archive_suffix(filename: str) -> str:
 def _extract_safe_archive(source_archive: Path, destination: Path) -> None:
     if source_archive.name.lower().endswith(".tar.zst"):
         _extract_safe_tar_zst(source_archive, destination)
+        return
+    if source_archive.name.lower().endswith(".rar"):
+        _extract_safe_rar(source_archive, destination)
         return
     _extract_safe_zip(source_archive, destination)
 
@@ -141,6 +145,28 @@ def _extract_safe_tar_zst(source_tar_zst: Path, destination: Path) -> None:
                         shutil.copyfileobj(extracted, dest)
     except (tarfile.TarError, zstandard.ZstdError) as exc:
         raise DictionaryPrepError("invalid dictionary tar.zst") from exc
+
+
+def _extract_safe_rar(source_rar: Path, destination: Path) -> None:
+    try:
+        with rarfile.RarFile(source_rar) as archive:
+            for member in archive.infolist():
+                relative_path = _safe_archive_member_path(member.filename)
+                if relative_path is None:
+                    continue
+                target = destination / relative_path
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                if not member.is_file():
+                    raise DictionaryPrepError(f"unsupported rar member in archive: {member.filename}")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(member) as source, target.open("wb") as dest:
+                    shutil.copyfileobj(source, dest)
+    except rarfile.RarCannotExec as exc:
+        raise DictionaryPrepError("RAR support requires unar, unrar, or bsdtar to be installed") from exc
+    except rarfile.Error as exc:
+        raise DictionaryPrepError("invalid dictionary rar") from exc
 
 
 def _safe_zip_member_path(name: str) -> Path | None:

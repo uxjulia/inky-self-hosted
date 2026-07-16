@@ -308,7 +308,7 @@ async def prepare_dictionary(
 ) -> Job:
     filename = file.filename or "dictionary.zip"
     if not is_supported_dictionary_archive(filename):
-        raise HTTPException(status_code=400, detail="only StarDict ZIP or TAR.ZST files can be prepared")
+        raise HTTPException(status_code=400, detail="only StarDict ZIP, TAR.ZST, or RAR files can be prepared")
 
     uploads_dir = get_settings().dictionaries_dir / "uploads"
     uploads_dir.mkdir(parents=True, exist_ok=True)
