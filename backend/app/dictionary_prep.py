@@ -28,6 +28,11 @@ _CSPT_MAGIC = b"CSPT"
 _CSPT_VERSION = 1
 _CSPT_PREFIX_LEN = 16
 _CSPT_STRIDE = 16
+_UNAR_CANDIDATES = (
+    "/opt/homebrew/bin/unar",
+    "/usr/local/bin/unar",
+    "/usr/bin/unar",
+)
 
 
 def prepare_dictionary_zip(source_zip: Path, output_dir: Path, progress: ProgressCallback | None = None) -> dict[str, object]:
@@ -148,6 +153,7 @@ def _extract_safe_tar_zst(source_tar_zst: Path, destination: Path) -> None:
 
 
 def _extract_safe_rar(source_rar: Path, destination: Path) -> None:
+    _prefer_available_unar()
     try:
         with rarfile.RarFile(source_rar) as archive:
             for member in archive.infolist():
@@ -166,7 +172,16 @@ def _extract_safe_rar(source_rar: Path, destination: Path) -> None:
     except rarfile.RarCannotExec as exc:
         raise DictionaryPrepError("RAR support requires unar, unrar, or bsdtar to be installed") from exc
     except rarfile.Error as exc:
-        raise DictionaryPrepError("invalid dictionary rar") from exc
+        raise DictionaryPrepError(f"invalid dictionary rar: {exc}") from exc
+
+
+def _prefer_available_unar() -> None:
+    for candidate in _UNAR_CANDIDATES:
+        if Path(candidate).is_file():
+            if rarfile.UNAR_TOOL != candidate:
+                rarfile.UNAR_TOOL = candidate
+                rarfile.CURRENT_SETUP = None
+            return
 
 
 def _safe_zip_member_path(name: str) -> Path | None:

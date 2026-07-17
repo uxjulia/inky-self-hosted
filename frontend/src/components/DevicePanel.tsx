@@ -1,6 +1,6 @@
-import { BookOpen, Download, RefreshCw, SlidersHorizontal, TabletSmartphone, Usb, Wifi, X } from "lucide-react";
+import { Download, RefreshCw, SlidersHorizontal, TabletSmartphone, Usb, Wifi, X } from "lucide-react";
 import { useEffect, useRef } from "react";
-import type { DeviceTarget, Job, PreparedDictionaryDownload, RecentOptimizedDownload, TransferMode } from "../appTypes";
+import type { DeviceTarget, Job, RecentOptimizedDownload, TransferMode } from "../appTypes";
 import { readableError } from "../appUtils";
 import { JobLog } from "./JobLog";
 
@@ -14,9 +14,7 @@ type DevicePanelProps = {
   deviceHostPlaceholder: string;
   destinationPath: string;
   device: DeviceTarget;
-  canPrepareDictionaries: boolean;
   recentOptimizedDownloads: RecentOptimizedDownload[];
-  recentPreparedDictionaryDownload: PreparedDictionaryDownload | null;
   jobs: Job[];
   canCancelUsbSend: boolean;
   onProbeDevice: () => void;
@@ -27,9 +25,7 @@ type DevicePanelProps = {
   onSetDestinationPath: (value: string) => void;
   onSetDevice: (value: DeviceTarget) => void;
   onOpenOptimizerSettings: () => void;
-  onOpenDictionaryTools: () => void;
   onDownloadRecentOptimizedFile: () => void;
-  onDownloadPreparedDictionaryFile: () => void;
   onCancelUsbSend: () => void;
 };
 
@@ -43,9 +39,7 @@ export function DevicePanel({
   deviceHostPlaceholder,
   destinationPath,
   device,
-  canPrepareDictionaries,
   recentOptimizedDownloads,
-  recentPreparedDictionaryDownload,
   jobs,
   canCancelUsbSend,
   onProbeDevice,
@@ -56,9 +50,7 @@ export function DevicePanel({
   onSetDestinationPath,
   onSetDevice,
   onOpenOptimizerSettings,
-  onOpenDictionaryTools,
   onDownloadRecentOptimizedFile,
-  onDownloadPreparedDictionaryFile,
   onCancelUsbSend
 }: DevicePanelProps) {
   const optimizedDownloadButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -191,17 +183,6 @@ export function DevicePanel({
         <SlidersHorizontal size={16} />
         EPUB Optimizer Settings
       </button>
-      {canPrepareDictionaries && (
-        <button
-          className="icon-text dictionary-tools-button"
-          type="button"
-          onClick={onOpenDictionaryTools}
-          title="Dictionary Tools"
-        >
-          <BookOpen size={16} />
-          Dictionary Tools
-        </button>
-      )}
       {recentOptimizedDownloads.length > 0 && (
         <button
           ref={optimizedDownloadButtonRef}
@@ -218,17 +199,6 @@ export function DevicePanel({
           {recentOptimizedDownloads.length === 1
             ? "Download Optimized EPUB"
             : `Download ${recentOptimizedDownloads.length} Optimized EPUBs`}
-        </button>
-      )}
-      {recentPreparedDictionaryDownload && (
-        <button
-          className="icon-text recent-download-button"
-          type="button"
-          onClick={onDownloadPreparedDictionaryFile}
-          title={`Download ${recentPreparedDictionaryDownload.filename}`}
-        >
-          <Download size={16} />
-          Download Prepared Dictionary
         </button>
       )}
       {canCancelUsbSend && (

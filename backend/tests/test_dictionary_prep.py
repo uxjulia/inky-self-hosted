@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
 
+import app.dictionary_prep as dictionary_prep
 from app.config import get_settings
 from app.dictionary_prep import DictionaryPrepError, is_supported_dictionary_archive, prepare_dictionary_zip
 
@@ -91,6 +92,23 @@ class DictionaryPrepServiceTests(unittest.TestCase):
         self.assertTrue(is_supported_dictionary_archive("dictionary.tar.zst"))
         self.assertTrue(is_supported_dictionary_archive("dictionary.rar"))
         self.assertFalse(is_supported_dictionary_archive("dictionary.7z"))
+
+    def test_rar_prefers_unar_outside_process_path(self):
+        source = self.root / "dictionary.rar"
+        source.write_bytes(b"fake rar bytes")
+        unar_path = self.root / "unar"
+        unar_path.write_text("#!/bin/sh\n")
+
+        with (
+            patch("app.dictionary_prep._UNAR_CANDIDATES", (str(unar_path),)),
+            patch("app.dictionary_prep.rarfile.UNAR_TOOL", "unar"),
+            patch("app.dictionary_prep.rarfile.CURRENT_SETUP", object()),
+            patch("app.dictionary_prep.rarfile.RarFile", return_value=_FakeRarArchive({})),
+        ):
+            with self.assertRaisesRegex(DictionaryPrepError, "no .ifo"):
+                prepare_dictionary_zip(source, self.root / "out")
+            self.assertEqual(dictionary_prep.rarfile.UNAR_TOOL, str(unar_path))
+            self.assertIsNone(dictionary_prep.rarfile.CURRENT_SETUP)
 
     def test_root_level_stardict_files_are_packaged_under_stem_folder(self):
         source = self.root / "root.zip"

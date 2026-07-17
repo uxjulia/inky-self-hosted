@@ -103,6 +103,7 @@ import {
   standaloneRecordToLibraryItem
 } from "./appUtils";
 import { BrowsePanel } from "./components/BrowsePanel";
+import { DictionaryToolsPanel } from "./components/DictionaryToolsPanel";
 import { DevicePanel } from "./components/DevicePanel";
 import { OptimizerSettingsModal } from "./components/OptimizerSettingsModal";
 import { SourcePanel } from "./components/SourcePanel";
@@ -139,6 +140,8 @@ const canUseWifiTransfer = !isHostedApp && !isPublicReadOnly;
 const browsePageSize = 25;
 const defaultDeviceHost = isSelfHostedBrowser ? "" : "crosspoint.local";
 const deviceHostPlaceholder = isSelfHostedBrowser ? "192.168." : "crosspoint.local";
+type AppTab = "epub" | "dictionary";
+
 export default function App() {
   const libraryLoadSeq = useRef(0);
   const browseLoadSeq = useRef(0);
@@ -146,6 +149,7 @@ export default function App() {
   const stablePageTooltipButtonRef = useRef<HTMLButtonElement | null>(null);
   const usbSendAbortControllerRef = useRef<AbortController | null>(null);
   const [view, setView] = useState<AppView>(() => getInitialView());
+  const [activeAppTab, setActiveAppTab] = useState<AppTab>("epub");
   const [authChecked, setAuthChecked] = useState(false);
   const [authEnabled, setAuthEnabled] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -201,7 +205,6 @@ export default function App() {
   const [testingDevice, setTestingDevice] = useState(false);
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
   const [optimizerModalOpen, setOptimizerModalOpen] = useState(false);
-  const [dictionaryModalOpen, setDictionaryModalOpen] = useState(false);
   const [dictionaryZipFile, setDictionaryZipFile] = useState<File | null>(null);
   const [serverModalOpen, setServerModalOpen] = useState(false);
   const [stablePageTooltipPosition, setStablePageTooltipPosition] = useState<FloatingTooltipPosition | null>(null);
@@ -381,6 +384,12 @@ export default function App() {
       hideStablePageTooltip();
     }
   }, [optimizerModalOpen]);
+
+  useEffect(() => {
+    if (!canPrepareDictionaries && activeAppTab === "dictionary") {
+      setActiveAppTab("epub");
+    }
+  }, [activeAppTab, canPrepareDictionaries]);
 
   useEffect(() => {
     if (!stablePageTooltipPosition) return;
@@ -1610,7 +1619,6 @@ export default function App() {
             rawBody: true
           });
           trackJob(job);
-          setDictionaryModalOpen(false);
           setDictionaryZipFile(null);
           showToast("Dictionary prep queued");
         },
@@ -1647,9 +1655,9 @@ export default function App() {
           : usesBrowserLibrary
             ? await probeStandaloneDevice(resolvedDeviceUrl)
             : await api<Record<string, unknown>>("/api/devices/probe", {
-              method: "POST",
-              body: JSON.stringify({ device_url: resolvedDeviceUrl })
-            });
+                method: "POST",
+                body: JSON.stringify({ device_url: resolvedDeviceUrl })
+              });
       setDeviceStatus(
         `Successfully connected to: ${status.device || "Device"} at ${transferMode === "usb" ? "USB" : status.ip || resolvedDeviceUrl}`
       );
@@ -1859,6 +1867,33 @@ export default function App() {
         </div>
       </header>
 
+      {view === "app" && canPrepareDictionaries && (
+        <nav className="app-tabs" role="tablist" aria-label="Inky tools">
+          <button
+            id="epub-optimizer-tab"
+            type="button"
+            role="tab"
+            aria-selected={activeAppTab === "epub"}
+            aria-controls="epub-optimizer-panel"
+            className={activeAppTab === "epub" ? "active" : ""}
+            onClick={() => setActiveAppTab("epub")}
+          >
+            EPUB Optimizer
+          </button>
+          <button
+            id="dictionary-tools-tab"
+            type="button"
+            role="tab"
+            aria-selected={activeAppTab === "dictionary"}
+            aria-controls="dictionary-tools-panel"
+            className={activeAppTab === "dictionary" ? "active" : ""}
+            onClick={() => setActiveAppTab("dictionary")}
+          >
+            Dictionary Tools
+          </button>
+        </nav>
+      )}
+
       {view === "help" ? (
         <HelpPage
           onOpenApp={openApp}
@@ -1868,8 +1903,22 @@ export default function App() {
           isHostedApp={isHostedApp}
           isPublicReadOnly={isPublicReadOnly}
         />
+      ) : activeAppTab === "dictionary" && canPrepareDictionaries ? (
+        <DictionaryToolsPanel
+          busy={busy}
+          dictionaryZipFile={dictionaryZipFile}
+          recentPreparedDictionaryDownload={recentPreparedDictionaryDownload}
+          onSelectDictionaryZip={setDictionaryZipFile}
+          onPrepareDictionaryZip={prepareDictionaryZip}
+          onDownloadPreparedDictionaryFile={downloadPreparedDictionaryFile}
+        />
       ) : (
-        <section className="layout">
+        <section
+          className="layout"
+          {...(canPrepareDictionaries
+            ? { role: "tabpanel", id: "epub-optimizer-panel", "aria-labelledby": "epub-optimizer-tab" }
+            : {})}
+        >
           <aside className="sidebar">
             <DevicePanel
               testingDevice={testingDevice}
@@ -1881,9 +1930,7 @@ export default function App() {
               deviceHostPlaceholder={deviceHostPlaceholder}
               destinationPath={destinationPath}
               device={device}
-              canPrepareDictionaries={canPrepareDictionaries}
               recentOptimizedDownloads={recentOptimizedDownloads}
-              recentPreparedDictionaryDownload={recentPreparedDictionaryDownload}
               jobs={jobs}
               canCancelUsbSend={Boolean(cancelableUsbSendJobId)}
               onProbeDevice={probeDevice}
@@ -1894,9 +1941,7 @@ export default function App() {
               onSetDestinationPath={setDestinationPath}
               onSetDevice={setDevice}
               onOpenOptimizerSettings={() => setOptimizerModalOpen(true)}
-              onOpenDictionaryTools={() => setDictionaryModalOpen(true)}
               onDownloadRecentOptimizedFile={downloadRecentOptimizedFile}
-              onDownloadPreparedDictionaryFile={downloadPreparedDictionaryFile}
               onCancelUsbSend={cancelUsbSend}
             />
 
@@ -2084,67 +2129,6 @@ export default function App() {
                   {editingSource ? "Save Source" : "Add Source"}
                 </button>
               </div>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {view === "app" && dictionaryModalOpen && canPrepareDictionaries && (
-        <div className="modal-backdrop" role="presentation">
-          <form
-            className="panel form-panel modal-card dictionary-modal-card"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="dictionary-modal-title"
-            onSubmit={prepareDictionaryZip}
-          >
-            <div className="panel-header">
-              <h2 id="dictionary-modal-title">Dictionary Tools</h2>
-              <button
-                type="button"
-                onClick={() => setDictionaryModalOpen(false)}
-                title="Close"
-                aria-label="Close dictionary tools"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <label className="field">
-              <span>StarDict archive</span>
-              <input
-                type="file"
-                accept=".zip,.tar.zst,.zst,.rar,application/zip,application/x-zip-compressed,application/zstd,application/x-zstd,application/vnd.rar,application/x-rar-compressed"
-                onChange={(event) => setDictionaryZipFile(event.target.files?.[0] || null)}
-              />
-            </label>
-            <div className="form-help dictionary-help">
-              <p>
-                Upload one StarDict dictionary as a <code>.zip</code>, <code>.tar.zst</code>, or <code>.rar</code>{" "}
-                archive. It can contain the files directly or inside one folder.
-              </p>
-              <p>
-                Required files must share the same name: <code>.ifo</code>, <code>.idx</code>, and <code>.dict</code> or{" "}
-                <code>.dict.dz</code>. Synonym files like <code>.syn</code> or <code>.syn.dz</code> are optional.
-              </p>
-              <p>
-                After preparation, download the new ZIP and unzip its folder into <code>/.dictionaries/</code> on your
-                CrossInk SD card.
-              </p>
-            </div>
-            <div className="modal-actions">
-              <button
-                type="button"
-                onClick={() => {
-                  setDictionaryModalOpen(false);
-                  setDictionaryZipFile(null);
-                }}
-              >
-                Cancel
-              </button>
-              <button className="primary" type="submit" disabled={busy || !dictionaryZipFile}>
-                <BookOpen size={16} />
-                Prepare Dictionary
-              </button>
             </div>
           </form>
         </div>

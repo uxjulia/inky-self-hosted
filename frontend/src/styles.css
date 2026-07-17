@@ -212,6 +212,33 @@ h2 {
   gap: 12px;
 }
 
+.app-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-panel);
+}
+
+.app-tabs button {
+  min-width: 150px;
+  padding: 8px 16px;
+  border-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 3px 3px 0 0;
+  background: transparent;
+  color: var(--color-muted);
+}
+
+.app-tabs button.active {
+  border-color: var(--color-border);
+  border-bottom-color: var(--color-panel);
+  background: var(--color-panel);
+  color: var(--color-primary-strong);
+  font-weight: 700;
+  margin-bottom: -1px;
+}
+
 .app-footer {
   padding: 8px 16px 10px;
   border-top: 1px solid var(--color-border);
@@ -506,7 +533,6 @@ h2 {
 }
 
 .optimizer-settings-button,
-.dictionary-tools-button,
 .recent-download-button {
   width: 100%;
 }
@@ -1183,8 +1209,21 @@ progress {
   width: min(620px, 100%);
 }
 
-.dictionary-modal-card {
+.dictionary-tools-page {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 24px 12px;
+}
+
+.dictionary-tools-card {
   width: min(520px, 100%);
+}
+
+.dictionary-action-button {
+  width: 100%;
 }
 
 .form-help {
@@ -1314,6 +1353,15 @@ progress {
     flex-direction: column;
   }
 
+  .app-tabs {
+    padding-inline: 12px;
+  }
+
+  .app-tabs button {
+    flex: 1;
+    min-width: 0;
+  }
+
   .app-shell {
     height: auto;
     min-height: 100vh;
@@ -1327,6 +1375,11 @@ progress {
   }
 
   .help-page {
+    overflow: visible;
+  }
+
+  .dictionary-tools-page {
+    place-items: start center;
     overflow: visible;
   }
 
