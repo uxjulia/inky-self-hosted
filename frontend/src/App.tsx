@@ -149,7 +149,7 @@ export default function App() {
   const stablePageTooltipButtonRef = useRef<HTMLButtonElement | null>(null);
   const usbSendAbortControllerRef = useRef<AbortController | null>(null);
   const [view, setView] = useState<AppView>(() => getInitialView());
-  const [activeAppTab, setActiveAppTab] = useState<AppTab>("epub");
+  const [activeAppTab, setActiveAppTab] = useState<AppTab>(() => getInitialAppTab());
   const [authChecked, setAuthChecked] = useState(false);
   const [authEnabled, setAuthEnabled] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -221,6 +221,8 @@ export default function App() {
   const trimmedSearchQuery = searchQuery.trim();
   const activeBrowseResult = searchResult || browseResult;
   const showBrowseLoading = !isLocalSource && (browseLoading || searching);
+  const dictionaryJobs = jobs.filter((job) => job.type === "dictionary_prepare");
+  const epubJobs = jobs.filter((job) => job.type !== "dictionary_prepare");
   function tooltipPositionForButton(button: HTMLButtonElement | null) {
     if (!button) return null;
     const rect = button.getBoundingClientRect();
@@ -315,9 +317,14 @@ export default function App() {
   }, [authChecked, isAuthenticated, usesBrowserLibrary]);
 
   useEffect(() => {
-    const updateViewFromHash = () => setView(getInitialView());
-    window.addEventListener("hashchange", updateViewFromHash);
-    return () => window.removeEventListener("hashchange", updateViewFromHash);
+    const updateRouteFromHash = () => {
+      setView(getInitialView());
+      if (window.location.hash !== "#help") {
+        setActiveAppTab(getInitialAppTab());
+      }
+    };
+    window.addEventListener("hashchange", updateRouteFromHash);
+    return () => window.removeEventListener("hashchange", updateRouteFromHash);
   }, []);
 
   useEffect(() => {
@@ -1728,11 +1735,17 @@ export default function App() {
     setView("help");
   }
 
-  function openApp() {
-    if (window.location.hash === "#help") {
-      window.history.pushState("", document.title, window.location.pathname + window.location.search);
+  function openAppTab(tab: AppTab) {
+    const hash = tab === "dictionary" ? "#dictionary-tools" : "#epub-optimizer";
+    if (window.location.hash !== hash) {
+      window.location.hash = hash;
     }
+    setActiveAppTab(tab);
     setView("app");
+  }
+
+  function openApp() {
+    openAppTab(activeAppTab);
   }
 
   if (!authChecked) {
@@ -1876,7 +1889,7 @@ export default function App() {
             aria-selected={activeAppTab === "epub"}
             aria-controls="epub-optimizer-panel"
             className={activeAppTab === "epub" ? "active" : ""}
-            onClick={() => setActiveAppTab("epub")}
+            onClick={() => openAppTab("epub")}
           >
             EPUB Optimizer
           </button>
@@ -1887,7 +1900,7 @@ export default function App() {
             aria-selected={activeAppTab === "dictionary"}
             aria-controls="dictionary-tools-panel"
             className={activeAppTab === "dictionary" ? "active" : ""}
-            onClick={() => setActiveAppTab("dictionary")}
+            onClick={() => openAppTab("dictionary")}
           >
             Dictionary Tools
           </button>
@@ -1907,6 +1920,7 @@ export default function App() {
         <DictionaryToolsPanel
           busy={busy}
           dictionaryZipFile={dictionaryZipFile}
+          jobs={dictionaryJobs}
           recentPreparedDictionaryDownload={recentPreparedDictionaryDownload}
           onSelectDictionaryZip={setDictionaryZipFile}
           onPrepareDictionaryZip={prepareDictionaryZip}
@@ -1931,7 +1945,7 @@ export default function App() {
               destinationPath={destinationPath}
               device={device}
               recentOptimizedDownloads={recentOptimizedDownloads}
-              jobs={jobs}
+              jobs={epubJobs}
               canCancelUsbSend={Boolean(cancelableUsbSendJobId)}
               onProbeDevice={probeDevice}
               onSetDeviceError={setDeviceError}
@@ -2281,6 +2295,10 @@ function resolveDeviceHostInput(value: string) {
 
 function getInitialView(): AppView {
   return window.location.hash === "#help" ? "help" : "app";
+}
+
+function getInitialAppTab(): AppTab {
+  return window.location.hash === "#dictionary-tools" ? "dictionary" : "epub";
 }
 
 function getInitialOptimizerSettings(): OptimizerSettings {

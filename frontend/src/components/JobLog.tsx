@@ -2,12 +2,13 @@ import type { Job } from "../appTypes";
 
 type JobLogProps = {
   jobs: Job[];
+  ariaLabel?: string;
 };
 
-export function JobLog({ jobs }: JobLogProps) {
+export function JobLog({ jobs, ariaLabel = "Latest device job" }: JobLogProps) {
   if (jobs.length === 0) return null;
   return (
-    <pre className="job-log" aria-label="Latest device job">
+    <pre className="job-log" aria-label={ariaLabel}>
       {jobs.map((job) => (
         <code key={job.id} className={jobLogClassName(job)}>
           {formatJobLog(job)}

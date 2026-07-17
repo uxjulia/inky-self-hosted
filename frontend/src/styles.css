@@ -537,14 +537,17 @@ h2 {
   width: 100%;
 }
 
-.optimized-download-button {
+.optimized-download-button,
+.prepared-download-button {
   background: var(--color-success);
   color: var(--color-on-success);
   border-color: var(--color-success);
 }
 
 .optimized-download-button:hover,
-.optimized-download-button:focus-visible {
+.optimized-download-button:focus-visible,
+.prepared-download-button:hover,
+.prepared-download-button:focus-visible {
   border-color: var(--color-success-border);
   box-shadow: 0 0 0 2px var(--color-success-border);
 }
@@ -1168,6 +1171,10 @@ progress {
   min-width: 0;
 }
 
+.text-center {
+  text-align: center;
+}
+
 .toast button {
   width: 28px;
   min-width: 28px;
@@ -1220,6 +1227,41 @@ progress {
 
 .dictionary-tools-card {
   width: min(520px, 100%);
+}
+
+.dictionary-drop-zone {
+  position: relative;
+  min-height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 3px;
+  background: var(--color-panel-muted);
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: center;
+}
+
+.dictionary-drop-zone:focus-within {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.dictionary-drop-zone.drag-over {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
+.dictionary-drop-zone input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
 }
 
 .dictionary-action-button {
