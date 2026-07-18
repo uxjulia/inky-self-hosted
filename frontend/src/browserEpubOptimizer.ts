@@ -445,6 +445,10 @@ function keepsSplitCluster(node: Node) {
   return ["table", "figure", "svg"].includes(name) || Boolean(element.querySelector("table,figure,svg"));
 }
 
+function isAtomicSplitContainer(node: Node) {
+  return node.nodeType === Node.ELEMENT_NODE && ["table", "figure", "svg"].includes((node as Element).localName.toLowerCase());
+}
+
 function findSectionSplitContainer(body: HTMLElement): { container: Element; childPath: number[] } | null {
   let container: Element = body;
   const childPath: number[] = [];
@@ -454,7 +458,7 @@ function findSectionSplitContainer(body: HTMLElement): { container: Element; chi
       .map((child, index) => ({ child, index }))
       .filter(({ child }) => child.nodeType === Node.ELEMENT_NODE);
     if (elementChildren.length >= 2) return { container, childPath };
-    if (elementChildren.length !== 1 || keepsSplitCluster(elementChildren[0].child)) return null;
+    if (elementChildren.length !== 1 || isAtomicSplitContainer(elementChildren[0].child)) return null;
     childPath.push(elementChildren[0].index);
     container = elementChildren[0].child as Element;
   }
