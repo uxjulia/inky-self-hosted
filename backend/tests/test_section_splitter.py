@@ -63,9 +63,11 @@ class XLocationManifestTests(unittest.TestCase):
         chapter_path = opf_dir / 'chapter.xhtml'
         chapter_path.write_text(
             '<html xmlns="http://www.w3.org/1999/xhtml"><body>'
-            '<p>one two three four</p>'
-            '<p>five six seven eight</p>'
-            '<p>nine ten eleven twelve</p>'
+            '<div class="chapter">'
+            f'<p>{"a" * 12000}</p>'
+            f'<p>{"b" * 12000}</p>'
+            f'<p>{"c" * 12000}</p>'
+            '</div>'
             '</body></html>',
             encoding='utf-8',
         )
@@ -86,21 +88,20 @@ class XLocationManifestTests(unittest.TestCase):
             encoding='utf-8',
         )
 
-        sections_split, split_parts = split_long_sections(
-            str(opf_path),
-            word_threshold=50000,
-            byte_threshold=40,
-            hard_byte_limit=1024 * 1024,
-        )
+        sections_split, split_parts = split_long_sections(str(opf_path))
 
         self.assertEqual(sections_split, 1)
-        self.assertEqual(split_parts, 3)
+        self.assertEqual(split_parts, 2)
         self.assertTrue((opf_dir / 'chapter__ci_section_002.xhtml').exists())
-        self.assertTrue((opf_dir / 'chapter__ci_section_003.xhtml').exists())
+        self.assertFalse((opf_dir / 'chapter__ci_section_003.xhtml').exists())
+        for name in ('chapter.xhtml', 'chapter__ci_section_002.xhtml'):
+            part_path = opf_dir / name
+            self.assertIn('class="chapter"', part_path.read_text(encoding='utf-8'))
+            self.assertLessEqual(part_path.stat().st_size, 32768)
         updated_opf = opf_path.read_text(encoding='utf-8')
         self.assertIn('href="chapter__ci_section_002.xhtml"', updated_opf)
-        self.assertIn('href="chapter__ci_section_003.xhtml"', updated_opf)
-        self.assertEqual(updated_opf.count('<itemref'), 3)
+        self.assertNotIn('href="chapter__ci_section_003.xhtml"', updated_opf)
+        self.assertEqual(updated_opf.count('<itemref'), 2)
 
 
 if __name__ == '__main__':

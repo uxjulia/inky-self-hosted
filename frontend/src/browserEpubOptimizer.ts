@@ -434,11 +434,30 @@ function isHeadingNode(node: Node) {
   return node.nodeType === Node.ELEMENT_NODE && /^h[1-6]$/i.test((node as Element).localName);
 }
 
+function isIgnorableSplitNode(node: Node) {
+  return node.nodeType === Node.TEXT_NODE && !(node.textContent || "").trim();
+}
+
 function keepsSplitCluster(node: Node) {
   if (node.nodeType !== Node.ELEMENT_NODE) return false;
   const element = node as Element;
   const name = element.localName.toLowerCase();
   return ["table", "figure", "svg"].includes(name) || Boolean(element.querySelector("table,figure,svg"));
+}
+
+function findSectionSplitContainer(body: HTMLElement): { container: Element; childPath: number[] } | null {
+  let container: Element = body;
+  const childPath: number[] = [];
+  while (true) {
+    const children = Array.from(container.childNodes);
+    const elementChildren = children
+      .map((child, index) => ({ child, index }))
+      .filter(({ child }) => child.nodeType === Node.ELEMENT_NODE);
+    if (elementChildren.length >= 2) return { container, childPath };
+    if (elementChildren.length !== 1 || keepsSplitCluster(elementChildren[0].child)) return null;
+    childPath.push(elementChildren[0].index);
+    container = elementChildren[0].child as Element;
+  }
 }
 
 function splitLongXhtmlSections(
@@ -460,33 +479,42 @@ function splitLongXhtmlSections(
     const visibleText = extractVisibleText(text);
     if (countWords(visibleText) <= wordThreshold && new TextEncoder().encode(text).length <= byteThreshold) continue;
     const doc = parser.parseFromString(text, "application/xhtml+xml");
-    if (doc.getElementsByTagName("parsererror").length > 0 || !doc.body || doc.body.childNodes.length < 2) continue;
+    if (doc.getElementsByTagName("parsererror").length > 0 || !doc.body) continue;
+    const splitContainer = findSectionSplitContainer(doc.body);
+    if (!splitContainer) continue;
+    const splitChildren = Array.from(splitContainer.container.childNodes);
+    const fixedBytes = Math.max(
+      0,
+      new TextEncoder().encode(text).length -
+        splitChildren.reduce((sum, child) => sum + new TextEncoder().encode(serializer.serializeToString(child)).length, 0)
+    );
 
     const chunks: Node[][] = [];
     let current: Node[] = [];
     let currentWords = 0;
-    let currentBytes = 0;
+    let currentBytes = fixedBytes;
     const flush = () => {
       if (!current.length) return;
       chunks.push(current);
       current = [];
       currentWords = 0;
-      currentBytes = 0;
+      currentBytes = fixedBytes;
     };
 
-    for (const child of Array.from(doc.body.childNodes)) {
+    for (const child of splitChildren) {
       const childText = child.textContent || "";
       const childWords = countWords(childText);
       const childBytes = new TextEncoder().encode(serializer.serializeToString(child)).length;
-      const wouldExceed = current.length > 0 && (currentWords + childWords > wordThreshold || currentBytes + childBytes > byteThreshold);
-      const canBreakBefore = current.length > 0 && isSafeSplitElement(child) && !keepsSplitCluster(child) && !isHeadingNode(current[current.length - 1]);
+      const lastContentNode = [...current].reverse().find((node) => !isIgnorableSplitNode(node));
+      const wouldExceed = Boolean(lastContentNode) && (currentWords + childWords > wordThreshold || currentBytes + childBytes > byteThreshold);
+      const canBreakBefore = Boolean(lastContentNode) && isSafeSplitElement(child) && !keepsSplitCluster(child) && !isHeadingNode(lastContentNode!);
       if (wouldExceed && canBreakBefore) flush();
 
       current.push(child);
       currentWords += childWords;
       currentBytes += childBytes;
 
-      const canBreakAfter = current.length > 1 && isSafeSplitElement(child) && !keepsSplitCluster(child) && !isHeadingNode(child);
+      const canBreakAfter = !isIgnorableSplitNode(child) && isSafeSplitElement(child) && !keepsSplitCluster(child) && !isHeadingNode(child);
       if (currentBytes >= hardByteLimit && canBreakAfter) flush();
     }
     flush();
@@ -496,8 +524,10 @@ function splitLongXhtmlSections(
     chunks.forEach((chunk, partIndex) => {
       const partPath = sectionSplitPath(path, partIndex);
       const partDoc = doc.cloneNode(true) as Document;
-      while (partDoc.body.firstChild) partDoc.body.removeChild(partDoc.body.firstChild);
-      for (const node of chunk) partDoc.body.appendChild(partDoc.importNode(node, true));
+      let partContainer: Element = partDoc.body;
+      for (const childIndex of splitContainer.childPath) partContainer = partContainer.childNodes[childIndex] as Element;
+      while (partContainer.firstChild) partContainer.removeChild(partContainer.firstChild);
+      for (const node of chunk) partContainer.appendChild(partDoc.importNode(node, true));
       out[partPath] = serializer.serializeToString(partDoc);
       splitSections[path].push(partPath);
     });
