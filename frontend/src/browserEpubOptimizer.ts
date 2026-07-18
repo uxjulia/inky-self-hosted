@@ -151,7 +151,7 @@ export async function optimizeEpubInBrowser(
 
   progress?.(72, "Updating EPUB metadata");
   let updatedOpf = processOpf(opfText, opfPath, imageRenameMap, settings);
-  const splitResult = splitLongXhtmlSections(xhtmlFiles, settings);
+  const splitResult = splitLongXhtmlSections(xhtmlFiles, settings, new Set(parseSpineHrefs(updatedOpf, opfPath)));
   for (const [path, text] of Object.entries(splitResult.xhtmlFiles)) {
     xhtmlFiles[path] = text;
     out.file(path, text, {
@@ -443,18 +443,20 @@ function keepsSplitCluster(node: Node) {
 
 function splitLongXhtmlSections(
   xhtmlFiles: Record<string, string>,
-  settings: BrowserOptimizerSettings
+  settings: BrowserOptimizerSettings,
+  spinePaths: Set<string>
 ): { xhtmlFiles: Record<string, string>; splitSections: SplitSections } {
   if (!settings.split_long_sections) return { xhtmlFiles: {}, splitSections: {} };
   const parser = new DOMParser();
   const serializer = new XMLSerializer();
   const out: Record<string, string> = {};
   const splitSections: SplitSections = {};
-  const wordThreshold = Math.max(1, Math.round(settings.section_split_word_threshold || 2000));
-  const byteThreshold = Math.max(4096, Math.round(settings.section_split_byte_threshold || 65536));
-  const hardByteLimit = Math.max(byteThreshold, Math.round(settings.section_split_hard_byte_limit || 98304));
+  const wordThreshold = Math.max(1, Math.round(settings.section_split_word_threshold || 8000));
+  const byteThreshold = Math.max(4096, Math.round(settings.section_split_byte_threshold || 32768));
+  const hardByteLimit = Math.max(byteThreshold, Math.round(settings.section_split_hard_byte_limit || 49152));
 
   for (const [path, text] of Object.entries(xhtmlFiles)) {
+    if (!spinePaths.has(path)) continue;
     const visibleText = extractVisibleText(text);
     if (countWords(visibleText) <= wordThreshold && new TextEncoder().encode(text).length <= byteThreshold) continue;
     const doc = parser.parseFromString(text, "application/xhtml+xml");
@@ -516,7 +518,7 @@ function addSplitSectionsToOpf(opfText: string, opfPath: string, splitSections: 
   for (const item of Array.from(doc.getElementsByTagName("item"))) {
     const id = item.getAttribute("id");
     const href = item.getAttribute("href");
-    if (id && href) byPath.set(resolvePath(opfPath, href), { id, item });
+    if (id && href) byPath.set(resolvePath(opfPath, safeDecodeURIComponent(href.split("#")[0])), { id, item });
   }
   const usedIds = new Set(Array.from(doc.getElementsByTagName("item")).map((item) => item.getAttribute("id") || ""));
   for (const [originalPath, parts] of Object.entries(splitSections)) {
@@ -937,7 +939,7 @@ function parseSpineHrefs(opfText: string, opfPath: string) {
   for (const item of Array.from(doc.getElementsByTagName("item"))) {
     const id = item.getAttribute("id");
     const href = item.getAttribute("href");
-    if (id && href) manifest.set(id, resolvePath(opfPath, href));
+    if (id && href) manifest.set(id, resolvePath(opfPath, safeDecodeURIComponent(href.split("#")[0])));
   }
   return Array.from(doc.getElementsByTagName("itemref"))
     .map((itemref) => manifest.get(itemref.getAttribute("idref") || ""))

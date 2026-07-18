@@ -202,6 +202,14 @@ export function OptimizerSettingsModal({
               <span>Rotate and split landscape images</span>
             </label>
           )}
+          <label className="toggle-field">
+            <input
+              type="checkbox"
+              checked={optimizerSettings.split_long_sections}
+              onChange={(event) => onUpdateOptimizerSetting("split_long_sections", event.target.checked)}
+            />
+            <span>Split long EPUB sections</span>
+          </label>
 
           <div className="field">
             <div className="field-label">

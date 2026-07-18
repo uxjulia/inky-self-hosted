@@ -256,6 +256,15 @@ export function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
     storedCharactersPerReferencePage != null && storedCharactersPerReferencePage <= 500
       ? Math.round(storedCharactersPerReferencePage * 5.5)
       : storedCharactersPerReferencePage;
+  const storedSectionSplitWordThreshold = Number(
+    stored.section_split_word_threshold ?? defaultOptimizerSettings.section_split_word_threshold
+  );
+  const storedSectionSplitByteThreshold = Number(
+    stored.section_split_byte_threshold ?? defaultOptimizerSettings.section_split_byte_threshold
+  );
+  const storedSectionSplitHardByteLimit = Number(
+    stored.section_split_hard_byte_limit ?? defaultOptimizerSettings.section_split_hard_byte_limit
+  );
   return {
     use_original_filename: booleanOrDefault(
       stored.use_original_filename,
@@ -288,17 +297,23 @@ export function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
     remove_css: booleanOrDefault(stored.remove_css, defaultOptimizerSettings.remove_css),
     split_long_sections: booleanOrDefault(stored.split_long_sections, defaultOptimizerSettings.split_long_sections),
     section_split_word_threshold: clampNumber(
-      Number(stored.section_split_word_threshold ?? defaultOptimizerSettings.section_split_word_threshold),
+      [2000, 4000].includes(storedSectionSplitWordThreshold)
+        ? defaultOptimizerSettings.section_split_word_threshold
+        : storedSectionSplitWordThreshold,
       1,
       50000
     ),
     section_split_byte_threshold: clampNumber(
-      Number(stored.section_split_byte_threshold ?? defaultOptimizerSettings.section_split_byte_threshold),
+      storedSectionSplitByteThreshold === 65536
+        ? defaultOptimizerSettings.section_split_byte_threshold
+        : storedSectionSplitByteThreshold,
       4096,
       1048576
     ),
     section_split_hard_byte_limit: clampNumber(
-      Number(stored.section_split_hard_byte_limit ?? defaultOptimizerSettings.section_split_hard_byte_limit),
+      storedSectionSplitHardByteLimit === 98304
+        ? defaultOptimizerSettings.section_split_hard_byte_limit
+        : storedSectionSplitHardByteLimit,
       4096,
       2097152
     ),

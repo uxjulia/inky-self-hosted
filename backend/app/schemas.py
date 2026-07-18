@@ -143,9 +143,9 @@ class OptimizeRequest(BaseModel):
     light_novel: bool = False
     characters_per_reference_page: int = Field(default=1500, ge=1, le=10000)
     split_long_sections: bool = True
-    section_split_word_threshold: int = Field(default=2000, ge=1, le=50000)
-    section_split_byte_threshold: int = Field(default=65536, ge=4096, le=1048576)
-    section_split_hard_byte_limit: int = Field(default=98304, ge=4096, le=2097152)
+    section_split_word_threshold: int = Field(default=8000, ge=1, le=50000)
+    section_split_byte_threshold: int = Field(default=32768, ge=4096, le=1048576)
+    section_split_hard_byte_limit: int = Field(default=49152, ge=4096, le=2097152)
     remove_fonts: bool = True
     remove_css: bool = True
     text_cleanup: bool = True
