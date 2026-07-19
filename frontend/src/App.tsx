@@ -1476,19 +1476,19 @@ export default function App() {
     const shouldAddToRecentDownloads = options.addToRecentDownloads ?? true;
     if (replaceRecentDownloads) setRecentOptimizedDownloads([]);
     if (canOptimizeBrowserFileOnServer()) {
-      updateBrowserSendJob(jobId, itemId, 0, "Optimizing EPUB on server", "running");
+      updateBrowserSendJob(jobId, itemId, 0, "Optimizing EPUB...", "running");
       const result = await optimizeBrowserFileOnServer(blob, filename);
       if (shouldAddToRecentDownloads) addRecentOptimizedDownload(result);
-      updateBrowserSendJob(jobId, itemId, 100, "EPUB optimized on server", "succeeded");
+      updateBrowserSendJob(jobId, itemId, 100, "EPUB optimized", "succeeded");
       return result;
     }
 
-    updateBrowserSendJob(jobId, itemId, 0, "Optimizing EPUB in browser", "running");
+    updateBrowserSendJob(jobId, itemId, 0, "Optimizing EPUB...", "running");
     const result = await optimizeEpubInBrowser(blob, filename, device, optimizerSettings, (progress, message) => {
       updateBrowserSendJob(jobId, itemId, progress, message, "running");
     });
     if (shouldAddToRecentDownloads) addRecentOptimizedDownload(result);
-    updateBrowserSendJob(jobId, itemId, 100, "EPUB optimized in browser", "succeeded");
+    updateBrowserSendJob(jobId, itemId, 100, "EPUB optimized", "succeeded");
     return result;
   }
 
@@ -1662,9 +1662,9 @@ export default function App() {
           : usesBrowserLibrary
             ? await probeStandaloneDevice(resolvedDeviceUrl)
             : await api<Record<string, unknown>>("/api/devices/probe", {
-                method: "POST",
-                body: JSON.stringify({ device_url: resolvedDeviceUrl })
-              });
+              method: "POST",
+              body: JSON.stringify({ device_url: resolvedDeviceUrl })
+            });
       setDeviceStatus(
         `Successfully connected to: ${status.device || "Device"} at ${transferMode === "usb" ? "USB" : status.ip || resolvedDeviceUrl}`
       );
@@ -1828,7 +1828,10 @@ export default function App() {
         <div className="brand">
           <span className="brand-logo" aria-hidden="true" />
           <div>
-            <h1>Inky</h1>
+            <div className="brand-title">
+              <h1>Inky</h1>
+              <span className="beta-badge">Beta</span>
+            </div>
             <span>
               A Cross<span className="serif">I</span>nk Companion App
             </span>

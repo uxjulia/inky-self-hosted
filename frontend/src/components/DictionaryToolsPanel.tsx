@@ -59,7 +59,7 @@ export function DictionaryToolsPanel({
           </div>
         </div>
         <div>
-          <p className="text-center">Use this tool to generate files that will improve dictionary lookup speeds in Crossink.</p>
+          <p className="text-center">Use this tool to generate index files for your dictionary that will improve lookup speeds in Crossink.</p>
         </div>
         <div className="field">
           <span>StarDict archive</span>
