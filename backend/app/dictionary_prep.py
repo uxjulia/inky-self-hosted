@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import errno
 import gzip
 import logging
 import shutil
 import struct
+import subprocess
 import tarfile
 import tempfile
+import threading
+import time
 import zipfile
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
@@ -17,10 +21,6 @@ from .utils import safe_filename
 
 
 logger = logging.getLogger("uvicorn.error")
-
-# rarfile's small-file optimization rebuilds a partial RAR before invoking the
-# extractor. Some valid RAR5 archives cannot be read from that partial archive.
-rarfile.USE_EXTRACT_HACK = 0
 
 
 class DictionaryPrepError(ValueError):
@@ -41,13 +41,14 @@ _UNAR_CANDIDATES = (
     "/usr/local/bin/unar",
     "/usr/bin/unar",
 )
+PREPARED_DICTIONARY_RETENTION_SECONDS = 10 * 60
 
 
 def prepare_dictionary_zip(source_zip: Path, output_dir: Path, progress: ProgressCallback | None = None) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
     _report(progress, 5, "Reading dictionary archive")
 
-    with tempfile.TemporaryDirectory(prefix="dictionary-", dir=output_dir) as work_path:
+    with tempfile.TemporaryDirectory(prefix="inky-dictionary-") as work_path:
         work_dir = Path(work_path)
         _extract_safe_archive(source_zip, work_dir)
         _report(progress, 20, "Validating StarDict files")
@@ -91,6 +92,37 @@ def prepare_dictionary_zip(source_zip: Path, output_dir: Path, progress: Progres
         "output_path": str(output_zip),
         "files": files,
     }
+
+
+def schedule_prepared_dictionary_cleanup(output_dir: Path, delay_seconds: float | None = None) -> None:
+    delay = PREPARED_DICTIONARY_RETENTION_SECONDS if delay_seconds is None else max(0, delay_seconds)
+    timer = threading.Timer(delay, _remove_prepared_dictionary, args=(output_dir,))
+    timer.daemon = True
+    timer.start()
+
+
+def schedule_existing_prepared_dictionary_cleanup(prepared_root: Path) -> None:
+    if not prepared_root.is_dir():
+        return
+    now = time.time()
+    for output_dir in prepared_root.iterdir():
+        if not output_dir.is_dir():
+            continue
+        age_seconds = max(0, now - output_dir.stat().st_mtime)
+        schedule_prepared_dictionary_cleanup(
+            output_dir,
+            max(0, PREPARED_DICTIONARY_RETENTION_SECONDS - age_seconds),
+        )
+
+
+def _remove_prepared_dictionary(output_dir: Path) -> None:
+    if not output_dir.exists():
+        return
+    shutil.rmtree(output_dir, ignore_errors=True)
+    if output_dir.exists():
+        logger.warning("Prepared dictionary cleanup failed: output_dir=%s", output_dir)
+    else:
+        logger.info("Prepared dictionary expired and was removed: output_dir=%s", output_dir)
 
 
 def _report(progress: ProgressCallback | None, percent: int, message: str) -> None:
@@ -174,19 +206,12 @@ def _extract_safe_rar(source_rar: Path, destination: Path) -> None:
                 archive.is_solid() if hasattr(archive, "is_solid") else "unknown",
                 configured_extractor or "automatic",
             )
-            for member in members:
-                relative_path = _safe_archive_member_path(member.filename)
-                if relative_path is None:
-                    continue
-                target = destination / relative_path
-                if member.isdir():
-                    target.mkdir(parents=True, exist_ok=True)
-                    continue
-                if not member.is_file():
-                    raise DictionaryPrepError(f"unsupported rar member in archive: {member.filename}")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with archive.open(member) as source, target.open("wb") as dest:
-                    shutil.copyfileobj(source, dest)
+            safe_files = _validate_rar_members(members)
+            if configured_extractor:
+                _extract_rar_with_unar(source_rar, destination, configured_extractor)
+                _verify_rar_files(destination, safe_files)
+            else:
+                _extract_rar_with_rarfile(archive, destination, members)
             logger.info(
                 "RAR dictionary extraction completed: members=%d extractor=%s",
                 len(members),
@@ -207,6 +232,64 @@ def _extract_safe_rar(source_rar: Path, destination: Path) -> None:
         raise DictionaryPrepError(
             f"RAR extraction failed using {extractor} ({type(exc).__name__}): {detail}"
         ) from exc
+
+
+def _validate_rar_members(members: list[rarfile.RarInfo]) -> list[tuple[Path, int]]:
+    safe_files: list[tuple[Path, int]] = []
+    for member in members:
+        relative_path = _safe_archive_member_path(member.filename)
+        if relative_path is None or member.isdir():
+            continue
+        if not member.is_file():
+            raise DictionaryPrepError(f"unsupported rar member in archive: {member.filename}")
+        safe_files.append((relative_path, member.file_size))
+    return safe_files
+
+
+def _extract_rar_with_unar(source_rar: Path, destination: Path, unar_path: str) -> None:
+    try:
+        result = subprocess.run(
+            [unar_path, "-q", "-f", "-D", "-p", "", "-o", str(destination), str(source_rar)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        if exc.errno == errno.ENOSPC:
+            raise
+        raise rarfile.RarCannotExec(f"Unable to run {unar_path}: {exc}") from exc
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "no error output"
+        raise DictionaryPrepError(f"RAR extraction failed using {unar_path} (exit {result.returncode}): {detail}")
+
+
+def _verify_rar_files(destination: Path, safe_files: list[tuple[Path, int]]) -> None:
+    for relative_path, expected_size in safe_files:
+        extracted = destination / relative_path
+        if not extracted.is_file():
+            raise DictionaryPrepError(f"RAR extractor did not create expected file: {relative_path.as_posix()}")
+        actual_size = extracted.stat().st_size
+        if actual_size != expected_size:
+            raise DictionaryPrepError(
+                f"RAR extractor produced a truncated file: {relative_path.as_posix()} "
+                f"(expected {expected_size} bytes, got {actual_size})"
+            )
+
+
+def _extract_rar_with_rarfile(archive: rarfile.RarFile, destination: Path, members: list[rarfile.RarInfo]) -> None:
+    for member in members:
+        relative_path = _safe_archive_member_path(member.filename)
+        if relative_path is None:
+            continue
+        target = destination / relative_path
+        if member.isdir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with archive.open(member) as source, target.open("wb") as dest:
+            shutil.copyfileobj(source, dest)
 
 
 def _prefer_available_unar() -> str | None:

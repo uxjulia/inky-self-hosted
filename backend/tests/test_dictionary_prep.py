@@ -20,7 +20,12 @@ from fastapi.testclient import TestClient
 
 import app.dictionary_prep as dictionary_prep
 from app.config import get_settings
-from app.dictionary_prep import DictionaryPrepError, is_supported_dictionary_archive, prepare_dictionary_zip
+from app.dictionary_prep import (
+    DictionaryPrepError,
+    is_supported_dictionary_archive,
+    prepare_dictionary_zip,
+    schedule_existing_prepared_dictionary_cleanup,
+)
 
 
 class DictionaryPrepServiceTests(unittest.TestCase):
@@ -79,7 +84,10 @@ class DictionaryPrepServiceTests(unittest.TestCase):
             }
         )
 
-        with patch("app.dictionary_prep.rarfile.RarFile", return_value=archive):
+        with (
+            patch("app.dictionary_prep._prefer_available_unar", return_value=None),
+            patch("app.dictionary_prep.rarfile.RarFile", return_value=archive),
+        ):
             result = prepare_dictionary_zip(source, self.root / "out")
 
         names = self._zip_names(Path(result["output_path"]))
@@ -97,7 +105,8 @@ class DictionaryPrepServiceTests(unittest.TestCase):
         source = self.root / "dictionary.rar"
         source.write_bytes(b"fake rar bytes")
         unar_path = self.root / "unar"
-        unar_path.write_text("#!/bin/sh\n")
+        unar_path.write_text("#!/bin/sh\nexit 0\n")
+        unar_path.chmod(0o755)
 
         with (
             patch("app.dictionary_prep._UNAR_CANDIDATES", (str(unar_path),)),
@@ -109,9 +118,6 @@ class DictionaryPrepServiceTests(unittest.TestCase):
                 prepare_dictionary_zip(source, self.root / "out")
             self.assertEqual(dictionary_prep.rarfile.UNAR_TOOL, str(unar_path))
             self.assertIsNone(dictionary_prep.rarfile.CURRENT_SETUP)
-
-    def test_rar_disables_partial_archive_extraction_hack(self):
-        self.assertEqual(dictionary_prep.rarfile.USE_EXTRACT_HACK, 0)
 
     def test_rar_failure_identifies_extractor_and_error_type(self):
         source = self.root / "dictionary.rar"
@@ -130,6 +136,24 @@ class DictionaryPrepServiceTests(unittest.TestCase):
                 r"RAR extraction failed using automatic extractor \(BadRarFile\): truncated archive",
             ):
                 prepare_dictionary_zip(source, self.root / "out")
+
+    def test_existing_prepared_dictionary_cleanup_uses_remaining_retention(self):
+        prepared_root = self.root / "prepared"
+        recent = prepared_root / "recent-job"
+        expired = prepared_root / "expired-job"
+        recent.mkdir(parents=True)
+        expired.mkdir()
+        now = time.time()
+        os.utime(recent, (now - 120, now - 120))
+        os.utime(expired, (now - 900, now - 900))
+
+        with patch("app.dictionary_prep.schedule_prepared_dictionary_cleanup") as schedule:
+            schedule_existing_prepared_dictionary_cleanup(prepared_root)
+
+        delays = {call.args[0].name: call.args[1] for call in schedule.call_args_list}
+        self.assertGreater(delays["recent-job"], 470)
+        self.assertLessEqual(delays["recent-job"], 480)
+        self.assertEqual(delays["expired-job"], 0)
 
     def test_root_level_stardict_files_are_packaged_under_stem_folder(self):
         source = self.root / "root.zip"
@@ -389,8 +413,9 @@ def _write_tar_zst(path: Path, entries: dict[str, bytes]) -> None:
 
 
 class _FakeRarInfo:
-    def __init__(self, filename: str):
+    def __init__(self, filename: str, file_size: int):
         self.filename = filename
+        self.file_size = file_size
 
     def isdir(self) -> bool:
         return self.filename.endswith("/")
@@ -410,7 +435,7 @@ class _FakeRarArchive:
         return False
 
     def infolist(self) -> list[_FakeRarInfo]:
-        return [_FakeRarInfo(name) for name in self.entries]
+        return [_FakeRarInfo(name, len(data)) for name, data in self.entries.items()]
 
     def open(self, member: _FakeRarInfo):
         return io.BytesIO(self.entries[member.filename])

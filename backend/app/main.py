@@ -24,7 +24,11 @@ from .auth import require_basic_auth
 from .config import ensure_data_dirs, get_settings
 from .connectors import browse_source, search_source
 from .db import SessionLocal, get_db, init_db
-from .dictionary_prep import dictionary_archive_suffix, is_supported_dictionary_archive
+from .dictionary_prep import (
+    dictionary_archive_suffix,
+    is_supported_dictionary_archive,
+    schedule_existing_prepared_dictionary_cleanup,
+)
 from .jobs import create_job, run_dictionary_prepare_job, run_optimize_job, run_send_job, run_send_path_job
 from .library import (
     copy_uploaded_file,
@@ -103,6 +107,7 @@ async def block_public_writes(request: Request, call_next):
 def startup() -> None:
     ensure_data_dirs()
     init_db()
+    schedule_existing_prepared_dictionary_cleanup(get_settings().dictionaries_dir / "prepared")
     if not get_settings().public_read_only:
         threading.Thread(target=sync_mounted_library_on_startup, daemon=True).start()
 
@@ -314,12 +319,9 @@ async def prepare_dictionary(
     if not is_supported_dictionary_archive(filename):
         raise HTTPException(status_code=400, detail="only StarDict ZIP, TAR.ZST, or RAR files can be prepared")
 
-    uploads_dir = get_settings().dictionaries_dir / "uploads"
-    uploads_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
         suffix=dictionary_archive_suffix(filename),
-        prefix="dictionary-",
-        dir=uploads_dir,
+        prefix="inky-dictionary-upload-",
         delete=False,
     ) as temp:
         temp_path = Path(temp.name)

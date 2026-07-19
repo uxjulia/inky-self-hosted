@@ -91,7 +91,7 @@ export function DictionaryToolsPanel({
           </p>
           <p>
             After preparation, download the new ZIP and unzip its folder into <code>/.dictionaries</code> or <code>/dictionaries</code> on your
-            SD card.
+            SD card. Prepared downloads remain available for 10 minutes.
           </p>
         </div>
         <button

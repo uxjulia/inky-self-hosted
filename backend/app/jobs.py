@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import logging
+import shutil
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -10,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import SessionLocal
-from .dictionary_prep import prepare_dictionary_zip
+from .dictionary_prep import prepare_dictionary_zip, schedule_prepared_dictionary_cleanup
 from .library import send_file_to_device
 from .models import Job, JobStatus, LibraryItem, utc_now
 from .optimizer.service import optimize_epub, preferred_output_filename
@@ -122,6 +125,7 @@ def run_send_path_job(job_id: str, source_path: str, request: DeviceSendRequest)
 
 def run_dictionary_prepare_job(job_id: str, source_zip: str, original_filename: str | None = None) -> None:
     db = SessionLocal()
+    output_dir = get_settings().dictionaries_dir / "prepared" / job_id
     try:
         job = db.get(Job, job_id)
         if not job:
@@ -142,7 +146,6 @@ def run_dictionary_prepare_job(job_id: str, source_zip: str, original_filename: 
         def progress(percent: int, message: str) -> None:
             set_job(job_id, progress=max(0, min(100, percent)), message=message)
 
-        output_dir = get_settings().dictionaries_dir / "prepared" / job_id
         result = prepare_dictionary_zip(Path(source_zip), output_dir, progress)
         result["download_url"] = f"/api/dictionaries/prepared/{job_id}/download"
         set_job(
@@ -152,15 +155,26 @@ def run_dictionary_prepare_job(job_id: str, source_zip: str, original_filename: 
             message="Dictionary prepared",
             result_json=json.dumps(result),
         )
+        schedule_prepared_dictionary_cleanup(output_dir)
         logger.info("Dictionary prep completed: job_id=%s filename=%r", job_id, original_filename or source_path.name)
     except Exception as exc:
+        data_free_bytes = shutil.disk_usage(get_settings().data_dir).free
+        temp_free_bytes = shutil.disk_usage(tempfile.gettempdir()).free
         logger.exception(
-            "Dictionary prep failed: job_id=%s filename=%r source=%s",
+            "Dictionary prep failed: job_id=%s filename=%r source=%s data_free_bytes=%d temp_free_bytes=%d",
             job_id,
             original_filename or Path(source_zip).name,
             source_zip,
+            data_free_bytes,
+            temp_free_bytes,
         )
-        set_job(job_id, status=JobStatus.failed.value, progress=100, message="Dictionary prep failed", error=str(exc))
+        error = (
+            "The server ran out of temporary storage while extracting this dictionary"
+            if isinstance(exc, OSError) and exc.errno == errno.ENOSPC
+            else str(exc)
+        )
+        shutil.rmtree(output_dir, ignore_errors=True)
+        set_job(job_id, status=JobStatus.failed.value, progress=100, message="Dictionary prep failed", error=error)
     finally:
         Path(source_zip).unlink(missing_ok=True)
         db.close()
