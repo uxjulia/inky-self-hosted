@@ -71,6 +71,7 @@ class XLocationManifestTests(unittest.TestCase):
             '</body></html>',
             encoding='utf-8',
         )
+        (opf_dir / 'cover.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg"/>', encoding='utf-8')
         opf_path.write_text(
             textwrap.dedent(
                 """
@@ -78,9 +79,11 @@ class XLocationManifestTests(unittest.TestCase):
                 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
                   <manifest>
                     <item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>
+                    <item id="cover" href="cover.svg" media-type="image/svg+xml"/>
                   </manifest>
                   <spine>
                     <itemref idref="chapter"/>
+                    <itemref idref="cover"/>
                   </spine>
                 </package>
                 """
@@ -88,7 +91,8 @@ class XLocationManifestTests(unittest.TestCase):
             encoding='utf-8',
         )
 
-        sections_split, split_parts = split_long_sections(str(opf_path))
+        source_spine_map = {}
+        sections_split, split_parts = split_long_sections(str(opf_path), source_spine_map=source_spine_map)
 
         self.assertEqual(sections_split, 1)
         self.assertEqual(split_parts, 2)
@@ -103,7 +107,12 @@ class XLocationManifestTests(unittest.TestCase):
         updated_opf = opf_path.read_text(encoding='utf-8')
         self.assertIn('href="chapter__ci_section_002.xhtml"', updated_opf)
         self.assertNotIn('href="chapter__ci_section_003.xhtml"', updated_opf)
-        self.assertEqual(updated_opf.count('<itemref'), 2)
+        self.assertEqual(updated_opf.count('<itemref'), 3)
+        write_x_location_manifest(str(self.tmpdir), str(opf_path), source_spine_map=source_spine_map)
+        manifest = json.loads((self.tmpdir / 'META-INF' / 'x-locations.json').read_text(encoding='utf-8'))
+        self.assertEqual(manifest['sourceSpineMap']['spineCount'], 2)
+        self.assertEqual([entry['sourceSpineIndex'] for entry in manifest['sourceSpineMap']['spine']], [0, 0, 1])
+        self.assertEqual(manifest['sourceSpineMap']['spine'][1]['containerDepth'], 1)
 
 
 if __name__ == '__main__':

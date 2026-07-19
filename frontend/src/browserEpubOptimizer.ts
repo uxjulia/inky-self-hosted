@@ -50,6 +50,18 @@ type UsedSelectors = {
   elements: Set<string>;
 };
 
+type SourceSpineRecord = {
+  sourceSpineIndex: number;
+  containerDepth?: number;
+  childRanges?: Array<{ name: string; offset: number; count: number }>;
+};
+
+type SourceSpineMap = {
+  version: 1;
+  spineCount: number;
+  sourceByHref: Record<string, SourceSpineRecord>;
+};
+
 const imageExtensionPattern = /\.(png|gif|webp|bmp|jpe?g|svg)$/i;
 const xhtmlExtensionPattern = /\.(xhtml|html|htm)$/i;
 const cssExtensionPattern = /\.css$/i;
@@ -151,7 +163,8 @@ export async function optimizeEpubInBrowser(
 
   progress?.(72, "Updating EPUB metadata");
   let updatedOpf = processOpf(opfText, opfPath, imageRenameMap, settings);
-  const splitResult = splitLongXhtmlSections(xhtmlFiles, settings, new Set(parseSpineHrefs(updatedOpf, opfPath)));
+  const originalSpineHrefs = parseSpineHrefs(updatedOpf, opfPath);
+  const splitResult = splitLongXhtmlSections(xhtmlFiles, settings, originalSpineHrefs);
   for (const [path, text] of Object.entries(splitResult.xhtmlFiles)) {
     xhtmlFiles[path] = text;
     out.file(path, text, {
@@ -191,7 +204,13 @@ export async function optimizeEpubInBrowser(
   });
 
   progress?.(84, "Writing CrossInk metadata");
-  const locations = buildCrossInkLocationManifest(updatedOpf, opfPath, xhtmlFiles, settings.characters_per_reference_page);
+  const locations = buildCrossInkLocationManifest(
+    updatedOpf,
+    opfPath,
+    xhtmlFiles,
+    settings.characters_per_reference_page,
+    splitResult.sourceSpineMap
+  );
   if (locations) {
     out.file(crossInkLocationManifestPath, JSON.stringify(locations), {
       compression: "DEFLATE",
@@ -467,13 +486,18 @@ function findSectionSplitContainer(body: HTMLElement): { container: Element; chi
 function splitLongXhtmlSections(
   xhtmlFiles: Record<string, string>,
   settings: BrowserOptimizerSettings,
-  spinePaths: Set<string>
-): { xhtmlFiles: Record<string, string>; splitSections: SplitSections } {
-  if (!settings.split_long_sections) return { xhtmlFiles: {}, splitSections: {} };
+  originalSpineHrefs: string[]
+): { xhtmlFiles: Record<string, string>; splitSections: SplitSections; sourceSpineMap: SourceSpineMap | null } {
+  if (!settings.split_long_sections) return { xhtmlFiles: {}, splitSections: {}, sourceSpineMap: null };
   const parser = new DOMParser();
   const serializer = new XMLSerializer();
   const out: Record<string, string> = {};
   const splitSections: SplitSections = {};
+  const spinePaths = new Set(originalSpineHrefs);
+  const sourceByHref: Record<string, SourceSpineRecord> = {};
+  originalSpineHrefs.forEach((href, sourceSpineIndex) => {
+    sourceByHref[href] = { sourceSpineIndex };
+  });
   const wordThreshold = Math.max(1, Math.round(settings.section_split_word_threshold || 8000));
   const byteThreshold = Math.max(4096, Math.round(settings.section_split_byte_threshold || 32768));
   const hardByteLimit = Math.max(byteThreshold, Math.round(settings.section_split_hard_byte_limit || 49152));
@@ -525,6 +549,7 @@ function splitLongXhtmlSections(
     if (chunks.length < 2) continue;
 
     splitSections[path] = [];
+    const tagOffsets = new Map<string, number>();
     chunks.forEach((chunk, partIndex) => {
       const partPath = sectionSplitPath(path, partIndex);
       const partDoc = doc.cloneNode(true) as Document;
@@ -534,9 +559,28 @@ function splitLongXhtmlSections(
       for (const node of chunk) partContainer.appendChild(partDoc.importNode(node, true));
       out[partPath] = serializer.serializeToString(partDoc);
       splitSections[path].push(partPath);
+      const rangesByName = new Map<string, { name: string; offset: number; count: number }>();
+      for (const node of chunk) {
+        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        const name = (node as Element).localName.toLowerCase();
+        const range = rangesByName.get(name) || { name, offset: tagOffsets.get(name) || 0, count: 0 };
+        range.count += 1;
+        rangesByName.set(name, range);
+        tagOffsets.set(name, (tagOffsets.get(name) || 0) + 1);
+      }
+      sourceByHref[partPath] = {
+        sourceSpineIndex: originalSpineHrefs.indexOf(path),
+        containerDepth: splitContainer.childPath.length,
+        childRanges: Array.from(rangesByName.values())
+      };
     });
   }
-  return { xhtmlFiles: out, splitSections };
+  const hasSplits = Object.keys(splitSections).length > 0;
+  return {
+    xhtmlFiles: out,
+    splitSections,
+    sourceSpineMap: hasSplits ? { version: 1, spineCount: originalSpineHrefs.length, sourceByHref } : null
+  };
 }
 
 function addSplitSectionsToOpf(opfText: string, opfPath: string, splitSections: SplitSections) {
@@ -869,7 +913,8 @@ function buildCrossInkLocationManifest(
   opfText: string,
   opfPath: string,
   xhtmlFiles: Record<string, string>,
-  configuredCharactersPerReferencePage = defaultCharactersPerReferencePage
+  configuredCharactersPerReferencePage = defaultCharactersPerReferencePage,
+  sourceSpineMap: SourceSpineMap | null = null
 ) {
   const charactersPerReferencePage = normalizeCharactersPerReferencePage(configuredCharactersPerReferencePage);
   const spine = parseSpineHrefs(opfText, opfPath);
@@ -952,6 +997,16 @@ function buildCrossInkLocationManifest(
   };
   if (chapterGroups.size > 0) {
     manifest.chapterGroups = Array.from(chapterGroups.values()).sort((a, b) => Number(a.index) - Number(b.index));
+  }
+  if (sourceSpineMap) {
+    const mappedSpine = spine.map((href, index) => ({ index, ...sourceSpineMap.sourceByHref[href] }));
+    if (mappedSpine.every((entry) => Number.isInteger(entry.sourceSpineIndex))) {
+      manifest.sourceSpineMap = {
+        version: sourceSpineMap.version,
+        spineCount: sourceSpineMap.spineCount,
+        spine: mappedSpine
+      };
+    }
   }
   return manifest;
 }
