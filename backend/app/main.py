@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -63,6 +64,9 @@ from .schemas import (
     WebDavImportRequest,
 )
 from .utils import join_remote, safe_filename
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 PUBLIC_TEMP_OPTIMIZE_PATH = "/api/optimizer/epub"
@@ -319,11 +323,24 @@ async def prepare_dictionary(
         delete=False,
     ) as temp:
         temp_path = Path(temp.name)
+        upload_bytes = 0
         while chunk := await file.read(1024 * 1024):
             temp.write(chunk)
+            upload_bytes += len(chunk)
+
+    if upload_bytes == 0:
+        temp_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="dictionary archive is empty")
 
     job = create_job(db, "dictionary_prepare")
-    background.add_task(run_dictionary_prepare_job, job.id, str(temp_path))
+    logger.info(
+        "Dictionary upload accepted: job_id=%s filename=%r content_type=%r archive_bytes=%d",
+        job.id,
+        filename,
+        file.content_type,
+        upload_bytes,
+    )
+    background.add_task(run_dictionary_prepare_job, job.id, str(temp_path), filename)
     return job
 
 

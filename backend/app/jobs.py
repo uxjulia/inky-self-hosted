@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import uuid
 from pathlib import Path
 
@@ -14,6 +15,9 @@ from .library import send_file_to_device
 from .models import Job, JobStatus, LibraryItem, utc_now
 from .optimizer.service import optimize_epub, preferred_output_filename
 from .schemas import DeviceSendRequest, OptimizeRequest
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 def create_job(db: Session, job_type: str, item_id: int | None = None) -> Job:
@@ -116,7 +120,7 @@ def run_send_path_job(job_id: str, source_path: str, request: DeviceSendRequest)
         db.close()
 
 
-def run_dictionary_prepare_job(job_id: str, source_zip: str) -> None:
+def run_dictionary_prepare_job(job_id: str, source_zip: str, original_filename: str | None = None) -> None:
     db = SessionLocal()
     try:
         job = db.get(Job, job_id)
@@ -126,6 +130,14 @@ def run_dictionary_prepare_job(job_id: str, source_zip: str) -> None:
         job.progress = 2
         job.message = "Preparing dictionary"
         db.commit()
+
+        source_path = Path(source_zip)
+        logger.info(
+            "Dictionary prep started: job_id=%s filename=%r archive_bytes=%d",
+            job_id,
+            original_filename or source_path.name,
+            source_path.stat().st_size,
+        )
 
         def progress(percent: int, message: str) -> None:
             set_job(job_id, progress=max(0, min(100, percent)), message=message)
@@ -140,7 +152,14 @@ def run_dictionary_prepare_job(job_id: str, source_zip: str) -> None:
             message="Dictionary prepared",
             result_json=json.dumps(result),
         )
+        logger.info("Dictionary prep completed: job_id=%s filename=%r", job_id, original_filename or source_path.name)
     except Exception as exc:
+        logger.exception(
+            "Dictionary prep failed: job_id=%s filename=%r source=%s",
+            job_id,
+            original_filename or Path(source_zip).name,
+            source_zip,
+        )
         set_job(job_id, status=JobStatus.failed.value, progress=100, message="Dictionary prep failed", error=str(exc))
     finally:
         Path(source_zip).unlink(missing_ok=True)

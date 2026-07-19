@@ -110,6 +110,27 @@ class DictionaryPrepServiceTests(unittest.TestCase):
             self.assertEqual(dictionary_prep.rarfile.UNAR_TOOL, str(unar_path))
             self.assertIsNone(dictionary_prep.rarfile.CURRENT_SETUP)
 
+    def test_rar_disables_partial_archive_extraction_hack(self):
+        self.assertEqual(dictionary_prep.rarfile.USE_EXTRACT_HACK, 0)
+
+    def test_rar_failure_identifies_extractor_and_error_type(self):
+        source = self.root / "dictionary.rar"
+        source.write_bytes(b"broken rar bytes")
+
+        with (
+            patch("app.dictionary_prep._UNAR_CANDIDATES", ()),
+            patch("app.dictionary_prep.rarfile.CURRENT_SETUP", None),
+            patch(
+                "app.dictionary_prep.rarfile.RarFile",
+                side_effect=dictionary_prep.rarfile.BadRarFile("truncated archive"),
+            ),
+        ):
+            with self.assertRaisesRegex(
+                DictionaryPrepError,
+                r"RAR extraction failed using automatic extractor \(BadRarFile\): truncated archive",
+            ):
+                prepare_dictionary_zip(source, self.root / "out")
+
     def test_root_level_stardict_files_are_packaged_under_stem_folder(self):
         source = self.root / "root.zip"
         with zipfile.ZipFile(source, "w") as archive:
@@ -295,6 +316,18 @@ class DictionaryPrepareApiTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200, response.text)
             job = self._wait_for_job(client, response.json()["id"])
             self.assertEqual(job["status"], "succeeded", job)
+
+    def test_prepare_endpoint_rejects_empty_archive(self):
+        app = self._reload_app()
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/dictionaries/prepare",
+                files={"file": ("dictionary.rar", b"", "application/vnd.rar")},
+            )
+
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertEqual(response.json()["detail"], "dictionary archive is empty")
 
     def _reload_app(self):
         import app.db as db_module

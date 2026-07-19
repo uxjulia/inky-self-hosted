@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import logging
 import shutil
 import struct
 import tarfile
@@ -13,6 +14,13 @@ import rarfile
 import zstandard
 
 from .utils import safe_filename
+
+
+logger = logging.getLogger("uvicorn.error")
+
+# rarfile's small-file optimization rebuilds a partial RAR before invoking the
+# extractor. Some valid RAR5 archives cannot be read from that partial archive.
+rarfile.USE_EXTRACT_HACK = 0
 
 
 class DictionaryPrepError(ValueError):
@@ -153,10 +161,20 @@ def _extract_safe_tar_zst(source_tar_zst: Path, destination: Path) -> None:
 
 
 def _extract_safe_rar(source_rar: Path, destination: Path) -> None:
-    _prefer_available_unar()
+    configured_extractor = _prefer_available_unar()
     try:
         with rarfile.RarFile(source_rar) as archive:
-            for member in archive.infolist():
+            members = archive.infolist()
+            unpacked_bytes = sum(getattr(member, "file_size", 0) for member in members)
+            logger.info(
+                "RAR dictionary extraction started: archive_bytes=%d members=%d unpacked_bytes=%d solid=%s extractor=%s",
+                source_rar.stat().st_size,
+                len(members),
+                unpacked_bytes,
+                archive.is_solid() if hasattr(archive, "is_solid") else "unknown",
+                configured_extractor or "automatic",
+            )
+            for member in members:
                 relative_path = _safe_archive_member_path(member.filename)
                 if relative_path is None:
                     continue
@@ -169,19 +187,46 @@ def _extract_safe_rar(source_rar: Path, destination: Path) -> None:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with archive.open(member) as source, target.open("wb") as dest:
                     shutil.copyfileobj(source, dest)
+            logger.info(
+                "RAR dictionary extraction completed: members=%d extractor=%s",
+                len(members),
+                _active_rar_extractor(configured_extractor),
+            )
     except rarfile.RarCannotExec as exc:
-        raise DictionaryPrepError("RAR support requires unar, unrar, or bsdtar to be installed") from exc
+        logger.exception("RAR extractor is unavailable: configured_extractor=%s", configured_extractor or "automatic")
+        raise DictionaryPrepError("RAR extraction is unavailable on this server; no working extractor was found") from exc
     except rarfile.Error as exc:
-        raise DictionaryPrepError(f"invalid dictionary rar: {exc}") from exc
+        extractor = _active_rar_extractor(configured_extractor)
+        detail = str(exc).strip() or type(exc).__name__
+        logger.exception(
+            "RAR dictionary extraction failed: archive_bytes=%d extractor=%s error_type=%s",
+            source_rar.stat().st_size,
+            extractor,
+            type(exc).__name__,
+        )
+        raise DictionaryPrepError(
+            f"RAR extraction failed using {extractor} ({type(exc).__name__}): {detail}"
+        ) from exc
 
 
-def _prefer_available_unar() -> None:
+def _prefer_available_unar() -> str | None:
     for candidate in _UNAR_CANDIDATES:
         if Path(candidate).is_file():
             if rarfile.UNAR_TOOL != candidate:
                 rarfile.UNAR_TOOL = candidate
                 rarfile.CURRENT_SETUP = None
-            return
+            return candidate
+    return None
+
+
+def _active_rar_extractor(configured_extractor: str | None) -> str:
+    setup = rarfile.CURRENT_SETUP
+    if setup is not None:
+        command_setting = setup.setup.get("open_cmd", ("",))[0]
+        command = getattr(rarfile, command_setting, command_setting)
+        if command:
+            return str(command)
+    return configured_extractor or "automatic extractor"
 
 
 def _safe_zip_member_path(name: str) -> Path | None:
