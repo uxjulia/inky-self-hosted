@@ -1,4 +1,4 @@
-import { Zap } from "lucide-react";
+import { Download, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BrowserFirmwareFlasher,
@@ -13,7 +13,8 @@ type StableVariantId = "tiny" | "xlarge" | "sticky";
 type FlashStatus = { tone: "success" | "error"; message: string } | null;
 type StableReleaseInfo = {
   tag: string;
-  channel: "stable" | "beta";
+  channel: "stable" | "prerelease" | "beta";
+  download_tag?: string;
   published_at: string;
   html_url: string;
   variants: Array<{ id: StableVariantId; filename: string; size: number }>;
@@ -51,6 +52,27 @@ function messageFromUnknown(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function withDevelopmentPrerelease(releases: StableReleaseInfo[]) {
+  if (!import.meta.env.DEV || releases.some((release) => release.channel === "prerelease")) return releases;
+
+  const latestStable = releases.find((release) => release.channel === "stable");
+  if (!latestStable) return releases;
+
+  return [
+    ...releases,
+    {
+      ...latestStable,
+      tag: `${latestStable.tag}-dev-preview`,
+      channel: "prerelease" as const,
+      download_tag: latestStable.tag
+    }
+  ];
+}
+
+function firmwareDownloadTag(releases: StableReleaseInfo[], selectedTag: string) {
+  return releases.find((release) => release.tag === selectedTag)?.download_tag || selectedTag;
+}
+
 export function FlashToolsPanel() {
   const serialSupported = useMemo(() => typeof navigator !== "undefined" && "serial" in navigator, []);
   const progressRef = useRef<HTMLDivElement | null>(null);
@@ -59,7 +81,10 @@ export function FlashToolsPanel() {
   const [stableReleases, setStableReleases] = useState<StableReleaseInfo[]>([]);
   const [selectedReleaseTag, setSelectedReleaseTag] = useState("");
   const [stableReleaseError, setStableReleaseError] = useState("");
+  const [lockedDevice, setLockedDevice] = useState(false);
   const [running, setRunning] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
   const [steps, setSteps] = useState<string[]>([]);
   const [stepStates, setStepStates] = useState<FlashStepState[]>([]);
   const [progress, setProgress] = useState(0);
@@ -74,7 +99,7 @@ export function FlashToolsPanel() {
       })
       .then(({ releases }) => {
         if (cancelled) return;
-        setStableReleases(releases);
+        setStableReleases(withDevelopmentPrerelease(releases));
       })
       .catch((error: unknown) => {
         if (!cancelled) setStableReleaseError(messageFromUnknown(error));
@@ -94,6 +119,13 @@ export function FlashToolsPanel() {
   const stickyBetaRelease = stableReleases.find(
     (release) => release.channel === "beta" && release.variants.some((variant) => variant.id === "sticky")
   ) || null;
+  const compatiblePrereleaseReleases = stableReleases.filter(
+    (release) =>
+      release.channel === "prerelease" &&
+      release.variants.some((variant) =>
+        device === "sticky" ? variant.id === "sticky" : variant.id === "tiny" || variant.id === "xlarge"
+      )
+  );
 
   useEffect(() => {
     if (!device) return;
@@ -112,6 +144,7 @@ export function FlashToolsPanel() {
     setStepStates([]);
     setProgress(0);
     setStatus(null);
+    setDownloadError("");
   }
 
   function selectFirmware(nextChoice: StableVariantId) {
@@ -121,10 +154,43 @@ export function FlashToolsPanel() {
     setStepStates([]);
     setProgress(0);
     setStatus(null);
+    setDownloadError("");
+  }
+
+  async function downloadFirmware() {
+    if (!firmwareChoice || !selectedReleaseTag || downloading) return;
+
+    const downloadTag = firmwareDownloadTag(stableReleases, selectedReleaseTag);
+    setDownloading(true);
+    setDownloadError("");
+    try {
+      const response = await fetch(
+        `/api/firmware/crossink/releases/${encodeURIComponent(downloadTag)}/${firmwareChoice}`
+      );
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null) as { detail?: string } | null;
+        throw new Error(detail?.detail || "Unable to download CrossInk firmware.");
+      }
+
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = "update.bin";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setDownloadError(messageFromUnknown(error));
+    } finally {
+      setDownloading(false);
+    }
   }
 
   async function flashFirmware() {
     if (!device || !firmwareChoice || !selectedReleaseTag || running) return;
+
+    const downloadTag = firmwareDownloadTag(stableReleases, selectedReleaseTag);
 
     let serialPort: unknown;
     try {
@@ -147,7 +213,7 @@ export function FlashToolsPanel() {
 
     try {
       const response = await fetch(
-        `/api/firmware/crossink/releases/${encodeURIComponent(selectedReleaseTag)}/${firmwareChoice}`
+        `/api/firmware/crossink/releases/${encodeURIComponent(downloadTag)}/${firmwareChoice}`
       );
       if (!response.ok) {
         const detail = await response.json().catch(() => null) as { detail?: string } | null;
@@ -200,12 +266,22 @@ export function FlashToolsPanel() {
     compatibleStableReleases.find((release) => release.tag === selectedReleaseTag) ||
     compatibleStableReleases[0] ||
     null;
+  const selectedPrereleaseRelease =
+    compatiblePrereleaseReleases.find((release) => release.tag === selectedReleaseTag) ||
+    compatiblePrereleaseReleases[0] ||
+    null;
   const selectedStableVariant = selectedRelease?.variants.find((variant) => variant.id === firmwareChoice) || null;
   const selectedFirmwareName = selectedStableVariant?.filename || "firmware.bin";
   const firmwareReady = Boolean(device && firmwareChoice && selectedStableVariant);
   const stableVariantIds: StableVariantId[] =
     device === "sticky"
       ? compatibleStableReleases.length > 0
+        ? ["sticky"]
+        : []
+      : ["tiny", "xlarge"];
+  const prereleaseVariantIds: StableVariantId[] =
+    device === "sticky"
+      ? compatiblePrereleaseReleases.length > 0
         ? ["sticky"]
         : []
       : ["tiny", "xlarge"];
@@ -218,10 +294,32 @@ export function FlashToolsPanel() {
             <Zap size={16} />
             <h2>Flash Tools</h2>
           </div>
-          <p>Install a CrossInk release directly from your browser over USB.</p>
+          {!lockedDevice ? <p>Install a Cross<span className="serif">I</span>nk release directly from your browser over USB.</p> : <p>Download a Cross<span className="serif">I</span>nk release as an <code>update.bin</code> file to copy to your SD card.</p>}
+
+          <label className="toggle-field flash-locked-toggle">
+            <input
+              type="checkbox"
+              checked={lockedDevice}
+              disabled={running || downloading}
+              onChange={(event) => {
+                const nextLockedDevice = event.target.checked;
+                setLockedDevice(nextLockedDevice);
+                if (nextLockedDevice) {
+                  setDevice("xteink");
+                  setFirmwareChoice(null);
+                }
+                setSteps([]);
+                setStepStates([]);
+                setProgress(0);
+                setStatus(null);
+                setDownloadError("");
+              }}
+            />
+            <span>I have a locked device</span>
+          </label>
         </div>
 
-        {!serialSupported && (
+        {!serialSupported && !lockedDevice && (
           <div className="flash-message warning">
             Web Serial is unavailable. Use Chrome or Edge on a desktop computer to flash firmware.
           </div>
@@ -232,8 +330,8 @@ export function FlashToolsPanel() {
             <span>1</span>
             <h2>Select your device</h2>
           </div>
-          <div className="flash-device-grid">
-            {DEVICES.map((option) => (
+          <div className={`flash-device-grid${lockedDevice ? " single" : ""}`}>
+            {DEVICES.filter((option) => !lockedDevice || option.id === "xteink").map((option) => (
               <button
                 key={option.id}
                 type="button"
@@ -256,7 +354,7 @@ export function FlashToolsPanel() {
             </div>
             {compatibleStableReleases.length > 0 && (
               <label className="field flash-version-field">
-                <span>CrossInk version</span>
+                <span>Stable Cross<span className="serif">I</span>nk version (last 3 shown)</span>
                 <select
                   value={selectedStableRelease?.tag || ""}
                   disabled={running}
@@ -267,6 +365,7 @@ export function FlashToolsPanel() {
                     setStepStates([]);
                     setProgress(0);
                     setStatus(null);
+                    setDownloadError("");
                   }}
                 >
                   {compatibleStableReleases.map((release, index) => (
@@ -304,13 +403,65 @@ export function FlashToolsPanel() {
                   </button>
                 );
               })}
-              {device === "sticky" && stickyBetaRelease && (() => {
-                const variant = stickyBetaRelease.variants.find((item) => item.id === "sticky");
-                if (!variant) return null;
-                const selected = selectedReleaseTag === stickyBetaRelease.tag && firmwareChoice === "sticky";
-                return (
+            </div>
+            {compatiblePrereleaseReleases.length > 0 && (
+              <div className="flash-prerelease-section">
+                <hr />
+                <label className="field flash-version-field">
+                  <span id="pr-label">Pre-Release Cross<span className="serif">I</span>nk builds</span>
+                  <select
+                    value={selectedPrereleaseRelease?.tag || ""}
+                    disabled={running}
+                    onChange={(event) => {
+                      setSelectedReleaseTag(event.target.value);
+                      setFirmwareChoice(null);
+                      setSteps([]);
+                      setStepStates([]);
+                      setProgress(0);
+                      setStatus(null);
+                      setDownloadError("");
+                    }}
+                  >
+                    {compatiblePrereleaseReleases.map((release, index) => (
+                      <option key={release.tag} value={release.tag}>
+                        {release.tag}{index === 0 ? " (latest)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="flash-firmware-grid">
+                  {prereleaseVariantIds.map((variantId) => {
+                    const variant = selectedPrereleaseRelease?.variants.find((item) => item.id === variantId);
+                    return (
+                      <button
+                        key={variantId}
+                        type="button"
+                        className={selectedRelease?.channel === "prerelease" && firmwareChoice === variantId ? "selected" : ""}
+                        disabled={running || !variant}
+                        onClick={() => {
+                          if (selectedPrereleaseRelease) setSelectedReleaseTag(selectedPrereleaseRelease.tag);
+                          selectFirmware(variantId);
+                        }}
+                      >
+                        <strong>{variantId === "tiny" ? "Tiny" : variantId === "xlarge" ? "XLarge" : "Sticky"}</strong>
+                        <small>
+                          {variant
+                            ? `${variantId === "tiny" ? "10–16 pt font" : variantId === "xlarge" ? "16–20 pt font" : "ESP32-S3"} · ${(variant.size / 1024 / 1024).toFixed(1)} MB`
+                            : "Unavailable"}
+                        </small>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {device === "sticky" && stickyBetaRelease && (() => {
+              const variant = stickyBetaRelease.variants.find((item) => item.id === "sticky");
+              if (!variant) return null;
+              const selected = selectedReleaseTag === stickyBetaRelease.tag && firmwareChoice === "sticky";
+              return (
+                <div className="flash-firmware-grid">
                   <button
-                    key={stickyBetaRelease.tag}
                     type="button"
                     className={selected ? "selected" : ""}
                     disabled={running}
@@ -322,9 +473,9 @@ export function FlashToolsPanel() {
                     <strong>Sticky Beta</strong>
                     <small>ESP32-S3 · {(variant.size / 1024 / 1024).toFixed(1)} MB</small>
                   </button>
-                );
-              })()}
-            </div>
+                </div>
+              );
+            })()}
             {device === "sticky" && !stableReleaseError && stableReleases.length > 0 && !stickyBetaRelease && compatibleStableReleases.length === 0 && (
               <div className="flash-message warning">
                 No Sticky firmware is available in the latest three stable CrossInk releases.
@@ -341,12 +492,40 @@ export function FlashToolsPanel() {
               <h2>Flash</h2>
             </div>
             <div className="flash-message warning">
-              Keep the device awake at its home screen and leave the USB cable connected until flashing completes.
+              {lockedDevice
+                ? <p>
+                  <strong>Steps when Flashing from Stock Xteink Firmware:</strong>
+                  <ol>
+                    <li>Download the <code>update.bin</code> file</li>
+                    <li>Copy it to the root of your SD card (not inside any folders)</li>
+                    <li>Re-insert the SD card into the device and restart it</li>
+                    <li>Plug your device into USB power</li>
+                    <li>Hold the power + up buttons at the same time for 3+ seconds until you see the device begin installation. Note: On the X3, the "Up" button is on the left side.</li>
+                  </ol>
+                  <strong>Steps when Updating from Cross<span className="serif">I</span>nk</strong>
+                  <ol>
+                    <li>Download the <code>update.bin</code> file (note when updating from Cross<span className="serif">I</span>nk, the filename does not matter)</li>
+                    <li>Copy it anywhere on your SD card</li>
+                    <li>Re-insert the SD card into the device and restart it</li>
+                    <li>In CrossInk, go to <code>Settings {`>`} System {`>`} SD Card Firmware Update</code></li>
+                    <li>Navigate to the downloaded <code>update.bin</code> file. The device will validate the firmware and begin installation.</li>
+                  </ol>
+                </p>
+
+                : "Keep the device awake at its home screen and leave the USB cable connected until flashing completes."}
             </div>
-            <button className="primary icon-text flash-action" type="button" disabled={running || !serialSupported} onClick={flashFirmware}>
-              <Zap size={16} />
-              {running ? "Flashing…" : `Flash ${selectedFirmwareName}`}
-            </button>
+            {lockedDevice ? (
+              <button className="primary icon-text flash-action" type="button" disabled={running || downloading} onClick={downloadFirmware}>
+                <Download size={16} />
+                {downloading ? "Downloading…" : "Download update.bin"}
+              </button>
+            ) : (
+              <button className="primary icon-text flash-action" type="button" disabled={running || downloading || !serialSupported} onClick={flashFirmware}>
+                <Zap size={16} />
+                {running ? "Flashing…" : `Flash ${selectedFirmwareName}`}
+              </button>
+            )}
+            {downloadError && <div className="flash-message error">{downloadError}</div>}
           </section>
         )}
 

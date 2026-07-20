@@ -9,14 +9,15 @@ from urllib.parse import urlparse
 import httpx
 
 
-CROSSINK_RELEASE_API_URL = "https://api.github.com/repos/uxjulia/CrossInk/releases?per_page=10"
+CROSSINK_RELEASE_API_URL = "https://api.github.com/repos/uxjulia/CrossInk/releases?per_page=30"
 CROSSINK_RELEASE_PAGE_PREFIX = "https://github.com/uxjulia/CrossInk/releases/"
 STICKY_BETA_DOWNLOAD_HOST = "downloads.crossink.dev"
 STICKY_BETA_DOWNLOAD_PATH_PREFIX = "/firmwares/sticky/"
 RELEASE_CACHE_SECONDS = 300
 STABLE_RELEASE_LIMIT = 3
+PRERELEASE_LIMIT = 3
 SUPPORTED_VARIANTS = ("tiny", "xlarge", "sticky")
-_FIRMWARE_NAME_PATTERN = re.compile(r"^firmware-(tiny|xlarge|sticky)-v[^/]+\.bin$")
+_FIRMWARE_NAME_PATTERN = re.compile(r"^firmware-(tiny|xlarge|sticky)-[^/]+\.bin$")
 
 
 class CrossInkFirmwareError(RuntimeError):
@@ -39,13 +40,17 @@ class CrossInkStableRelease:
     assets: dict[str, CrossInkFirmwareAsset]
 
 
-_release_cache: tuple[float, tuple[CrossInkStableRelease, ...]] | None = None
+_release_cache: tuple[
+    float,
+    tuple[CrossInkStableRelease, ...],
+    tuple[CrossInkStableRelease, ...],
+] | None = None
 _release_cache_lock = asyncio.Lock()
 _sticky_beta_cache: tuple[float, str, str, CrossInkStableRelease] | None = None
 _sticky_beta_cache_lock = asyncio.Lock()
 
 
-def parse_stable_release(payload: object) -> CrossInkStableRelease:
+def parse_stable_release(payload: object, *, allow_prerelease_filename: bool = False) -> CrossInkStableRelease:
     if not isinstance(payload, dict):
         raise CrossInkFirmwareError("GitHub returned invalid release metadata.")
 
@@ -70,10 +75,14 @@ def parse_stable_release(payload: object) -> CrossInkStableRelease:
         if not isinstance(filename, str) or not isinstance(download_url, str):
             continue
         match = _FIRMWARE_NAME_PATTERN.fullmatch(filename)
-        if not match or not _is_trusted_release_asset_url(download_url):
+        if not match or not _is_trusted_release_asset_url(download_url, tag):
             continue
         variant = match.group(1)
-        if filename != f"firmware-{variant}-{tag}.bin" or type(size) is not int or size <= 0:
+        if (
+            (not allow_prerelease_filename and filename != f"firmware-{variant}-{tag}.bin")
+            or type(size) is not int
+            or size <= 0
+        ):
             continue
         assets[variant] = CrossInkFirmwareAsset(
             variant=variant,
@@ -108,17 +117,37 @@ def parse_stable_releases(payload: object) -> tuple[CrossInkStableRelease, ...]:
     return tuple(releases)
 
 
-async def get_stable_releases() -> tuple[CrossInkStableRelease, ...]:
+def parse_prerelease_releases(payload: object) -> tuple[CrossInkStableRelease, ...]:
+    if not isinstance(payload, list):
+        raise CrossInkFirmwareError("GitHub returned invalid release metadata.")
+
+    releases: list[CrossInkStableRelease] = []
+    for raw_release in payload:
+        if not isinstance(raw_release, dict) or raw_release.get("draft") or not raw_release.get("prerelease"):
+            continue
+        try:
+            releases.append(parse_stable_release(raw_release, allow_prerelease_filename=True))
+        except CrossInkFirmwareError:
+            continue
+        if len(releases) == PRERELEASE_LIMIT:
+            break
+    return tuple(releases)
+
+
+async def get_crossink_releases() -> tuple[
+    tuple[CrossInkStableRelease, ...],
+    tuple[CrossInkStableRelease, ...],
+]:
     global _release_cache
 
     now = time.monotonic()
     if _release_cache and now - _release_cache[0] < RELEASE_CACHE_SECONDS:
-        return _release_cache[1]
+        return _release_cache[1], _release_cache[2]
 
     async with _release_cache_lock:
         now = time.monotonic()
         if _release_cache and now - _release_cache[0] < RELEASE_CACHE_SECONDS:
-            return _release_cache[1]
+            return _release_cache[1], _release_cache[2]
 
         try:
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
@@ -134,9 +163,11 @@ async def get_stable_releases() -> tuple[CrossInkStableRelease, ...]:
         except httpx.HTTPError as exc:
             raise CrossInkFirmwareError("Unable to load CrossInk releases from GitHub.") from exc
 
-        releases = parse_stable_releases(response.json())
-        _release_cache = (time.monotonic(), releases)
-        return releases
+        payload = response.json()
+        stable_releases = parse_stable_releases(payload)
+        prerelease_releases = parse_prerelease_releases(payload)
+        _release_cache = (time.monotonic(), stable_releases, prerelease_releases)
+        return stable_releases, prerelease_releases
 
 
 def build_sticky_beta_release(download_url: str, version: str, size: int, published_at: str = "") -> CrossInkStableRelease:
@@ -216,10 +247,10 @@ def clear_release_cache() -> None:
     _sticky_beta_cache = None
 
 
-def _is_trusted_release_asset_url(url: str) -> bool:
+def _is_trusted_release_asset_url(url: str, tag: str) -> bool:
     parsed = urlparse(url)
     return (
         parsed.scheme == "https"
         and parsed.hostname == "github.com"
-        and parsed.path.startswith("/uxjulia/CrossInk/releases/download/")
+        and parsed.path.startswith(f"/uxjulia/CrossInk/releases/download/{tag}/")
     )

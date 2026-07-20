@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.crossink_firmware import (
     CrossInkFirmwareError,
     build_sticky_beta_release,
+    parse_prerelease_releases,
     parse_stable_release,
     parse_stable_releases,
 )
@@ -107,6 +108,33 @@ class CrossInkFirmwareTests(unittest.TestCase):
         )
 
         self.assertEqual([item.tag for item in releases], ["v1.4.0", "v1.3.4", "v1.3.3"])
+
+    def test_returns_prereleases_with_release_candidate_filenames(self):
+        def release(tag: str, *, draft: bool = False, prerelease: bool = True) -> dict:
+            filename = f"firmware-tiny-{tag.removeprefix('rc-')}-RC.bin"
+            return {
+                "tag_name": tag,
+                "draft": draft,
+                "prerelease": prerelease,
+                "assets": [
+                    {
+                        "name": filename,
+                        "size": 10,
+                        "browser_download_url": f"https://github.com/uxjulia/CrossInk/releases/download/{tag}/{filename}",
+                    }
+                ],
+            }
+
+        releases = parse_prerelease_releases(
+            [
+                release("rc-development-deadbee", draft=True),
+                release("rc-development-a1b2c3d"),
+                release("v1.4.0", prerelease=False),
+            ]
+        )
+
+        self.assertEqual([item.tag for item in releases], ["rc-development-a1b2c3d"])
+        self.assertIn("tiny", releases[0].assets)
 
     def test_builds_sticky_beta_release_from_trusted_r2_url(self):
         release = build_sticky_beta_release(

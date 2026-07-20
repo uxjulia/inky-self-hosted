@@ -27,7 +27,7 @@ from .connectors import browse_source, search_source
 from .crossink_firmware import (
     CrossInkFirmwareError,
     SUPPORTED_VARIANTS,
-    get_stable_releases,
+    get_crossink_releases,
     get_sticky_beta_release,
 )
 from .db import SessionLocal, get_db, init_db
@@ -135,19 +135,20 @@ def health() -> dict:
 @app.get("/api/firmware/crossink/releases")
 async def crossink_firmware_releases() -> JSONResponse:
     try:
-        releases = await get_stable_releases()
+        stable_releases, prerelease_releases = await get_crossink_releases()
     except CrossInkFirmwareError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     settings = get_settings()
-    sticky_beta = None
+    release_entries = [(release, "stable") for release in stable_releases]
+    release_entries.extend((release, "prerelease") for release in prerelease_releases)
     if settings.sticky_beta_firmware_url:
         try:
             sticky_beta = await get_sticky_beta_release(
                 settings.sticky_beta_firmware_url,
                 settings.sticky_beta_version,
             )
-            releases = (*releases, sticky_beta)
+            release_entries.append((sticky_beta, "beta"))
         except CrossInkFirmwareError as exc:
             print(f"Sticky beta metadata unavailable: {exc}", flush=True)
 
@@ -156,7 +157,7 @@ async def crossink_firmware_releases() -> JSONResponse:
             "releases": [
                 {
                     "tag": release.tag,
-                    "channel": "beta" if release is sticky_beta else "stable",
+                    "channel": channel,
                     "published_at": release.published_at,
                     "html_url": release.html_url,
                     "variants": [
@@ -169,7 +170,7 @@ async def crossink_firmware_releases() -> JSONResponse:
                         if variant in release.assets
                     ],
                 }
-                for release in releases
+                for release, channel in release_entries
             ]
         },
         headers={"Cache-Control": "public, max-age=300"},
@@ -182,10 +183,11 @@ async def download_crossink_firmware(tag: str, variant: str) -> StreamingRespons
         raise HTTPException(status_code=404, detail="Unknown CrossInk firmware variant.")
 
     try:
-        releases = await get_stable_releases()
+        stable_releases, prerelease_releases = await get_crossink_releases()
     except CrossInkFirmwareError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    releases = (*stable_releases, *prerelease_releases)
     release = next((item for item in releases if item.tag == tag), None)
     settings = get_settings()
     if (

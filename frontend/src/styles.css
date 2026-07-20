@@ -1271,6 +1271,16 @@ progress {
   line-height: 1.5;
 }
 
+.flash-locked-toggle {
+  width: fit-content;
+  margin-top: 12px;
+}
+
+.flash-message code {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
 .flash-step-card,
 .flash-progress-card,
 .flash-restart-card {
@@ -1304,6 +1314,10 @@ progress {
   gap: 8px;
 }
 
+.flash-device-grid.single {
+  grid-template-columns: 1fr;
+}
+
 .flash-firmware-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1333,6 +1347,23 @@ progress {
 
 .flash-version-field {
   width: min(240px, 100%);
+}
+
+.flash-prerelease-section span {
+  color: var(--color-warning);
+}
+
+.flash-prerelease-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.flash-prerelease-section hr {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
 }
 
 .flash-action {

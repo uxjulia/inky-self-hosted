@@ -1,4 +1,4 @@
-import { Home, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useState } from "react";
 import { helpStorageBannerDismissedStorageKey } from "./appConstants";
 
