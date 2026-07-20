@@ -128,6 +128,17 @@ bundle.
 Attach a Railway volume mounted at `/data` if you want the library database and
 uploaded files to survive redeploys.
 
+The temporary Sticky beta is enabled by default in the public Flash Tools tab.
+These service variables can override its R2 object or label:
+
+```bash
+INKY_STICKY_BETA_FIRMWARE_URL=https://downloads.crossink.dev/firmwares/sticky/firmware-sticky.bin
+INKY_STICKY_BETA_VERSION=Sticky Beta
+```
+
+The backend reads the firmware metadata from R2 and proxies the download, so no
+R2 credentials or frontend `VITE_` variable are required for a public object.
+
 Only set `INKY_AUTH_USERNAME` and `INKY_AUTH_PASSWORD` for a private instance.
 
 ## Local Development

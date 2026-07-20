@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     auth_password: str = ""
     auth_realm: str = "Inky"
     public_read_only: bool = False
+    sticky_beta_firmware_url: str = "https://downloads.crossink.dev/firmwares/sticky/firmware-sticky.bin"
+    sticky_beta_version: str = "Sticky Beta"
 
     model_config = SettingsConfigDict(env_prefix="INKY_", env_file=(".env", "../.env"), extra="ignore")
 

@@ -1248,6 +1248,172 @@ progress {
   width: min(520px, 100%);
 }
 
+.flash-tools-page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 12px;
+}
+
+.flash-tools-content {
+  width: min(720px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 auto;
+}
+
+.flash-tools-intro p,
+.flash-restart-card p {
+  margin: 8px 0 0;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.flash-step-card,
+.flash-progress-card,
+.flash-restart-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.flash-step-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.flash-step-heading > span {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.flash-device-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.flash-firmware-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.flash-device-grid button,
+.flash-firmware-grid button {
+  min-height: 68px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.flash-device-grid button.selected,
+.flash-firmware-grid button.selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.flash-device-grid small,
+.flash-firmware-grid small {
+  color: var(--color-muted);
+}
+
+.flash-version-field {
+  width: min(240px, 100%);
+}
+
+.flash-action {
+  align-self: flex-start;
+}
+
+.flash-message {
+  padding: 9px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.flash-message.warning {
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.flash-message.success {
+  border-color: var(--color-success-border);
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.flash-message.error {
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.flash-progress-card ol {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flash-progress-card li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.flash-progress-card li:last-child {
+  border-bottom: 0;
+}
+
+.flash-progress-card li.running {
+  color: var(--color-text);
+}
+
+.flash-progress-card li.done {
+  color: var(--color-success);
+}
+
+.flash-progress-card li.error {
+  color: var(--color-danger);
+}
+
+.flash-progress-card li > span {
+  text-align: center;
+}
+
+.flash-progress-card li > div {
+  min-width: 0;
+}
+
+.flash-progress-card progress {
+  width: 100%;
+  margin-top: 7px;
+}
+
 .dictionary-drop-zone {
   position: relative;
   min-height: 84px;
@@ -1442,6 +1608,15 @@ progress {
   .dictionary-tools-page {
     place-items: start center;
     overflow: visible;
+  }
+
+  .flash-tools-page {
+    overflow: visible;
+  }
+
+  .flash-device-grid,
+  .flash-firmware-grid {
+    grid-template-columns: 1fr;
   }
 
   .help-hero,

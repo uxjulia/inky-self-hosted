@@ -105,6 +105,7 @@ import {
 import { BrowsePanel } from "./components/BrowsePanel";
 import { DictionaryToolsPanel } from "./components/DictionaryToolsPanel";
 import { DevicePanel } from "./components/DevicePanel";
+import { FlashToolsPanel } from "./components/FlashToolsPanel";
 import { OptimizerSettingsModal } from "./components/OptimizerSettingsModal";
 import { SourcePanel } from "./components/SourcePanel";
 
@@ -140,7 +141,7 @@ const canUseWifiTransfer = !isHostedApp && !isPublicReadOnly;
 const browsePageSize = 25;
 const defaultDeviceHost = isSelfHostedBrowser ? "" : "crosspoint.local";
 const deviceHostPlaceholder = isSelfHostedBrowser ? "192.168." : "crosspoint.local";
-type AppTab = "epub" | "dictionary";
+type AppTab = "epub" | "dictionary" | "flash";
 
 export default function App() {
   const libraryLoadSeq = useRef(0);
@@ -299,6 +300,7 @@ export default function App() {
     : `Page ${clampedBrowsePage} of ${totalPages}`;
   const sortLabel = sortLabelForMode(activeSortMode);
   const canPrepareDictionaries = dictionaryToolsEnabled && !standaloneMode && !isHostedApp;
+  const showAppTabs = canPrepareDictionaries || isPublicApp;
   const effectiveEinkQuantize = optimizerSettings.grayscale && optimizerSettings.eink_quantize;
 
   useEffect(() => {
@@ -394,6 +396,9 @@ export default function App() {
 
   useEffect(() => {
     if (!canPrepareDictionaries && activeAppTab === "dictionary") {
+      setActiveAppTab("epub");
+    }
+    if (!isPublicApp && activeAppTab === "flash") {
       setActiveAppTab("epub");
     }
   }, [activeAppTab, canPrepareDictionaries]);
@@ -1736,7 +1741,8 @@ export default function App() {
   }
 
   function openAppTab(tab: AppTab) {
-    const hash = tab === "dictionary" ? "#dictionary-tools" : "#epub-optimizer";
+    const hash =
+      tab === "dictionary" ? "#dictionary-tools" : tab === "flash" ? "#flash-tools" : "#epub-optimizer";
     if (window.location.hash !== hash) {
       window.location.hash = hash;
     }
@@ -1883,7 +1889,7 @@ export default function App() {
         </div>
       </header>
 
-      {view === "app" && canPrepareDictionaries && (
+      {view === "app" && showAppTabs && (
         <nav className="app-tabs" role="tablist" aria-label="Inky tools">
           <button
             id="epub-optimizer-tab"
@@ -1896,17 +1902,32 @@ export default function App() {
           >
             EPUB Optimizer
           </button>
-          <button
-            id="dictionary-tools-tab"
-            type="button"
-            role="tab"
-            aria-selected={activeAppTab === "dictionary"}
-            aria-controls="dictionary-tools-panel"
-            className={activeAppTab === "dictionary" ? "active" : ""}
-            onClick={() => openAppTab("dictionary")}
-          >
-            Dictionary Tools
-          </button>
+          {canPrepareDictionaries && (
+            <button
+              id="dictionary-tools-tab"
+              type="button"
+              role="tab"
+              aria-selected={activeAppTab === "dictionary"}
+              aria-controls="dictionary-tools-panel"
+              className={activeAppTab === "dictionary" ? "active" : ""}
+              onClick={() => openAppTab("dictionary")}
+            >
+              Dictionary Tools
+            </button>
+          )}
+          {isPublicApp && (
+            <button
+              id="flash-tools-tab"
+              type="button"
+              role="tab"
+              aria-selected={activeAppTab === "flash"}
+              aria-controls="flash-tools-panel"
+              className={activeAppTab === "flash" ? "active" : ""}
+              onClick={() => openAppTab("flash")}
+            >
+              Flash Tools
+            </button>
+          )}
         </nav>
       )}
 
@@ -1929,10 +1950,12 @@ export default function App() {
           onPrepareDictionaryZip={prepareDictionaryZip}
           onDownloadPreparedDictionaryFile={downloadPreparedDictionaryFile}
         />
+      ) : activeAppTab === "flash" && isPublicApp ? (
+        <FlashToolsPanel />
       ) : (
         <section
           className="layout"
-          {...(canPrepareDictionaries
+          {...(showAppTabs
             ? { role: "tabpanel", id: "epub-optimizer-panel", "aria-labelledby": "epub-optimizer-tab" }
             : {})}
         >
@@ -2301,7 +2324,9 @@ function getInitialView(): AppView {
 }
 
 function getInitialAppTab(): AppTab {
-  return window.location.hash === "#dictionary-tools" ? "dictionary" : "epub";
+  if (window.location.hash === "#dictionary-tools") return "dictionary";
+  if (isPublicApp && window.location.hash === "#flash-tools") return "flash";
+  return "epub";
 }
 
 function getInitialOptimizerSettings(): OptimizerSettings {

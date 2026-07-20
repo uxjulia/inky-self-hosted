@@ -11,18 +11,25 @@ from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
 from pydantic import ValidationError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from .article_epub import fetch_article_as_epub
 from .auth import require_basic_auth
 from .config import ensure_data_dirs, get_settings
 from .connectors import browse_source, search_source
+from .crossink_firmware import (
+    CrossInkFirmwareError,
+    SUPPORTED_VARIANTS,
+    get_stable_releases,
+    get_sticky_beta_release,
+)
 from .db import SessionLocal, get_db, init_db
 from .dictionary_prep import (
     dictionary_archive_suffix,
@@ -123,6 +130,112 @@ def sync_mounted_library_on_startup() -> None:
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True}
+
+
+@app.get("/api/firmware/crossink/releases")
+async def crossink_firmware_releases() -> JSONResponse:
+    try:
+        releases = await get_stable_releases()
+    except CrossInkFirmwareError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    settings = get_settings()
+    sticky_beta = None
+    if settings.sticky_beta_firmware_url:
+        try:
+            sticky_beta = await get_sticky_beta_release(
+                settings.sticky_beta_firmware_url,
+                settings.sticky_beta_version,
+            )
+            releases = (*releases, sticky_beta)
+        except CrossInkFirmwareError as exc:
+            print(f"Sticky beta metadata unavailable: {exc}", flush=True)
+
+    return JSONResponse(
+        {
+            "releases": [
+                {
+                    "tag": release.tag,
+                    "channel": "beta" if release is sticky_beta else "stable",
+                    "published_at": release.published_at,
+                    "html_url": release.html_url,
+                    "variants": [
+                        {
+                            "id": variant,
+                            "filename": release.assets[variant].filename,
+                            "size": release.assets[variant].size,
+                        }
+                        for variant in SUPPORTED_VARIANTS
+                        if variant in release.assets
+                    ],
+                }
+                for release in releases
+            ]
+        },
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@app.get("/api/firmware/crossink/releases/{tag}/{variant}")
+async def download_crossink_firmware(tag: str, variant: str) -> StreamingResponse:
+    if variant not in SUPPORTED_VARIANTS:
+        raise HTTPException(status_code=404, detail="Unknown CrossInk firmware variant.")
+
+    try:
+        releases = await get_stable_releases()
+    except CrossInkFirmwareError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    release = next((item for item in releases if item.tag == tag), None)
+    settings = get_settings()
+    if (
+        not release
+        and variant == "sticky"
+        and settings.sticky_beta_firmware_url
+        and tag == settings.sticky_beta_version.strip()
+    ):
+        try:
+            release = await get_sticky_beta_release(
+                settings.sticky_beta_firmware_url,
+                settings.sticky_beta_version,
+            )
+        except CrossInkFirmwareError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if not release:
+        raise HTTPException(status_code=404, detail="CrossInk release is not available.")
+    asset = release.assets.get(variant)
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"CrossInk {tag} does not include the {variant} variant.")
+
+    client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=None), follow_redirects=True)
+    try:
+        upstream = await client.send(
+            client.build_request(
+                "GET",
+                asset.download_url,
+                headers={"Accept-Encoding": "identity", "User-Agent": "Inky"},
+            ),
+            stream=True,
+        )
+        upstream.raise_for_status()
+    except httpx.HTTPError as exc:
+        await client.aclose()
+        raise HTTPException(status_code=502, detail="Unable to download CrossInk firmware.") from exc
+
+    async def close_download() -> None:
+        await upstream.aclose()
+        await client.aclose()
+
+    return StreamingResponse(
+        upstream.aiter_bytes(),
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{asset.filename}"',
+            "Content-Length": str(asset.size),
+            "Cache-Control": "public, max-age=300",
+        },
+        background=BackgroundTask(close_download),
+    )
 
 
 @app.get("/api/auth/status")
