@@ -49,6 +49,7 @@ class ProcessingOptions:
     quality: int = 70
     max_width: int = 800
     max_height: int = 480
+    target_device: str = 'xteink-x4'
     eink_quantize: bool = True  # 4-level grayscale for SSD1677
     remove_fonts: bool = True
     remove_unused_css: bool = True
@@ -606,12 +607,23 @@ def process_epub(input_path: str, output_path: str,
         report.x_locations, report.x_reference_pages = write_x_location_manifest(
             work_dir, opf_path, options.characters_per_reference_page, source_spine_map
         )
-        report.crossink_image_caches = write_crossink_optimizer_manifest(work_dir, opf_path, image_cache_entries, {
-            'htmlNormalized': True,
-            'cssFlattened': False,
-            'xLocations': True,
-            'prebuiltPxc': bool(image_cache_entries),
-        })
+        report.crossink_image_caches = write_crossink_optimizer_manifest(
+            work_dir,
+            opf_path,
+            image_cache_entries,
+            {
+                'htmlNormalized': True,
+                'cssFlattened': False,
+                'xLocations': True,
+                'prebuiltPxc': bool(image_cache_entries),
+            },
+            {
+                'device': options.target_device,
+                'width': options.max_width,
+                'height': options.max_height,
+                'grayscaleLevels': 4,
+            },
+        )
 
         # Step 20: Clean OS artifacts (93%)
         _progress(93, "Cleaning up...")

@@ -1,4 +1,6 @@
 import JSZip from "jszip";
+import type { DeviceTarget } from "./appTypes";
+import { deviceTargetDefinition } from "./deviceTargets";
 
 export type BrowserOptimizerSettings = {
   use_original_filename: boolean;
@@ -19,7 +21,7 @@ export type BrowserOptimizerSettings = {
   text_cleanup: boolean;
 };
 
-export type BrowserOptimizeDevice = "x4" | "x3";
+export type BrowserOptimizeDevice = DeviceTarget;
 export type BrowserOptimizeProgress = (percent: number, message: string) => void;
 
 export type BrowserOptimizeResult = {
@@ -255,7 +257,7 @@ async function processImage(
   settings: BrowserOptimizerSettings,
   mimeType = ""
 ): Promise<ImageProcessResult> {
-  const dimensions = device === "x4" ? { width: 800, height: 480 } : { width: 792, height: 528 };
+  const dimensions = deviceTargetDefinition(device).profile;
   const image = await loadImage(data, mimeType);
   const scale = Math.min(1, dimensions.width / image.naturalWidth, dimensions.height / image.naturalHeight);
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
@@ -1051,14 +1053,15 @@ function buildOptimizerManifest(
   settings: BrowserOptimizerSettings,
   cssWasTreeShaken: boolean
 ) {
+  const profile = deviceTargetDefinition(device).profile;
   return {
     format: "crossink-optimizer",
     version: 1,
     generator: "inky-browser-optimizer",
     target: {
       device,
-      width: device === "x4" ? 800 : 792,
-      height: device === "x4" ? 480 : 528
+      width: profile.width,
+      height: profile.height
     },
     features: {
       htmlNormalized: settings.text_cleanup,

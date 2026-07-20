@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, FormEvent, KeyboardEvent } from "react";
 import { optimizeEpubInBrowser } from "./browserEpubOptimizer";
 import { probeStandaloneDevice, sendBlobToDevice } from "./deviceTransfer";
+import { deviceTargetDefinition } from "./deviceTargets";
 import { HelpPage } from "./HelpPage";
 import {
   isSerialTransferCanceled,
@@ -217,7 +218,7 @@ export default function App() {
   const allSources = useMemo(() => insertLocalSource(sources, localSourceIndex), [sources, localSourceIndex]);
   const selectedSource = allSources.find((source) => source.id === selectedSourceId) || null;
   const isLocalSource = selectedSourceId === localSourceId;
-  const deviceLabel = device.toUpperCase();
+  const deviceLabel = deviceTargetDefinition(device).label;
   const resolvedDeviceUrl = resolveDeviceHostInput(deviceUrl);
   const trimmedSearchQuery = searchQuery.trim();
   const activeBrowseResult = searchResult || browseResult;
@@ -2297,7 +2298,7 @@ function getInitialTheme(): Theme {
 
 function getInitialDevice(): DeviceTarget {
   const stored = window.localStorage.getItem(deviceStorageKey);
-  return stored === "x3" || stored === "x4" ? stored : "x4";
+  return stored === "x3" || stored === "x4" || stored === "sticky" ? stored : "x4";
 }
 
 function getInitialTransferMode(): TransferMode {

@@ -480,7 +480,7 @@ def write_x_location_manifest(
 
 
 def write_crossink_optimizer_manifest(epub_dir: str, opf_path: str, image_cache_entries: list[dict],
-                                      features=None) -> int:
+                                      features=None, target=None) -> int:
     """Write CrossInk's best-effort optimizer sidecar."""
     epub_root = Path(epub_dir)
     opf_dir = Path(opf_path).parent
@@ -503,7 +503,7 @@ def write_crossink_optimizer_manifest(epub_dir: str, opf_path: str, image_cache_
     manifest = {
         'format': 'crossink-optimizer',
         'version': 1,
-        'target': {
+        'target': target or {
             'device': 'xteink-x4',
             'width': 800,
             'height': 480,

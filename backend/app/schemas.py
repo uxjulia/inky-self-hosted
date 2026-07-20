@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 from .models import LibraryKind, SourceType
+from .optimizer.targets import DeviceTarget
 
 
 class SourceCreate(BaseModel):
@@ -131,7 +132,7 @@ class JobRead(BaseModel):
 
 
 class OptimizeRequest(BaseModel):
-    device: Literal["x4", "x3"] = "x4"
+    device: DeviceTarget = "x4"
     use_original_filename: bool = False
     filename_render_first: str = Field(default="Book Title", max_length=240)
     filename_render_second: str = Field(default="Author", max_length=240)

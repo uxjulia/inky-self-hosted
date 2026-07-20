@@ -47,7 +47,7 @@ export function HelpPage({
         <div>
           <p className="eyebrow">Getting Started</p>
           <h2>
-            Sending files to your Cross<span className="serif">I</span>nk reader
+            Sending files to your Cross<span className="serif">I</span>nk device
           </h2>
         </div>
       </div>
@@ -77,7 +77,7 @@ export function HelpPage({
                 Keep the destination folder as <code>/</code> or enter a folder such as <code>/Books</code>. Inky
                 creates missing folders before upload.
               </li>
-              <li>Select X3 or X4 before sending EPUBs so the optimizer uses the right screen target.</li>
+              <li>Select your device before sending EPUBs so the optimizer uses the right screen target.</li>
               <li>Use Test Connection to confirm the app can reach the reader.</li>
             </ul>
           </div>
@@ -145,7 +145,7 @@ export function HelpPage({
             <h3>Send Files</h3>
             <ul>
               {!standaloneMode && !isPublicReadOnly && (
-                <li>EPUBs are optimized for the selected X3 or X4 device before upload.</li>
+                <li>EPUBs are optimized for the selected device before upload.</li>
               )}
               {!standaloneMode && isPublicReadOnly && (
                 <li>EPUBs are temporarily optimized on the server, then sent from your browser.</li>
@@ -174,7 +174,7 @@ export function HelpPage({
             </p>
             <ul>
               <li>Add or drop EPUB files into Local Library.</li>
-              <li>Use the optimize button to prepare the EPUB for the selected X3 or X4 screen.</li>
+              <li>Use the optimize button to prepare the EPUB for the selected device's screen.</li>
               <li>Choose Download Optimized EPUB, then copy that file onto the reader's SD card manually.</li>
             </ul>
           </div>
@@ -201,7 +201,7 @@ export function HelpPage({
                 </li>
                 <li>TOC, cover, image, and metadata cleanup help books open cleaner and use less device memory.</li>
                 <li>
-                  Images are prepared for the selected X3 or X4 screen so covers and images fit the target display
+                  Images are prepared for the selected device's screen so covers and images fit the target display
                   better.
                 </li>
               </ul>

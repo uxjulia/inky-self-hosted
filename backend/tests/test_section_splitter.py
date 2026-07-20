@@ -10,7 +10,11 @@ from pathlib import Path
 PIPELINE_DIR = Path(__file__).resolve().parents[1] / 'app' / 'optimizer' / 'epubkit_pipeline'
 sys.path.insert(0, str(PIPELINE_DIR))
 
-from epub_structure import split_long_sections, write_x_location_manifest  # noqa: E402
+from epub_structure import (  # noqa: E402
+    split_long_sections,
+    write_crossink_optimizer_manifest,
+    write_x_location_manifest,
+)
 
 
 class XLocationManifestTests(unittest.TestCase):
@@ -55,6 +59,36 @@ class XLocationManifestTests(unittest.TestCase):
         self.assertEqual(manifest['totalCharacters'], 250)
         self.assertEqual(reference_pages, 3)
         self.assertEqual(locations, manifest['totalLocations'])
+
+    def test_optimizer_manifest_uses_selected_device_target(self):
+        opf_dir = self.tmpdir / 'OEBPS'
+        opf_dir.mkdir()
+        opf_path = opf_dir / 'content.opf'
+        opf_path.write_text(
+            '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
+            '<manifest/><spine/></package>',
+            encoding='utf-8',
+        )
+
+        write_crossink_optimizer_manifest(
+            str(self.tmpdir),
+            str(opf_path),
+            [],
+            target={
+                'device': 'sticky',
+                'width': 800,
+                'height': 480,
+                'grayscaleLevels': 4,
+            },
+        )
+
+        manifest = json.loads(
+            (self.tmpdir / 'META-INF' / 'crossink' / 'optimizer-v1.json').read_text(encoding='utf-8')
+        )
+        self.assertEqual(
+            manifest['target'],
+            {'device': 'sticky', 'width': 800, 'height': 480, 'grayscaleLevels': 4},
+        )
 
     def test_large_spine_section_is_split_by_uncompressed_size(self):
         opf_dir = self.tmpdir / 'OEBPS'

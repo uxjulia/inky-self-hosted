@@ -8,6 +8,7 @@ from pathlib import Path
 
 from lxml import etree
 
+from app.optimizer.targets import optimization_target_for
 from app.schemas import OptimizeRequest
 from app.utils import safe_filename
 
@@ -21,7 +22,7 @@ from metadata_handler import extract_metadata, format_filename  # noqa: E402
 
 def optimize_epub(input_path: Path, output_dir: Path, request: OptimizeRequest, progress=None) -> tuple[Path, dict]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    max_width, max_height = (800, 480) if request.device == "x4" else (792, 528)
+    target = optimization_target_for(request.device)
     temp = tempfile.NamedTemporaryFile(prefix=".inky-", suffix=".epub", dir=output_dir, delete=False)
     temp_path = Path(temp.name)
     temp.close()
@@ -32,8 +33,9 @@ def optimize_epub(input_path: Path, output_dir: Path, request: OptimizeRequest, 
             contrast_boost=request.contrast_boost,
             contrast_factor=request.contrast_factor,
             quality=request.quality,
-            max_width=max_width,
-            max_height=max_height,
+            max_width=target.width,
+            max_height=target.height,
+            target_device=request.device,
             eink_quantize=request.grayscale and request.eink_quantize,
             remove_fonts=request.remove_fonts,
             remove_unused_css=request.remove_css,

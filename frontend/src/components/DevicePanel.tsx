@@ -2,6 +2,7 @@ import { Download, RefreshCw, SlidersHorizontal, TabletSmartphone, Usb, Wifi, X 
 import { useEffect, useRef } from "react";
 import type { DeviceTarget, Job, RecentOptimizedDownload, TransferMode } from "../appTypes";
 import { readableError } from "../appUtils";
+import { DEVICE_TARGET_OPTIONS, deviceTargetDefinition } from "../deviceTargets";
 import { JobLog } from "./JobLog";
 
 type DevicePanelProps = {
@@ -165,14 +166,14 @@ export function DevicePanel({
       </label>
       <label className="field">
         <span>Optimize for</span>
-        <div className="segmented">
-          <button type="button" className={device === "x4" ? "active" : ""} onClick={() => onSetDevice("x4")}>
-            X4
-          </button>
-          <button type="button" className={device === "x3" ? "active" : ""} onClick={() => onSetDevice("x3")}>
-            X3
-          </button>
-        </div>
+        <select value={device} onChange={(event) => onSetDevice(event.target.value as DeviceTarget)}>
+          {DEVICE_TARGET_OPTIONS.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <small className="device-profile-help">{deviceTargetDefinition(device).profile.displayLabel}</small>
       </label>
       <button
         className="icon-text optimizer-settings-button"
