@@ -17,6 +17,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, FormEvent, KeyboardEvent } from "react";
 import { optimizeEpubInBrowser } from "./browserEpubOptimizer";
+import { createClientId } from "./clientId";
 import { probeStandaloneDevice, sendBlobToDevice } from "./deviceTransfer";
 import { deviceTargetDefinition } from "./deviceTargets";
 import { HelpPage } from "./HelpPage";
@@ -1426,7 +1427,7 @@ export default function App() {
       if (usesBrowserLibrary) {
         const { record, blob } = await getStandaloneFile(item.id);
         const prepared = await prepareStandaloneBlobForSend(blob, record.filename, item.id);
-        const jobId = crypto.randomUUID();
+        const jobId = createClientId();
         const transferLog = createTransferLogger("wifi", prepared.filename);
         updateBrowserSendJob(jobId, item.id, 0, "Preparing upload", "running");
         transferLog(0, `Starting Wi-Fi upload to ${destinationPath || "/"}`);
@@ -1477,7 +1478,7 @@ export default function App() {
     options: { replaceRecentDownloads?: boolean; addToRecentDownloads?: boolean } = {}
   ) {
     if (!hasEpubExtension(filename)) return { blob, filename };
-    const jobId = crypto.randomUUID();
+    const jobId = createClientId();
     const replaceRecentDownloads = options.replaceRecentDownloads ?? true;
     const shouldAddToRecentDownloads = options.addToRecentDownloads ?? true;
     if (replaceRecentDownloads) setRecentOptimizedDownloads([]);
@@ -1503,8 +1504,11 @@ export default function App() {
   }
 
   async function optimizeBrowserFileOnServer(blob: Blob, filename: string) {
+    const uploadFile = new File([blob], filename, {
+      type: blob.type || "application/epub+zip"
+    });
     const formData = new FormData();
-    formData.append("file", blob, filename);
+    formData.append("file", uploadFile);
     formData.append("settings", JSON.stringify(defaultOptimizePayload()));
     const response = await apiFetch("/api/optimizer/epub", {
       method: "POST",
@@ -1540,7 +1544,7 @@ export default function App() {
   }
 
   async function sendBlobViaUsb(blob: Blob, filename: string, itemId: number) {
-    const jobId = crypto.randomUUID();
+    const jobId = createClientId();
     const transferLog = createTransferLogger("usb", filename);
     const controller = new AbortController();
     let lastProgress = 0;

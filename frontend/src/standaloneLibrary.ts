@@ -36,15 +36,16 @@ export async function loadStandaloneLibrary(): Promise<StandaloneFileRecord[]> {
 export async function addStandaloneFile(file: File): Promise<StandaloneFileRecord> {
   const db = await openStandaloneDb();
   const now = new Date().toISOString();
+  const mediaType = file.type || mediaTypeForFilename(file.name);
   const record: Omit<StoredStandaloneFile, "id"> = {
     title: titleFromFilename(file.name),
     filename: file.name,
-    mediaType: file.type || mediaTypeForFilename(file.name),
+    mediaType,
     size: file.size,
     createdAt: now,
     sentAt: null,
     coverUrl: await extractEpubCoverDataUrl(file),
-    blob: file
+    blob: new Blob([file], { type: mediaType })
   };
 
   return new Promise((resolve, reject) => {
@@ -69,6 +70,10 @@ export async function getStandaloneFile(id: number): Promise<{ record: Standalon
         return;
       }
       const { blob, ...record } = stored;
+      if (!(blob instanceof Blob)) {
+        reject(new Error("The stored file data is unavailable. Remove this file and add it to Inky again."));
+        return;
+      }
       resolve({ record, blob });
     };
   });

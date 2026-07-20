@@ -157,7 +157,7 @@ export function FlashToolsPanel() {
     setDownloadError("");
   }
 
-  async function downloadFirmware() {
+  async function downloadFirmware(downloadFilename: string) {
     if (!firmwareChoice || !selectedReleaseTag || downloading) return;
 
     const downloadTag = firmwareDownloadTag(stableReleases, selectedReleaseTag);
@@ -175,7 +175,7 @@ export function FlashToolsPanel() {
       const objectUrl = URL.createObjectURL(await response.blob());
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      anchor.download = "update.bin";
+      anchor.download = downloadFilename;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -515,15 +515,43 @@ export function FlashToolsPanel() {
                 : "Keep the device awake at its home screen and leave the USB cable connected until flashing completes."}
             </div>
             {lockedDevice ? (
-              <button className="primary icon-text flash-action" type="button" disabled={running || downloading} onClick={downloadFirmware}>
+              <button
+                className="primary icon-text flash-action"
+                type="button"
+                disabled={running || downloading}
+                onClick={() => downloadFirmware("update.bin")}
+              >
                 <Download size={16} />
                 {downloading ? "Downloading…" : "Download update.bin"}
               </button>
             ) : (
-              <button className="primary icon-text flash-action" type="button" disabled={running || downloading || !serialSupported} onClick={flashFirmware}>
-                <Zap size={16} />
-                {running ? "Flashing…" : `Flash ${selectedFirmwareName}`}
-              </button>
+              <>
+                <button
+                  className="primary icon-text flash-action"
+                  type="button"
+                  disabled={running || downloading || !serialSupported}
+                  onClick={flashFirmware}
+                >
+                  <Zap size={16} />
+                  {running ? "Flashing…" : `Flash ${selectedFirmwareName}`}
+                </button>
+                <aside className="flash-optional-download" aria-label="Optional firmware download">
+                  <strong>Optional: manual SD card download</strong>
+                  <p>
+                    This is not required for USB flashing. Download the firmware file only if you plan to install it
+                    manually from an SD card.
+                  </p>
+                  <button
+                    className="icon-text flash-download-action"
+                    type="button"
+                    disabled={running || downloading}
+                    onClick={() => downloadFirmware(selectedFirmwareName)}
+                  >
+                    <Download size={16} />
+                    {downloading ? "Downloading…" : `Download ${selectedFirmwareName}`}
+                  </button>
+                </aside>
+              </>
             )}
             {downloadError && <div className="flash-message error">{downloadError}</div>}
           </section>

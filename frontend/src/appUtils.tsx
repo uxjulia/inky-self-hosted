@@ -217,13 +217,34 @@ export function readableError(message: string) {
   try {
     const parsed = JSON.parse(message);
     if (Object.prototype.hasOwnProperty.call(parsed, "detail")) {
-      const detail = String(parsed.detail || "").trim();
+      const detail = readableErrorDetail(parsed.detail);
       return detail || "The request failed without an error message.";
     }
   } catch {
     // Keep original text below.
   }
   return message;
+}
+
+function readableErrorDetail(detail: unknown): string {
+  if (typeof detail === "string") return detail.trim();
+  if (Array.isArray(detail)) {
+    return detail.map(readableErrorDetail).filter(Boolean).join("; ");
+  }
+  if (!detail || typeof detail !== "object") return String(detail || "").trim();
+
+  const record = detail as Record<string, unknown>;
+  const nestedMessage = readableErrorDetail(record.msg ?? record.message ?? record.detail);
+  const location = Array.isArray(record.loc)
+    ? record.loc.filter((part) => part !== "body").map(String).join(".")
+    : "";
+  if (nestedMessage) return location ? `${location}: ${nestedMessage}` : nestedMessage;
+
+  try {
+    return JSON.stringify(detail);
+  } catch {
+    return "The request failed with an unreadable error response.";
+  }
 }
 
 export function readableDeviceError(message: string) {
@@ -451,5 +472,11 @@ export function formatBytes(size: number) {
 }
 
 export function messageFromUnknown(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error) || String(error);
+  } catch {
+    return String(error);
+  }
 }

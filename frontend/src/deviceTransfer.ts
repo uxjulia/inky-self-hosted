@@ -1,3 +1,5 @@
+import { createClientId } from "./clientId";
+
 export type DeviceTransferProgress = (percent: number, message: string) => void;
 
 export type DeviceTransferResult = {
@@ -152,7 +154,7 @@ function joinDeviceFolder(parent: string, child: string) {
 }
 
 function temporaryUploadName(filename: string) {
-  return deviceFilename(`inky-upload-${crypto.randomUUID().slice(0, 8)}-${filename}`);
+  return deviceFilename(`inky-upload-${createClientId().slice(0, 8)}-${filename}`);
 }
 
 function deviceFilename(filename: string, maxBytes = 255) {
