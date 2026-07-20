@@ -16,7 +16,8 @@ export type StandaloneFileRecord = {
 };
 
 type StoredStandaloneFile = StandaloneFileRecord & {
-  blob: Blob;
+  data?: ArrayBuffer;
+  blob?: Blob;
 };
 
 export async function loadStandaloneLibrary(): Promise<StandaloneFileRecord[]> {
@@ -26,7 +27,7 @@ export async function loadStandaloneLibrary(): Promise<StandaloneFileRecord[]> {
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
       const records = (request.result as StoredStandaloneFile[])
-        .map(({ blob: _blob, ...record }) => record)
+        .map(({ data: _data, blob: _blob, ...record }) => record)
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
       resolve(records);
     };
@@ -37,25 +38,19 @@ export async function addStandaloneFile(file: File): Promise<StandaloneFileRecor
   const db = await openStandaloneDb();
   const now = new Date().toISOString();
   const mediaType = file.type || mediaTypeForFilename(file.name);
-  const record: Omit<StoredStandaloneFile, "id"> = {
+  const record: Omit<StandaloneFileRecord, "id"> = {
     title: titleFromFilename(file.name),
     filename: file.name,
     mediaType,
     size: file.size,
     createdAt: now,
     sentAt: null,
-    coverUrl: await extractEpubCoverDataUrl(file),
-    blob: new Blob([file], { type: mediaType })
+    coverUrl: await extractEpubCoverDataUrl(file)
   };
+  const blob = new Blob([file], { type: mediaType });
+  const id = await storeStandaloneFile(db, record, blob, "add");
 
-  return new Promise((resolve, reject) => {
-    const request = db.transaction(fileStoreName, "readwrite").objectStore(fileStoreName).add(record);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const { blob: _blob, ...savedRecord } = { ...record, id: Number(request.result) };
-      resolve(savedRecord);
-    };
-  });
+  return { ...record, id };
 }
 
 export async function getStandaloneFile(id: number): Promise<{ record: StandaloneFileRecord; blob: Blob }> {
@@ -69,8 +64,14 @@ export async function getStandaloneFile(id: number): Promise<{ record: Standalon
         reject(new Error("File not found in local library."));
         return;
       }
-      const { blob, ...record } = stored;
-      if (!(blob instanceof Blob)) {
+      const { data, blob: storedBlob, ...record } = stored;
+      const blob =
+        data instanceof ArrayBuffer
+          ? new Blob([data], { type: record.mediaType })
+          : storedBlob instanceof Blob
+            ? storedBlob
+            : null;
+      if (!blob) {
         reject(new Error("The stored file data is unavailable. Remove this file and add it to Inky again."));
         return;
       }
@@ -82,17 +83,40 @@ export async function getStandaloneFile(id: number): Promise<{ record: Standalon
 export async function markStandaloneFileSent(id: number): Promise<void> {
   const db = await openStandaloneDb();
   const current = await getStandaloneFile(id);
-  const updated: StoredStandaloneFile = {
+  const updated: StandaloneFileRecord = {
     ...current.record,
-    sentAt: new Date().toISOString(),
-    blob: current.blob
+    sentAt: new Date().toISOString()
   };
 
+  await storeStandaloneFile(db, updated, current.blob, "put");
+}
+
+async function storeStandaloneFile(
+  db: IDBDatabase,
+  record: Omit<StandaloneFileRecord, "id"> | StandaloneFileRecord,
+  blob: Blob,
+  operation: "add" | "put"
+): Promise<number> {
+  try {
+    return await writeStandaloneRecord(db, { ...record, blob }, operation);
+  } catch (error) {
+    if (!shouldRetryFileStorageAsArrayBuffer(error)) throw error;
+    return writeStandaloneRecord(db, { ...record, data: await blob.arrayBuffer() }, operation);
+  }
+}
+
+function writeStandaloneRecord(db: IDBDatabase, record: object, operation: "add" | "put"): Promise<number> {
   return new Promise((resolve, reject) => {
-    const request = db.transaction(fileStoreName, "readwrite").objectStore(fileStoreName).put(updated);
+    const store = db.transaction(fileStoreName, "readwrite").objectStore(fileStoreName);
+    const request = operation === "add" ? store.add(record) : store.put(record);
     request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve();
+    request.onsuccess = () => resolve(Number(request.result));
   });
+}
+
+function shouldRetryFileStorageAsArrayBuffer(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.toLowerCase().includes("preparing blob/file data");
 }
 
 export async function deleteStandaloneFile(id: number): Promise<void> {
