@@ -13,7 +13,7 @@ export type Partition = {
 };
 
 export class BrowserFirmwareFlasher {
-  constructor(port?: unknown, options?: { baudrate?: number });
+  constructor(port?: unknown, options?: { baudrate?: number; expectedChip?: string; deviceName?: string });
   static requestPort(filters?: Array<{ usbVendorId: number; usbProductId?: number }> | null): Promise<unknown>;
   flashFirmware(firmwareData: Uint8Array, callbacks?: FlashCallbacks): Promise<{ partition: string; success: boolean }>;
   repairBootRegion(

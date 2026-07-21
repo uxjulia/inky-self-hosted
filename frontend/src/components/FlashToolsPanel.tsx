@@ -26,6 +26,11 @@ const DEVICES: Array<{ id: FlashDeviceId; name: string; detail: string }> = [
   { id: "sticky", name: "Seeed Studio Sticky", detail: "ESP32-S3 firmware" }
 ];
 
+const DEVICE_CHIPS: Record<FlashDeviceId, string> = {
+  xteink: "ESP32-C3",
+  sticky: "ESP32-S3"
+};
+
 const STANDARD_STEPS = [
   "Connect to device",
   "Validate partition table",
@@ -229,7 +234,11 @@ export function FlashToolsPanel() {
           fetchStickyBootloader(),
           fetchStickyBootApp0()
         ]);
-        const flasher = new BrowserFirmwareFlasher(serialPort, { baudrate: 921600 });
+        const flasher = new BrowserFirmwareFlasher(serialPort, {
+          baudrate: 921600,
+          expectedChip: DEVICE_CHIPS[device],
+          deviceName: DEVICES.find((candidate) => candidate.id === device)?.name
+        });
         await flasher.repairBootRegion(STICKY_PARTITION_TABLE, {
           ...callbacks,
           bootloaderData,
@@ -237,7 +246,10 @@ export function FlashToolsPanel() {
           otadataData
         });
       } else {
-        const flasher = new BrowserFirmwareFlasher(serialPort);
+        const flasher = new BrowserFirmwareFlasher(serialPort, {
+          expectedChip: DEVICE_CHIPS[device],
+          deviceName: DEVICES.find((candidate) => candidate.id === device)?.name
+        });
         await flasher.flashFirmware(firmwareData, { ...callbacks, skipReset: true });
       }
 

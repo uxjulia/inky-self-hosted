@@ -429,11 +429,15 @@ export class BrowserFirmwareFlasher {
   // baudrate only matters for devices behind a real USB-UART bridge; native
   // USB (USB-Serial-JTAG / CDC) ignores it. esptool-js connects at 115200
   // (the ROM baud) and switches up after the stub loads.
-  constructor(port = null, { baudrate = 115200 } = {}) {
+  // expectedChip is the esptool CHIP_NAME the selected device must report.
+  // deviceName is only used to make chip mismatch errors easier to understand.
+  constructor(port = null, { baudrate = 115200, expectedChip = null, deviceName = null } = {}) {
     this.espLoader = null;
     this.layout = null;
     this.port = port;
     this.baudrate = baudrate;
+    this.expectedChip = expectedChip;
+    this.deviceName = deviceName;
   }
 
   // Must be called synchronously inside a user gesture (click handler) before any awaits.
@@ -456,6 +460,17 @@ export class BrowserFirmwareFlasher {
       transport, baudrate: this.baudrate, romBaudrate: 115200, enableTracing: false,
     });
     await this.espLoader.main();
+
+    const chipName = this.espLoader.chip?.CHIP_NAME;
+    if (this.expectedChip && chipName && chipName !== this.expectedChip) {
+      const label = this.deviceName ? `the ${this.deviceName}` : 'the selected device';
+      // Nothing has been written yet, so release the port without resetting it.
+      try { await this.disconnect(true); } catch {}
+      throw new Error(
+        `Connected device is an ${chipName}, but ${label} uses an ${this.expectedChip}. ` +
+        'Wrong device selected? Flashing was aborted before anything was written.'
+      );
+    }
   }
 
   async disconnect(skipReset = false) {
