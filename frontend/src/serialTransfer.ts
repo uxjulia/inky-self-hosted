@@ -31,7 +31,12 @@ declare global {
   }
 }
 
-const esp32SerialFilters = [{ usbVendorId: 0x303a, usbProductId: 0x1001 }];
+export const crossInkSerialFilters = [
+  { usbVendorId: 0x303a },
+  { usbVendorId: 0x2886 },
+  { usbVendorId: 0x10c4 },
+  { usbVendorId: 0x1a86 }
+];
 const commandMagic = new Uint8Array([0x43, 0x4d, 0x4e, 0x44]);
 const textEncoder = new TextEncoder();
 const crcTable = createCrcTable();
@@ -302,7 +307,8 @@ async function openSerialConnection() {
 
   const grantedPorts = await navigator.serial.getPorts();
   const port =
-    grantedPorts.find(isEsp32SerialPort) || (await navigator.serial.requestPort({ filters: esp32SerialFilters }));
+    grantedPorts.find(isCrossInkSerialPort) ||
+    (await navigator.serial.requestPort({ filters: crossInkSerialFilters }));
   try {
     await port.open({ baudRate: 115200, bufferSize: 8192 });
   } catch (error) {
@@ -529,9 +535,9 @@ async function readUntil(
   }
 }
 
-function isEsp32SerialPort(port: SerialPort) {
-  const { usbVendorId, usbProductId } = port.getInfo();
-  return usbVendorId === 0x303a && usbProductId === 0x1001;
+function isCrossInkSerialPort(port: SerialPort) {
+  const { usbVendorId } = port.getInfo();
+  return crossInkSerialFilters.some((filter) => filter.usbVendorId === usbVendorId);
 }
 
 function isSerialLog(line: string) {

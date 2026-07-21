@@ -162,8 +162,8 @@ async function createWindow() {
 
   mainWindow.webContents.session.on("select-serial-port", (event, portList, _webContents, callback) => {
     event.preventDefault();
-    const esp32Port = portList.find((port) => isEsp32SerialPort(port));
-    callback(esp32Port?.portId || "");
+    const crossInkPort = portList.find((port) => isCrossInkSerialPort(port));
+    callback(crossInkPort?.portId || "");
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -178,10 +178,9 @@ async function createWindow() {
   }
 }
 
-function isEsp32SerialPort(port) {
+function isCrossInkSerialPort(port) {
   const vendorId = normalizeDeviceId(port.vendorId);
-  const productId = normalizeDeviceId(port.productId);
-  return vendorId === 0x303a && productId === 0x1001;
+  return [0x303a, 0x2886, 0x10c4, 0x1a86].includes(vendorId);
 }
 
 function normalizeDeviceId(value) {

@@ -7,6 +7,7 @@ import {
   STICKY_PARTITION_TABLE
 } from "../lib/flasher.js";
 import type { FlashStepState } from "../lib/flasher.js";
+import { crossInkSerialFilters } from "../serialTransfer";
 
 type FlashDeviceId = "xteink" | "sticky";
 type StableVariantId = "tiny" | "xlarge" | "sticky";
@@ -39,13 +40,6 @@ const STICKY_STEPS = [
   "Write bootloader + partition table + firmware",
   "Verify partition table",
   "Reset device"
-];
-
-const STICKY_SERIAL_FILTERS = [
-  { usbVendorId: 0x303a },
-  { usbVendorId: 0x2886 },
-  { usbVendorId: 0x10c4 },
-  { usbVendorId: 0x1a86 }
 ];
 
 function messageFromUnknown(error: unknown) {
@@ -194,7 +188,7 @@ export function FlashToolsPanel() {
 
     let serialPort: unknown;
     try {
-      serialPort = await BrowserFirmwareFlasher.requestPort(device === "sticky" ? STICKY_SERIAL_FILTERS : undefined);
+      serialPort = await BrowserFirmwareFlasher.requestPort(device === "sticky" ? crossInkSerialFilters : undefined);
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "NotFoundError")) {
         setStatus({ tone: "error", message: messageFromUnknown(error) });
