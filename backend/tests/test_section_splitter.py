@@ -148,6 +148,34 @@ class XLocationManifestTests(unittest.TestCase):
         self.assertEqual([entry['sourceSpineIndex'] for entry in manifest['sourceSpineMap']['spine']], [0, 0, 1])
         self.assertEqual(manifest['sourceSpineMap']['spine'][1]['containerDepth'], 1)
 
+    def test_section_split_ignores_processing_instructions_in_location_map(self):
+        opf_dir = self.tmpdir / 'OEBPS'
+        opf_dir.mkdir()
+        opf_path = opf_dir / 'content.opf'
+        (opf_dir / 'chapter.xhtml').write_text(
+            '<html xmlns="http://www.w3.org/1999/xhtml"><body>'
+            f'<p>{"a" * 18000}</p><?custom keep?><p>{"b" * 18000}</p>'
+            '</body></html>',
+            encoding='utf-8',
+        )
+        opf_path.write_text(
+            '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
+            '<manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>'
+            '</manifest><spine><itemref idref="chapter"/></spine></package>',
+            encoding='utf-8',
+        )
+
+        source_spine_map = {}
+        sections_split, split_parts = split_long_sections(str(opf_path), source_spine_map=source_spine_map)
+
+        self.assertEqual((sections_split, split_parts), (1, 2))
+        self.assertTrue((opf_dir / 'chapter__ci_section_002.xhtml').exists())
+        self.assertIn('<?custom keep?>', (opf_dir / 'chapter.xhtml').read_text(encoding='utf-8'))
+        self.assertEqual(
+            [entry['name'] for entry in source_spine_map['sourceByHref']['chapter.xhtml']['childRanges']],
+            ['p'],
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -254,7 +254,7 @@ def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int
         current_bytes = fixed_bytes
         for child in split_children:
             child_bytes = len(etree.tostring(child, encoding='utf-8'))
-            child_words = _count_location_words(' '.join(child.itertext()))
+            child_words = _count_location_words(' '.join(child.itertext())) if _is_element(child) else 0
             would_exceed = current and (
                 current_words + child_words > word_threshold or current_bytes + child_bytes > byte_threshold
             )
@@ -307,6 +307,8 @@ def split_long_sections(opf_path: str, enabled: bool = True, word_threshold: int
             if source_spine_map is not None:
                 ranges_by_name = {}
                 for node in chunk:
+                    if not _is_element(node):
+                        continue
                     name = etree.QName(node).localname.lower()
                     if name not in ranges_by_name:
                         ranges_by_name[name] = {
