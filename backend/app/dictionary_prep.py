@@ -262,7 +262,23 @@ def _extract_rar_with_unar(source_rar: Path, destination: Path, unar_path: str) 
         raise rarfile.RarCannotExec(f"Unable to run {unar_path}: {exc}") from exc
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "no error output"
+        partial_files, partial_bytes = _extraction_output_summary(destination)
+        logger.error(
+            "RAR extractor exited unsuccessfully: archive_bytes=%d extractor=%s exit_code=%d "
+            "partial_files=%d partial_bytes=%d detail=%r",
+            source_rar.stat().st_size,
+            unar_path,
+            result.returncode,
+            partial_files,
+            partial_bytes,
+            detail,
+        )
         raise DictionaryPrepError(f"RAR extraction failed using {unar_path} (exit {result.returncode}): {detail}")
+
+
+def _extraction_output_summary(destination: Path) -> tuple[int, int]:
+    files = [path for path in destination.rglob("*") if path.is_file()]
+    return len(files), sum(path.stat().st_size for path in files)
 
 
 def _verify_rar_files(destination: Path, safe_files: list[tuple[Path, int]]) -> None:

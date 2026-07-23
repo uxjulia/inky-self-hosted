@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -441,9 +442,11 @@ async def prepare_dictionary(
     ) as temp:
         temp_path = Path(temp.name)
         upload_bytes = 0
+        archive_hash = hashlib.sha256()
         while chunk := await file.read(1024 * 1024):
             temp.write(chunk)
             upload_bytes += len(chunk)
+            archive_hash.update(chunk)
 
     if upload_bytes == 0:
         temp_path.unlink(missing_ok=True)
@@ -451,13 +454,20 @@ async def prepare_dictionary(
 
     job = create_job(db, "dictionary_prepare")
     logger.info(
-        "Dictionary upload accepted: job_id=%s filename=%r content_type=%r archive_bytes=%d",
+        "Dictionary upload accepted: job_id=%s filename=%r content_type=%r archive_bytes=%d archive_sha256=%s",
         job.id,
         filename,
         file.content_type,
         upload_bytes,
+        archive_hash.hexdigest(),
     )
-    background.add_task(run_dictionary_prepare_job, job.id, str(temp_path), filename)
+    background.add_task(
+        run_dictionary_prepare_job,
+        job.id,
+        str(temp_path),
+        filename,
+        archive_hash.hexdigest(),
+    )
     return job
 
 

@@ -123,7 +123,12 @@ def run_send_path_job(job_id: str, source_path: str, request: DeviceSendRequest)
         db.close()
 
 
-def run_dictionary_prepare_job(job_id: str, source_zip: str, original_filename: str | None = None) -> None:
+def run_dictionary_prepare_job(
+    job_id: str,
+    source_zip: str,
+    original_filename: str | None = None,
+    archive_sha256: str | None = None,
+) -> None:
     db = SessionLocal()
     output_dir = get_settings().dictionaries_dir / "prepared" / job_id
     try:
@@ -137,10 +142,11 @@ def run_dictionary_prepare_job(job_id: str, source_zip: str, original_filename: 
 
         source_path = Path(source_zip)
         logger.info(
-            "Dictionary prep started: job_id=%s filename=%r archive_bytes=%d",
+            "Dictionary prep started: job_id=%s filename=%r archive_bytes=%d archive_sha256=%s",
             job_id,
             original_filename or source_path.name,
             source_path.stat().st_size,
+            archive_sha256 or "unavailable",
         )
 
         def progress(percent: int, message: str) -> None:
@@ -160,24 +166,37 @@ def run_dictionary_prepare_job(job_id: str, source_zip: str, original_filename: 
     except Exception as exc:
         data_free_bytes = shutil.disk_usage(get_settings().data_dir).free
         temp_free_bytes = shutil.disk_usage(tempfile.gettempdir()).free
+        error = _dictionary_prepare_user_error(exc)
         logger.exception(
-            "Dictionary prep failed: job_id=%s filename=%r source=%s data_free_bytes=%d temp_free_bytes=%d",
+            "Dictionary prep failed: job_id=%s filename=%r archive_sha256=%s error_type=%s "
+            "data_free_bytes=%d temp_free_bytes=%d user_error=%r",
             job_id,
             original_filename or Path(source_zip).name,
-            source_zip,
+            archive_sha256 or "unavailable",
+            type(exc).__name__,
             data_free_bytes,
             temp_free_bytes,
-        )
-        error = (
-            "The server ran out of temporary storage while extracting this dictionary"
-            if isinstance(exc, OSError) and exc.errno == errno.ENOSPC
-            else str(exc)
+            error,
         )
         shutil.rmtree(output_dir, ignore_errors=True)
         set_job(job_id, status=JobStatus.failed.value, progress=100, message="Dictionary prep failed", error=error)
     finally:
         Path(source_zip).unlink(missing_ok=True)
         db.close()
+
+
+def _dictionary_prepare_user_error(exc: Exception) -> str:
+    if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+        return "The server ran out of temporary storage while extracting this dictionary"
+
+    detail = str(exc)
+    if "Attempted to read more data than was available" in detail:
+        return (
+            "This RAR archive appears incomplete, damaged, or unsupported by the server's extractor. "
+            "Please download it again and upload the new copy. If it still fails, extract it locally and upload "
+            "the resulting ZIP instead."
+        )
+    return detail
 
 
 def _send_path(

@@ -26,6 +26,7 @@ from app.dictionary_prep import (
     prepare_dictionary_zip,
     schedule_existing_prepared_dictionary_cleanup,
 )
+from app.jobs import _dictionary_prepare_user_error
 
 
 class DictionaryPrepServiceTests(unittest.TestCase):
@@ -136,6 +137,17 @@ class DictionaryPrepServiceTests(unittest.TestCase):
                 r"RAR extraction failed using automatic extractor \(BadRarFile\): truncated archive",
             ):
                 prepare_dictionary_zip(source, self.root / "out")
+
+    def test_rar_decode_failure_has_actionable_user_message(self):
+        error = _dictionary_prepare_user_error(
+            DictionaryPrepError(
+                "RAR extraction failed using /usr/bin/unar (exit 1): "
+                "sample.idx (1024 B)... Failed! (Attempted to read more data than was available)"
+            )
+        )
+
+        self.assertIn("appears incomplete, damaged, or unsupported", error)
+        self.assertIn("upload the resulting ZIP", error)
 
     def test_existing_prepared_dictionary_cleanup_uses_remaining_retention(self):
         prepared_root = self.root / "prepared"
