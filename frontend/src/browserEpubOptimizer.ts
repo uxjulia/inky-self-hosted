@@ -87,6 +87,7 @@ export async function optimizeEpubInBrowser(
   const entries = Object.entries(zip.files);
   const imageRenameMap = buildImageRenameMap(entries);
   const xhtmlFiles: Record<string, string> = {};
+  const linkedTextFiles: Record<string, string> = {};
   const cssFiles: Record<string, CssFileEntry> = {};
   let opfPath = "";
   let opfText = "";
@@ -152,6 +153,11 @@ export async function optimizeEpubInBrowser(
       continue;
     }
 
+    if (lower.endsWith(".ncx")) {
+      linkedTextFiles[path] = await entry.async("text");
+      continue;
+    }
+
     out.file(path, await entry.async("arraybuffer"), {
       compression: "DEFLATE",
       compressionOptions: { level: 8 },
@@ -165,6 +171,18 @@ export async function optimizeEpubInBrowser(
 
   progress?.(72, "Updating EPUB metadata");
   let updatedOpf = processOpf(opfText, opfPath, imageRenameMap, settings);
+  const collapseResult = collapseReaderEmptySpineItems(xhtmlFiles, updatedOpf, opfPath);
+  updatedOpf = collapseResult.opfText;
+  for (const [path, text] of Object.entries(xhtmlFiles)) {
+    const rewritten = rewriteCollapsedSpineReferences(text, path, collapseResult.redirects);
+    xhtmlFiles[path] = rewritten;
+    out.file(path, rewritten, { compression: "DEFLATE", compressionOptions: { level: 8 }, createFolders: false });
+  }
+  for (const [path, text] of Object.entries(linkedTextFiles)) {
+    out.file(path, rewriteCollapsedSpineReferences(text, path, collapseResult.redirects), {
+      compression: "DEFLATE", compressionOptions: { level: 8 }, createFolders: false
+    });
+  }
   const originalSpineHrefs = parseSpineHrefs(updatedOpf, opfPath);
   const splitResult = splitLongXhtmlSections(xhtmlFiles, settings, originalSpineHrefs);
   for (const [path, text] of Object.entries(splitResult.xhtmlFiles)) {
@@ -434,6 +452,72 @@ function processOpfRegex(opfText: string, imageRenameMap: Map<string, string>, s
 
 type SplitSections = Record<string, string[]>;
 
+function readerSectionIdentity(text: string): string | null {
+  const doc = new DOMParser().parseFromString(text, "application/xhtml+xml");
+  if (doc.getElementsByTagName("parsererror").length > 0 || !doc.body) return null;
+  const id = doc.body.getAttribute("id") || "";
+  const title = doc.querySelector("title")?.textContent?.trim() || "";
+  return id && title ? `${id}\u0000${title}` : null;
+}
+
+function hasReaderContent(text: string): boolean {
+  const doc = new DOMParser().parseFromString(text, "application/xhtml+xml");
+  if (doc.getElementsByTagName("parsererror").length > 0 || !doc.body) return true;
+  const body = doc.body.cloneNode(true) as HTMLElement;
+  body.querySelectorAll("script,style,svg,metadata,[data-AmznRemoved-M8]").forEach((node) => node.remove());
+  return Boolean(body.textContent?.trim() || body.querySelector("img"));
+}
+
+function collapseReaderEmptySpineItems(
+  xhtmlFiles: Record<string, string>, opfText: string, opfPath: string
+): { opfText: string; redirects: Map<string, string> } {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(opfText, "application/xml");
+  const redirects = new Map<string, string>();
+  if (doc.getElementsByTagName("parsererror").length > 0) return { opfText, redirects };
+  const manifest = Array.from(doc.getElementsByTagName("item"));
+  const byId = new Map(manifest.map((item) => [item.getAttribute("id") || "", item]));
+  const spine = Array.from(doc.getElementsByTagName("spine"))[0];
+  if (!spine) return { opfText, redirects };
+  const refs = Array.from(spine.getElementsByTagName("itemref"));
+  for (let index = 0; index + 1 < refs.length; index++) {
+    const current = byId.get(refs[index].getAttribute("idref") || "");
+    const next = byId.get(refs[index + 1].getAttribute("idref") || "");
+    const href = current?.getAttribute("href");
+    const nextHref = next?.getAttribute("href");
+    if (!href || !nextHref) continue;
+    const path = resolvePath(opfPath, safeDecodeURIComponent(href.split("#")[0]));
+    const nextPath = resolvePath(opfPath, safeDecodeURIComponent(nextHref.split("#")[0]));
+    const content = xhtmlFiles[path];
+    const nextContent = xhtmlFiles[nextPath];
+    if (!content || !nextContent || hasReaderContent(content) || !hasReaderContent(nextContent)) continue;
+    const identity = readerSectionIdentity(content);
+    if (!identity || identity !== readerSectionIdentity(nextContent)) continue;
+    redirects.set(path, nextPath);
+    spine.removeChild(refs[index]);
+  }
+  return { opfText: new XMLSerializer().serializeToString(doc), redirects };
+}
+
+function rewriteCollapsedSpineReferences(text: string, sourcePath: string, redirects: Map<string, string>): string {
+  if (redirects.size === 0) return text;
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  if (doc.getElementsByTagName("parsererror").length > 0) return text;
+  let changed = false;
+  for (const element of Array.from(doc.getElementsByTagName("*"))) {
+    for (const attribute of ["href", "src", "xlink:href"]) {
+      const value = element.getAttribute(attribute);
+      if (!value || value.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(value)) continue;
+      const [href, fragment = ""] = value.split(/#(.*)/s, 2);
+      const target = redirects.get(resolvePath(sourcePath, safeDecodeURIComponent(href)));
+      if (!target) continue;
+      element.setAttribute(attribute, `${relativePath(sourcePath, target)}${fragment ? `#${fragment}` : ""}`);
+      changed = true;
+    }
+  }
+  return changed ? new XMLSerializer().serializeToString(doc) : text;
+}
+
 function sectionSplitPath(path: string, partIndex: number) {
   if (partIndex === 0) return path;
   const dot = path.lastIndexOf(".");
@@ -457,6 +541,20 @@ function isHeadingNode(node: Node) {
 
 function isIgnorableSplitNode(node: Node) {
   return node.nodeType === Node.TEXT_NODE && !(node.textContent || "").trim();
+}
+
+function chunkHasReaderContent(nodes: Node[]): boolean {
+  const visit = (node: Node, hidden: boolean): boolean => {
+    if (node.nodeType === Node.TEXT_NODE) return !hidden && Boolean(node.textContent?.trim());
+    if (node.nodeType !== Node.ELEMENT_NODE) return false;
+    const element = node as Element;
+    const name = element.localName.toLowerCase();
+    const nextHidden = hidden || element.hasAttribute("data-AmznRemoved-M8") || ["script", "style", "svg", "metadata"].includes(name);
+    if (nextHidden) return false;
+    if (name === "img") return true;
+    return Array.from(node.childNodes).some((child) => visit(child, nextHidden));
+  };
+  return nodes.some((node) => visit(node, false));
 }
 
 function keepsSplitCluster(node: Node) {
@@ -548,6 +646,18 @@ function splitLongXhtmlSections(
       if (currentBytes >= hardByteLimit && canBreakAfter) flush();
     }
     flush();
+    const mergedChunks: Node[][] = [];
+    let pending: Node[] = [];
+    for (const chunk of chunks) {
+      if (chunkHasReaderContent(chunk)) {
+        mergedChunks.push([...pending, ...chunk]);
+        pending = [];
+      } else {
+        pending.push(...chunk);
+      }
+    }
+    if (pending.length && mergedChunks.length) mergedChunks[mergedChunks.length - 1].push(...pending);
+    chunks.splice(0, chunks.length, ...mergedChunks);
     if (chunks.length < 2) continue;
 
     splitSections[path] = [];
