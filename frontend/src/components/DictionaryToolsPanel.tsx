@@ -45,12 +45,7 @@ export function DictionaryToolsPanel({
   }
 
   return (
-    <section
-      className="dictionary-tools-page"
-      role="tabpanel"
-      id="dictionary-tools-panel"
-      aria-labelledby="dictionary-tools-tab"
-    >
+    <section className="dictionary-tools-page" role="tabpanel" id="dictionary-tools-panel" aria-labelledby="dictionary-tools-tab">
       <form className="panel form-panel dictionary-tools-card" onSubmit={onPrepareDictionaryZip}>
         <div className="panel-header">
           <div className="heading-line">
@@ -58,9 +53,7 @@ export function DictionaryToolsPanel({
             <h2>Dictionary Preparation</h2>
           </div>
         </div>
-        <div>
-          <p className="text-center">Use this tool to generate index files for your dictionary that will improve lookup speeds in Cross<span className="serif">I</span>nk.</p>
-        </div>
+        <p className="text-center">Use this tool to generate index files for your dictionary that will improve lookup speeds in Cross<span className="serif">I</span>nk.</p>
         <div className="field">
           <span>StarDict archive</span>
           <label
@@ -81,34 +74,16 @@ export function DictionaryToolsPanel({
           </label>
         </div>
         <div className="form-help dictionary-help">
-          <p>
-            Upload one StarDict dictionary as a <code>.zip</code>, <code>.tar.zst</code>, or <code>.rar</code> archive.
-            It can contain the files directly or inside one folder.
-          </p>
-          <p>
-            Required files must share the same name: <code>.ifo</code>, <code>.idx</code>, and <code>.dict</code> or{" "}
-            <code>.dict.dz</code>. Synonym files like <code>.syn</code> or <code>.syn.dz</code> are optional.
-          </p>
-          <p>
-            After preparation, download the new ZIP and unzip its folder into <code>/.dictionaries</code> or <code>/dictionaries</code> on your
-            SD card. Prepared downloads remain available for 10 minutes.
-          </p>
+          <p>Upload one StarDict dictionary as a <code>.zip</code>, <code>.tar.zst</code>, or <code>.rar</code> archive. It can contain the files directly or inside one folder.</p>
+          <p>Required files must share the same name: <code>.ifo</code>, <code>.idx</code>, and <code>.dict</code> or <code>.dict.dz</code>. Synonym files like <code>.syn</code> or <code>.syn.dz</code> are optional.</p>
+          <p>After preparation, download the new ZIP and unzip its folder into <code>/.dictionaries</code> or <code>/dictionaries</code> on your SD card. Prepared downloads remain available for 10 minutes.</p>
         </div>
-        <button
-          className="primary icon-text dictionary-action-button"
-          type="submit"
-          disabled={busy || !dictionaryZipFile}
-        >
+        <button className="primary icon-text dictionary-action-button" type="submit" disabled={busy || !dictionaryZipFile}>
           <BookOpen size={16} />
           Prepare Dictionary
         </button>
         {recentPreparedDictionaryDownload && (
-          <button
-            className="icon-text recent-download-button prepared-download-button dictionary-action-button"
-            type="button"
-            onClick={onDownloadPreparedDictionaryFile}
-            title={`Download ${recentPreparedDictionaryDownload.filename}`}
-          >
+          <button className="icon-text recent-download-button prepared-download-button dictionary-action-button" type="button" onClick={onDownloadPreparedDictionaryFile} title={`Download ${recentPreparedDictionaryDownload.filename}`}>
             <Download size={16} />
             Download Prepared Dictionary
           </button>

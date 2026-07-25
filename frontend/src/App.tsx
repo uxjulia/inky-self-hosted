@@ -108,6 +108,7 @@ import { BrowsePanel } from "./components/BrowsePanel";
 import { DictionaryToolsPanel } from "./components/DictionaryToolsPanel";
 import { DevicePanel } from "./components/DevicePanel";
 import { FlashToolsPanel } from "./components/FlashToolsPanel";
+import { FontDownloadsPanel } from "./components/FontDownloadsPanel";
 import { OptimizerSettingsModal } from "./components/OptimizerSettingsModal";
 import { SourcePanel } from "./components/SourcePanel";
 
@@ -143,7 +144,7 @@ const canUseWifiTransfer = !isHostedApp && !isPublicReadOnly;
 const browsePageSize = 25;
 const defaultDeviceHost = isSelfHostedBrowser ? "" : "crosspoint.local";
 const deviceHostPlaceholder = isSelfHostedBrowser ? "192.168." : "crosspoint.local";
-type AppTab = "epub" | "dictionary" | "flash";
+type AppTab = "epub" | "dictionary" | "downloads" | "flash";
 
 export default function App() {
   const libraryLoadSeq = useRef(0);
@@ -302,7 +303,7 @@ export default function App() {
     : `Page ${clampedBrowsePage} of ${totalPages}`;
   const sortLabel = sortLabelForMode(activeSortMode);
   const canPrepareDictionaries = dictionaryToolsEnabled && !standaloneMode && !isHostedApp;
-  const showAppTabs = canPrepareDictionaries || isPublicApp;
+  const showAppTabs = true;
   const effectiveEinkQuantize = optimizerSettings.grayscale && optimizerSettings.eink_quantize;
 
   useEffect(() => {
@@ -397,13 +398,10 @@ export default function App() {
   }, [optimizerModalOpen]);
 
   useEffect(() => {
-    if (!canPrepareDictionaries && activeAppTab === "dictionary") {
-      setActiveAppTab("epub");
-    }
     if (!isPublicApp && activeAppTab === "flash") {
       setActiveAppTab("epub");
     }
-  }, [activeAppTab, canPrepareDictionaries]);
+  }, [activeAppTab]);
 
   useEffect(() => {
     if (!stablePageTooltipPosition) return;
@@ -1747,7 +1745,13 @@ export default function App() {
 
   function openAppTab(tab: AppTab) {
     const hash =
-      tab === "dictionary" ? "#dictionary-tools" : tab === "flash" ? "#flash-tools" : "#epub-optimizer";
+      tab === "dictionary"
+        ? "#dictionary-tools"
+        : tab === "downloads"
+          ? "#downloads"
+          : tab === "flash"
+            ? "#flash-tools"
+            : "#epub-optimizer";
     if (window.location.hash !== hash) {
       window.location.hash = hash;
     }
@@ -1920,6 +1924,17 @@ export default function App() {
               Dictionary Tools
             </button>
           )}
+          <button
+            id="downloads-tab"
+            type="button"
+            role="tab"
+            aria-selected={activeAppTab === "downloads"}
+            aria-controls="downloads-panel"
+            className={activeAppTab === "downloads" ? "active" : ""}
+            onClick={() => openAppTab("downloads")}
+          >
+            Downloads
+          </button>
           {isPublicApp && (
             <button
               id="flash-tools-tab"
@@ -1957,6 +1972,8 @@ export default function App() {
         />
       ) : activeAppTab === "flash" && isPublicApp ? (
         <FlashToolsPanel />
+      ) : activeAppTab === "downloads" ? (
+        <FontDownloadsPanel apiFetch={apiFetch} />
       ) : (
         <section
           className="layout"
@@ -2330,6 +2347,7 @@ function getInitialView(): AppView {
 
 function getInitialAppTab(): AppTab {
   if (window.location.hash === "#dictionary-tools") return "dictionary";
+  if (window.location.hash === "#downloads" || window.location.hash === "#font-downloads") return "downloads";
   if (isPublicApp && window.location.hash === "#flash-tools") return "flash";
   return "epub";
 }

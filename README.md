@@ -139,6 +139,24 @@ INKY_STICKY_BETA_VERSION=Sticky Beta
 The backend reads the firmware metadata from R2 and proxies the download, so no
 R2 credentials or frontend `VITE_` variable are required for a public object.
 
+## Downloads and Dictionary Tools
+
+The **Downloads** tab groups the public packages needed by CrossInk devices:
+
+- **Reader Fonts** for book reading.
+- **Dictionary Fonts**, which include IPA and other glyphs used in dictionary definitions.
+- **Ready-made Dictionaries** in StarDict archive format.
+
+Inky reads the available packages from the public [CrossInk fonts repository](https://github.com/uxjulia/crossink-fonts) and [CrossInk dictionaries repository](https://github.com/uxjulia/crossink-dictionaries), then proxies the selected download. No GitHub or R2 credentials are required for users.
+
+Use **Dictionary Tools** to prepare a downloaded dictionary before installing it: upload the archive, download the prepared ZIP, and unzip its folder into `/.dictionaries` or `/dictionaries` on the device SD card. Enable this tool in backend-backed builds with:
+
+```bash
+VITE_INKY_DICTIONARY_TOOLS=1
+```
+
+`VITE_` variables are applied when the frontend is built, so rebuild or redeploy after changing this setting.
+
 Only set `INKY_AUTH_USERNAME` and `INKY_AUTH_PASSWORD` for a private instance.
 
 ## Local Development

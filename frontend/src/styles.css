@@ -1261,6 +1261,152 @@ progress {
   padding: 24px 12px;
 }
 
+.downloads-page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 12px;
+}
+
+.downloads-content {
+  width: min(720px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 auto;
+}
+
+.downloads-intro p,
+.downloads-section-summary p {
+  margin: 8px 0;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.downloads-category-heading,
+.downloads-section-summary,
+.downloads-section-toolbar,
+.downloads-package-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.downloads-category-heading {
+  margin-top: 8px;
+}
+
+.downloads-category-heading h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.downloads-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.downloads-section-summary {
+  align-items: flex-start;
+  justify-content: space-between;
+  cursor: pointer;
+  list-style: none;
+}
+
+.downloads-section-summary::-webkit-details-marker {
+  display: none;
+}
+
+.downloads-section-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.downloads-section-chevron {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  color: var(--color-muted);
+}
+
+.downloads-section:not([open]) .downloads-section-chevron {
+  transform: rotate(-90deg);
+}
+
+.downloads-section-summary h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.downloads-section-title .downloads-section-chevron {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.downloads-section-summary p {
+  margin: 4px 0 0;
+}
+
+.downloads-section-summary > span {
+  flex: 0 0 auto;
+  margin-right: 6px;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.downloads-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.downloads-section-toolbar {
+  justify-content: space-between;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.downloads-package-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  row-gap: 8px;
+  column-gap: 16px;
+}
+
+.downloads-package-card {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.downloads-package-card > div {
+  min-width: 0;
+}
+
+.downloads-package-card strong,
+.downloads-package-card span {
+  display: block;
+}
+
+.downloads-package-card strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.downloads-package-card span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
 .flash-tools-content {
   width: min(720px, 100%);
   display: flex;
@@ -1678,7 +1824,8 @@ progress {
   }
 
   .flash-device-grid,
-  .flash-firmware-grid {
+  .flash-firmware-grid,
+  .downloads-package-grid {
     grid-template-columns: 1fr;
   }
 

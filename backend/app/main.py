@@ -31,6 +31,8 @@ from .crossink_firmware import (
     get_crossink_releases,
     get_sticky_beta_release,
 )
+from .crossink_fonts import CrossInkFontsError, get_crossink_fonts
+from .crossink_dictionaries import CrossInkDictionariesError, get_crossink_dictionaries
 from .db import SessionLocal, get_db, init_db
 from .dictionary_prep import (
     dictionary_archive_suffix,
@@ -235,6 +237,171 @@ async def download_crossink_firmware(tag: str, variant: str) -> StreamingRespons
         headers={
             "Content-Disposition": f'attachment; filename="{asset.filename}"',
             "Content-Length": str(asset.size),
+            "Cache-Control": "public, max-age=300",
+        },
+        background=BackgroundTask(close_download),
+    )
+
+
+@app.get("/api/fonts/crossink")
+async def crossink_fonts() -> JSONResponse:
+    try:
+        fonts = await get_crossink_fonts()
+    except CrossInkFontsError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return JSONResponse(
+        {"fonts": [{"filename": font.filename, "size": font.size} for font in fonts]},
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@app.get("/api/fonts/crossink/{filename}")
+async def download_crossink_font(filename: str) -> StreamingResponse:
+    try:
+        fonts = await get_crossink_fonts()
+    except CrossInkFontsError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    font = next((item for item in fonts if item.filename == filename), None)
+    if not font:
+        raise HTTPException(status_code=404, detail="CrossInk font package is not available.")
+
+    client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=None), follow_redirects=True)
+    try:
+        upstream = await client.send(
+            client.build_request(
+                "GET",
+                font.download_url,
+                headers={"Accept-Encoding": "identity", "User-Agent": "Inky"},
+            ),
+            stream=True,
+        )
+        upstream.raise_for_status()
+    except httpx.HTTPError as exc:
+        await client.aclose()
+        raise HTTPException(status_code=502, detail="Unable to download CrossInk font package.") from exc
+
+    async def close_download() -> None:
+        await upstream.aclose()
+        await client.aclose()
+
+    return StreamingResponse(
+        upstream.aiter_bytes(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{font.filename}"',
+            "Content-Length": str(font.size),
+            "Cache-Control": "public, max-age=300",
+        },
+        background=BackgroundTask(close_download),
+    )
+
+
+@app.get("/api/fonts/dictionary")
+async def crossink_dictionary_fonts() -> JSONResponse:
+    try:
+        fonts = await get_crossink_fonts("dictionary")
+    except CrossInkFontsError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return JSONResponse(
+        {"fonts": [{"filename": font.filename, "size": font.size} for font in fonts]},
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@app.get("/api/fonts/dictionary/{filename}")
+async def download_crossink_dictionary_font(filename: str) -> StreamingResponse:
+    try:
+        fonts = await get_crossink_fonts("dictionary")
+    except CrossInkFontsError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    font = next((item for item in fonts if item.filename == filename), None)
+    if not font:
+        raise HTTPException(status_code=404, detail="CrossInk dictionary font package is not available.")
+
+    client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=None), follow_redirects=True)
+    try:
+        upstream = await client.send(
+            client.build_request(
+                "GET",
+                font.download_url,
+                headers={"Accept-Encoding": "identity", "User-Agent": "Inky"},
+            ),
+            stream=True,
+        )
+        upstream.raise_for_status()
+    except httpx.HTTPError as exc:
+        await client.aclose()
+        raise HTTPException(status_code=502, detail="Unable to download CrossInk dictionary font package.") from exc
+
+    async def close_download() -> None:
+        await upstream.aclose()
+        await client.aclose()
+
+    return StreamingResponse(
+        upstream.aiter_bytes(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{font.filename}"',
+            "Content-Length": str(font.size),
+            "Cache-Control": "public, max-age=300",
+        },
+        background=BackgroundTask(close_download),
+    )
+
+
+@app.get("/api/dictionaries/catalog")
+async def crossink_dictionary_catalog() -> JSONResponse:
+    try:
+        dictionaries = await get_crossink_dictionaries()
+    except CrossInkDictionariesError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return JSONResponse(
+        {"dictionaries": [{"filename": item.filename, "size": item.size} for item in dictionaries]},
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@app.get("/api/dictionaries/catalog/{filename}")
+async def download_crossink_dictionary(filename: str) -> StreamingResponse:
+    try:
+        dictionaries = await get_crossink_dictionaries()
+    except CrossInkDictionariesError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    dictionary = next((item for item in dictionaries if item.filename == filename), None)
+    if not dictionary:
+        raise HTTPException(status_code=404, detail="Dictionary package is not available.")
+
+    client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=None), follow_redirects=True)
+    try:
+        upstream = await client.send(
+            client.build_request(
+                "GET",
+                dictionary.download_url,
+                headers={"Accept-Encoding": "identity", "User-Agent": "Inky"},
+            ),
+            stream=True,
+        )
+        upstream.raise_for_status()
+    except httpx.HTTPError as exc:
+        await client.aclose()
+        raise HTTPException(status_code=502, detail="Unable to download dictionary package.") from exc
+
+    async def close_download() -> None:
+        await upstream.aclose()
+        await client.aclose()
+
+    return StreamingResponse(
+        upstream.aiter_bytes(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{dictionary.filename}"',
+            "Content-Length": str(dictionary.size),
             "Cache-Control": "public, max-age=300",
         },
         background=BackgroundTask(close_download),
