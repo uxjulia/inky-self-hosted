@@ -1,4 +1,4 @@
-import { Download, Zap } from "lucide-react";
+import { ChevronDown, Download, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BrowserFirmwareFlasher,
@@ -361,25 +361,28 @@ export function FlashToolsPanel() {
             {compatibleStableReleases.length > 0 && (
               <label className="field flash-version-field">
                 <span>Stable Cross<span className="serif">I</span>nk version (last 3 shown)</span>
-                <select
-                  value={selectedStableRelease?.tag || ""}
-                  disabled={running}
-                  onChange={(event) => {
-                    setSelectedReleaseTag(event.target.value);
-                    setFirmwareChoice(null);
-                    setSteps([]);
-                    setStepStates([]);
-                    setProgress(0);
-                    setStatus(null);
-                    setDownloadError("");
-                  }}
-                >
-                  {compatibleStableReleases.map((release, index) => (
-                    <option key={release.tag} value={release.tag}>
-                      {release.tag}{index === 0 ? " (latest)" : ""}
-                    </option>
-                  ))}
-                </select>
+                <span className="select-control">
+                  <select
+                    value={selectedStableRelease?.tag || ""}
+                    disabled={running}
+                    onChange={(event) => {
+                      setSelectedReleaseTag(event.target.value);
+                      setFirmwareChoice(null);
+                      setSteps([]);
+                      setStepStates([]);
+                      setProgress(0);
+                      setStatus(null);
+                      setDownloadError("");
+                    }}
+                  >
+                    {compatibleStableReleases.map((release, index) => (
+                      <option key={release.tag} value={release.tag}>
+                        {release.tag}{index === 0 ? " (latest)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown aria-hidden="true" />
+                </span>
               </label>
             )}
             <div className="flash-firmware-grid">
@@ -415,25 +418,28 @@ export function FlashToolsPanel() {
                 <hr />
                 <label className="field flash-version-field">
                   <span id="pr-label">Pre-Release Cross<span className="serif">I</span>nk builds</span>
-                  <select
-                    value={selectedPrereleaseRelease?.tag || ""}
-                    disabled={running}
-                    onChange={(event) => {
-                      setSelectedReleaseTag(event.target.value);
-                      setFirmwareChoice(null);
-                      setSteps([]);
-                      setStepStates([]);
-                      setProgress(0);
-                      setStatus(null);
-                      setDownloadError("");
-                    }}
-                  >
-                    {compatiblePrereleaseReleases.map((release, index) => (
-                      <option key={release.tag} value={release.tag}>
-                        {release.tag}{index === 0 ? " (latest)" : ""}
-                      </option>
-                    ))}
-                  </select>
+                  <span className="select-control">
+                    <select
+                      value={selectedPrereleaseRelease?.tag || ""}
+                      disabled={running}
+                      onChange={(event) => {
+                        setSelectedReleaseTag(event.target.value);
+                        setFirmwareChoice(null);
+                        setSteps([]);
+                        setStepStates([]);
+                        setProgress(0);
+                        setStatus(null);
+                        setDownloadError("");
+                      }}
+                    >
+                      {compatiblePrereleaseReleases.map((release, index) => (
+                        <option key={release.tag} value={release.tag}>
+                          {release.tag}{index === 0 ? " (latest)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown aria-hidden="true" />
+                  </span>
                 </label>
                 <div className="flash-firmware-grid">
                   {prereleaseVariantIds.map((variantId) => {

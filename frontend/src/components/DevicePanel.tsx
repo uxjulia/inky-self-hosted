@@ -1,4 +1,4 @@
-import { Download, RefreshCw, SlidersHorizontal, TabletSmartphone, Usb, Wifi, X } from "lucide-react";
+import { ChevronDown, Download, RefreshCw, SlidersHorizontal, TabletSmartphone, Usb, Wifi, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import type { DeviceTarget, Job, RecentOptimizedDownload, TransferMode } from "../appTypes";
 import { readableError } from "../appUtils";
@@ -166,13 +166,16 @@ export function DevicePanel({
       </label>
       <label className="field">
         <span>Optimize for</span>
-        <select value={device} onChange={(event) => onSetDevice(event.target.value as DeviceTarget)}>
-          {DEVICE_TARGET_OPTIONS.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <span className="select-control">
+          <select id="device-selection" value={device} onChange={(event) => onSetDevice(event.target.value as DeviceTarget)}>
+            {DEVICE_TARGET_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown aria-hidden="true" />
+        </span>
         <small className="device-profile-help">{deviceTargetDefinition(device).profile.displayLabel}</small>
       </label>
       <button

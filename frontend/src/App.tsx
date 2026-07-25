@@ -7,7 +7,6 @@ import {
   LogOut,
   Moon,
   Plus,
-  RefreshCw,
   Rss,
   Save,
   Server,
@@ -1872,18 +1871,6 @@ export default function App() {
           >
             {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
-          {view === "app" && (
-            <button
-              className="icon-text"
-              type="button"
-              onClick={() => refreshAll()}
-              title="Refresh"
-              disabled={refreshing}
-            >
-              <RefreshCw className={refreshing ? "spin" : ""} size={15} />
-              {refreshing ? "Refreshing" : "Refresh"}
-            </button>
-          )}
           {canConfigureApiBaseUrl && (
             <button className="icon-text" type="button" onClick={openServerSettings} title="Server">
               <Server size={16} />
@@ -2037,6 +2024,7 @@ export default function App() {
             browseStackLength={browseStack.length}
             usesBrowserLibrary={usesBrowserLibrary}
             isHostedApp={isHostedApp}
+            refreshing={refreshing}
             rescanningLibrary={rescanningLibrary}
             localFileInputRef={localFileInputRef}
             searchQuery={searchQuery}
@@ -2065,6 +2053,7 @@ export default function App() {
             apiFetch={apiFetch}
             mediaUrl={mediaUrl}
             onBrowseBack={browseBack}
+            onRefresh={() => refreshAll()}
             onRescanLibrary={rescanLibrary}
             onUploadLocalFiles={uploadLocalFiles}
             onSearchSelectedSource={searchSelectedSource}

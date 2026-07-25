@@ -25,6 +25,7 @@ type BrowsePanelProps = {
   browseStackLength: number;
   usesBrowserLibrary: boolean;
   isHostedApp: boolean;
+  refreshing: boolean;
   rescanningLibrary: boolean;
   localFileInputRef: RefObject<HTMLInputElement | null>;
   searchQuery: string;
@@ -53,6 +54,7 @@ type BrowsePanelProps = {
   apiFetch: (path: string) => Promise<Response>;
   mediaUrl: (url: string) => string;
   onBrowseBack: () => void;
+  onRefresh: () => void;
   onRescanLibrary: () => void;
   onUploadLocalFiles: (files: FileList | null) => void | Promise<void>;
   onSearchSelectedSource: (event: FormEvent) => void | Promise<void>;
@@ -92,6 +94,7 @@ export function BrowsePanel({
   browseStackLength,
   usesBrowserLibrary,
   isHostedApp,
+  refreshing,
   rescanningLibrary,
   localFileInputRef,
   searchQuery,
@@ -120,6 +123,7 @@ export function BrowsePanel({
   apiFetch,
   mediaUrl,
   onBrowseBack,
+  onRefresh,
   onRescanLibrary,
   onUploadLocalFiles,
   onSearchSelectedSource,
@@ -166,8 +170,12 @@ export function BrowsePanel({
           <h2>{isLocalSource ? localSource.name : activeBrowseResult?.title || selectedSource?.name || "Browse"}</h2>
         </div>
         <div className="toolbar">
+          <button type="button" onClick={onRefresh} disabled={refreshing} title="Refresh sources and library">
+            <RefreshCw className={refreshing ? "spin" : ""} size={15} />
+            {refreshing ? "Refreshing" : "Refresh"}
+          </button>
           {!isLocalSource && (
-            <button type="button" onClick={onBrowseBack} disabled={browseStackLength <= 1} title="Back">
+            <button style={{ padding: "8px", width: "unset" }} type="button" onClick={onBrowseBack} disabled={browseStackLength <= 1} title="Back">
               Back
             </button>
           )}
@@ -339,9 +347,8 @@ export function BrowsePanel({
             const selected = selectedLocalItemIds.has(item.id);
             return (
               <div
-                className={`item-row local-library-row ${item.is_missing ? "missing-library-row" : ""} ${
-                  selected ? "selected-library-row" : ""
-                }`}
+                className={`item-row local-library-row ${item.is_missing ? "missing-library-row" : ""} ${selected ? "selected-library-row" : ""
+                  }`}
                 key={item.id}
               >
                 <label className="library-select-checkbox" aria-label={`Select ${item.title}`}>
@@ -413,19 +420,18 @@ export function BrowsePanel({
               : "Sending to device";
             return (
               <div
-                className={`item-row ${isSendableItem ? "sendable-row" : "navigation-row"} ${
-                  opensBrowseTarget ? "clickable-row" : ""
-                }`}
+                className={`item-row ${isSendableItem ? "sendable-row" : "navigation-row"} ${opensBrowseTarget ? "clickable-row" : ""
+                  }`}
                 key={`${item.type}-${item.url || item.path}-${index}`}
                 onClick={opensBrowseTarget ? () => onOpenBrowseItem(item) : undefined}
                 onKeyDown={
                   opensBrowseTarget
                     ? (event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          onOpenBrowseItem(item);
-                        }
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onOpenBrowseItem(item);
                       }
+                    }
                     : undefined
                 }
                 role={opensBrowseTarget ? "button" : undefined}

@@ -119,6 +119,28 @@ select {
   background: var(--color-panel);
 }
 
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 42px;
+}
+
+.select-control {
+  display: block;
+  position: relative;
+}
+
+.select-control > svg {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  color: var(--color-muted);
+  pointer-events: none;
+}
+
 input[type="checkbox"] {
   width: 16px;
   min-height: 16px;
