@@ -8,7 +8,7 @@ import os
 import shutil
 import tempfile
 import threading
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -595,9 +595,17 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
 @app.post("/api/dictionaries/prepare", response_model=JobRead)
 async def prepare_dictionary(
     background: BackgroundTasks,
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    folder_files: list[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
 ) -> Job:
+    if file and folder_files:
+        raise HTTPException(status_code=400, detail="upload either a dictionary archive or one dictionary folder")
+    if folder_files:
+        return await _prepare_dictionary_folder(background, folder_files, db)
+    if not file:
+        raise HTTPException(status_code=400, detail="choose a dictionary archive or folder")
+
     filename = file.filename or "dictionary.zip"
     if not is_supported_dictionary_archive(filename):
         raise HTTPException(status_code=400, detail="only StarDict ZIP, TAR.ZST, or RAR files can be prepared")
@@ -636,6 +644,59 @@ async def prepare_dictionary(
         archive_hash.hexdigest(),
     )
     return job
+
+
+async def _prepare_dictionary_folder(
+    background: BackgroundTasks,
+    folder_files: list[UploadFile],
+    db: Session,
+) -> Job:
+    temp_path = Path(tempfile.mkdtemp(prefix="inky-dictionary-folder-"))
+    upload_bytes = 0
+    folder_hash = hashlib.sha256()
+    try:
+        for upload in folder_files:
+            relative_path = _safe_dictionary_folder_upload_path(upload.filename)
+            if relative_path is None:
+                continue
+            destination = temp_path / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with destination.open("wb") as target:
+                while chunk := await upload.read(1024 * 1024):
+                    target.write(chunk)
+                    upload_bytes += len(chunk)
+                    folder_hash.update(chunk)
+        if upload_bytes == 0:
+            raise HTTPException(status_code=400, detail="dictionary folder is empty")
+
+        job = create_job(db, "dictionary_prepare")
+        logger.info(
+            "Dictionary folder accepted: job_id=%s files=%d folder_bytes=%d folder_sha256=%s",
+            job.id,
+            len(folder_files),
+            upload_bytes,
+            folder_hash.hexdigest(),
+        )
+        background.add_task(
+            run_dictionary_prepare_job,
+            job.id,
+            str(temp_path),
+            "dictionary folder",
+            folder_hash.hexdigest(),
+        )
+        return job
+    except Exception:
+        shutil.rmtree(temp_path, ignore_errors=True)
+        raise
+
+
+def _safe_dictionary_folder_upload_path(filename: str | None) -> Path | None:
+    path = PurePosixPath(filename or "")
+    if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+        raise HTTPException(status_code=400, detail="dictionary folder contains an unsafe path")
+    if path.parts[0] == "__MACOSX" or path.parts[-1] == ".DS_Store" or path.parts[-1].startswith("._"):
+        return None
+    return Path(*path.parts)
 
 
 @app.get("/api/dictionaries/prepared/{job_id}/download")

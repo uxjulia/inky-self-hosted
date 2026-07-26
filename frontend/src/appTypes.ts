@@ -100,6 +100,11 @@ export type PreparedDictionaryDownload = {
   filename: string;
 };
 
+export type DictionaryInputFile = {
+  file: File;
+  relativePath?: string;
+};
+
 export type SourceForm = {
   type: RemoteSourceType;
   name: string;

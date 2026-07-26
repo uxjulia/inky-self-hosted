@@ -353,6 +353,22 @@ class DictionaryPrepareApiTests(unittest.TestCase):
             job = self._wait_for_job(client, response.json()["id"])
             self.assertEqual(job["status"], "succeeded", job)
 
+    def test_prepare_endpoint_accepts_dictionary_folder(self):
+        app = self._reload_app()
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/dictionaries/prepare",
+                files=[
+                    ("folder_files", ("sample/sample.ifo", _ifo_bytes("sample"), "text/plain")),
+                    ("folder_files", ("sample/sample.idx", _idx_bytes(), "application/octet-stream")),
+                    ("folder_files", ("sample/sample.dict.dz", _gzip_bytes(b"alpha definition"), "application/gzip")),
+                ],
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            job = self._wait_for_job(client, response.json()["id"])
+            self.assertEqual(job["status"], "succeeded", job)
+
     def test_prepare_endpoint_rejects_empty_archive(self):
         app = self._reload_app()
 

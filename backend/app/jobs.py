@@ -142,10 +142,10 @@ def run_dictionary_prepare_job(
 
         source_path = Path(source_zip)
         logger.info(
-            "Dictionary prep started: job_id=%s filename=%r archive_bytes=%d archive_sha256=%s",
+            "Dictionary prep started: job_id=%s filename=%r source_bytes=%d archive_sha256=%s",
             job_id,
             original_filename or source_path.name,
-            source_path.stat().st_size,
+            _dictionary_source_size(source_path),
             archive_sha256 or "unavailable",
         )
 
@@ -181,8 +181,18 @@ def run_dictionary_prepare_job(
         shutil.rmtree(output_dir, ignore_errors=True)
         set_job(job_id, status=JobStatus.failed.value, progress=100, message="Dictionary prep failed", error=error)
     finally:
-        Path(source_zip).unlink(missing_ok=True)
+        source_path = Path(source_zip)
+        if source_path.is_dir():
+            shutil.rmtree(source_path, ignore_errors=True)
+        else:
+            source_path.unlink(missing_ok=True)
         db.close()
+
+
+def _dictionary_source_size(source_path: Path) -> int:
+    if source_path.is_file():
+        return source_path.stat().st_size
+    return sum(path.stat().st_size for path in source_path.rglob("*") if path.is_file())
 
 
 def _dictionary_prepare_user_error(exc: Exception) -> str:

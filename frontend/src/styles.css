@@ -480,6 +480,13 @@ h2 {
   line-height: 1.4;
 }
 
+.help-kofi-button {
+  display: flex;
+  justify-content: center;
+  max-width: 1080px;
+  margin: 24px auto 12px;
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -1660,6 +1667,7 @@ progress {
   cursor: pointer;
   font-size: 13px;
   text-align: center;
+  width: 100%;
 }
 
 .dictionary-drop-zone:focus-within {
@@ -1673,11 +1681,42 @@ progress {
   color: var(--color-primary-strong);
 }
 
-.dictionary-drop-zone input {
+.dictionary-picker-input {
   position: absolute;
   width: 1px;
   height: 1px;
   opacity: 0;
+  pointer-events: none;
+}
+
+.dictionary-picker-choices {
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 3px;
+  background: var(--color-panel-muted);
+  text-align: center;
+}
+
+.dictionary-picker-choices p {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.dictionary-picker-choices > div {
+  display: flex;
+  gap: 8px;
+}
+
+.dictionary-picker-choices > div button {
+  flex: 1;
+}
+
+.dictionary-picker-choices .text-button {
+  min-height: auto;
+  margin-top: 6px;
+  padding: 3px 8px;
 }
 
 .dictionary-action-button {

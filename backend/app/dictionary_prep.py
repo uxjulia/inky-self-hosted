@@ -46,11 +46,14 @@ PREPARED_DICTIONARY_RETENTION_SECONDS = 10 * 60
 
 def prepare_dictionary_zip(source_zip: Path, output_dir: Path, progress: ProgressCallback | None = None) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    _report(progress, 5, "Reading dictionary archive")
+    _report(progress, 5, "Reading dictionary folder" if source_zip.is_dir() else "Reading dictionary archive")
 
     with tempfile.TemporaryDirectory(prefix="inky-dictionary-") as work_path:
         work_dir = Path(work_path)
-        _extract_safe_archive(source_zip, work_dir)
+        if source_zip.is_dir():
+            shutil.copytree(source_zip, work_dir, dirs_exist_ok=True)
+        else:
+            _extract_safe_archive(source_zip, work_dir)
         _report(progress, 20, "Validating StarDict files")
 
         dictionary_dir, stem = _locate_dictionary(work_dir)

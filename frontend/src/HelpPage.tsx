@@ -1,6 +1,15 @@
 import { X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { helpStorageBannerDismissedStorageKey } from "./appConstants";
+
+declare global {
+  interface Window {
+    kofiwidget2?: {
+      init: (text: string, color: string, id: string) => void;
+      getHTML: () => string;
+    };
+  }
+}
 
 type HelpPageProps = {
   isDesktopApp: boolean;
@@ -19,6 +28,7 @@ export function HelpPage({
   standaloneMode,
   onOpenApp
 }: HelpPageProps) {
+  const koFiButtonRef = useRef<HTMLDivElement>(null);
   const usbOnlyMode = isHostedApp || isPublicReadOnly;
   const [storageBannerDismissed, setStorageBannerDismissed] = useState(
     () => window.localStorage.getItem(helpStorageBannerDismissedStorageKey) === "1"
@@ -28,6 +38,27 @@ export function HelpPage({
     window.localStorage.setItem(helpStorageBannerDismissedStorageKey, "1");
     setStorageBannerDismissed(true);
   }
+
+  useEffect(() => {
+    const renderKoFiButton = () => {
+      if (!koFiButtonRef.current || !window.kofiwidget2) return;
+      window.kofiwidget2.init("Support me on Ko-fi", "#30597d", "Q5Q01M6S7");
+      koFiButtonRef.current.innerHTML = window.kofiwidget2.getHTML();
+    };
+
+    if (window.kofiwidget2) {
+      renderKoFiButton();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://storage.ko-fi.com/cdn/widget/Widget_2.js";
+    script.async = true;
+    script.addEventListener("load", renderKoFiButton);
+    document.head.appendChild(script);
+
+    return () => script.removeEventListener("load", renderKoFiButton);
+  }, []);
 
   return (
     <section className="help-page">
@@ -209,6 +240,8 @@ export function HelpPage({
           </article>
         </section>
       )}
+
+      <div className="help-kofi-button" ref={koFiButtonRef} />
     </section>
   );
 }

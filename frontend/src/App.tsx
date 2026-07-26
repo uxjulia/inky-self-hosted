@@ -61,6 +61,7 @@ import type {
   OptimizerSettings,
   PendingBrowseAction,
   PreparedDictionaryDownload,
+  DictionaryInputFile,
   RecentOptimizedDownload,
   RemoteSourceType,
   SortMode,
@@ -208,7 +209,7 @@ export default function App() {
   const [testingDevice, setTestingDevice] = useState(false);
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
   const [optimizerModalOpen, setOptimizerModalOpen] = useState(false);
-  const [dictionaryZipFile, setDictionaryZipFile] = useState<File | null>(null);
+  const [dictionaryFiles, setDictionaryFiles] = useState<DictionaryInputFile[]>([]);
   const [serverModalOpen, setServerModalOpen] = useState(false);
   const [stablePageTooltipPosition, setStablePageTooltipPosition] = useState<FloatingTooltipPosition | null>(null);
   const [editingSource, setEditingSource] = useState<Source | null>(null);
@@ -1618,7 +1619,7 @@ export default function App() {
 
   async function prepareDictionaryZip(event: FormEvent) {
     event.preventDefault();
-    if (!dictionaryZipFile || !canPrepareDictionaries) return;
+    if (dictionaryFiles.length === 0 || !canPrepareDictionaries) return;
 
     setBusy(true);
     try {
@@ -1626,14 +1627,21 @@ export default function App() {
         async () => {
           setRecentPreparedDictionaryDownload(null);
           const formData = new FormData();
-          formData.append("file", dictionaryZipFile, dictionaryZipFile.name);
+          if (dictionaryFiles.length === 1 && !dictionaryFiles[0].relativePath) {
+            const [{ file }] = dictionaryFiles;
+            formData.append("file", file, file.name);
+          } else {
+            for (const { file, relativePath } of dictionaryFiles) {
+              formData.append("folder_files", file, relativePath || file.name);
+            }
+          }
           const job = await api<Job>("/api/dictionaries/prepare", {
             method: "POST",
             body: formData,
             rawBody: true
           });
           trackJob(job);
-          setDictionaryZipFile(null);
+          setDictionaryFiles([]);
           showToast("Dictionary prep queued");
         },
         { toastOnError: true }
@@ -1950,10 +1958,10 @@ export default function App() {
       ) : activeAppTab === "dictionary" && canPrepareDictionaries ? (
         <DictionaryToolsPanel
           busy={busy}
-          dictionaryZipFile={dictionaryZipFile}
+          dictionaryFiles={dictionaryFiles}
           jobs={dictionaryJobs}
           recentPreparedDictionaryDownload={recentPreparedDictionaryDownload}
-          onSelectDictionaryZip={setDictionaryZipFile}
+          onSelectDictionaryFiles={setDictionaryFiles}
           onPrepareDictionaryZip={prepareDictionaryZip}
           onDownloadPreparedDictionaryFile={downloadPreparedDictionaryFile}
         />
