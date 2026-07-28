@@ -72,6 +72,11 @@ function firmwareDownloadTag(releases: StableReleaseInfo[], selectedTag: string)
   return releases.find((release) => release.tag === selectedTag)?.download_tag || selectedTag;
 }
 
+function firmwareFileDate(publishedAt: string) {
+  const date = new Date(publishedAt);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
 export function FlashToolsPanel() {
   const serialSupported = useMemo(() => typeof navigator !== "undefined" && "serial" in navigator, []);
   const progressRef = useRef<HTMLDivElement | null>(null);
@@ -471,6 +476,7 @@ export function FlashToolsPanel() {
               const variant = stickyBetaRelease.variants.find((item) => item.id === "sticky");
               if (!variant) return null;
               const selected = selectedReleaseTag === stickyBetaRelease.tag && firmwareChoice === "sticky";
+              const fileDate = firmwareFileDate(stickyBetaRelease.published_at);
               return (
                 <div className="flash-firmware-grid">
                   <button
@@ -482,7 +488,7 @@ export function FlashToolsPanel() {
                       selectFirmware("sticky");
                     }}
                   >
-                    <strong>Sticky Beta</strong>
+                    <strong>Sticky Beta{fileDate && ` (${fileDate})`}</strong>
                     <small>ESP32-S3 · {(variant.size / 1024 / 1024).toFixed(1)} MB</small>
                   </button>
                 </div>
