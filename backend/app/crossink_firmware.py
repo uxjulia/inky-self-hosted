@@ -16,8 +16,11 @@ STICKY_BETA_DOWNLOAD_PATH_PREFIX = "/firmwares/sticky/"
 RELEASE_CACHE_SECONDS = 300
 STABLE_RELEASE_LIMIT = 3
 PRERELEASE_LIMIT = 3
-SUPPORTED_VARIANTS = ("tiny", "xlarge", "sticky")
-_FIRMWARE_NAME_PATTERN = re.compile(r"^firmware-(tiny|xlarge|sticky)-[^/]+\.bin$")
+SUPPORTED_VARIANTS = ("tiny", "xlarge", "x3-x4", "sticky")
+_FIRMWARE_NAME_PATTERN = re.compile(r"^firmware-(tiny|xlarge|x3-x4|sticky)-[^/]+\.bin$")
+_PRERELEASE_FIRMWARE_NAME_PATTERN = re.compile(
+    r"^firmware-(tiny|xlarge|x3-x4|sticky)-v\d+(?:\.\d+){2,3}-[0-9a-f]{7,40}-RC\.bin$"
+)
 
 
 class CrossInkFirmwareError(RuntimeError):
@@ -79,7 +82,11 @@ def parse_stable_release(payload: object, *, allow_prerelease_filename: bool = F
             continue
         variant = match.group(1)
         if (
-            (not allow_prerelease_filename and filename != f"firmware-{variant}-{tag}.bin")
+            (
+                allow_prerelease_filename
+                and not _PRERELEASE_FIRMWARE_NAME_PATTERN.fullmatch(filename)
+            )
+            or (not allow_prerelease_filename and filename != f"firmware-{variant}-{tag}.bin")
             or type(size) is not int
             or size <= 0
         ):

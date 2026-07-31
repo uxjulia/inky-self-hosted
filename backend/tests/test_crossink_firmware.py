@@ -111,7 +111,10 @@ class CrossInkFirmwareTests(unittest.TestCase):
 
     def test_returns_prereleases_with_release_candidate_filenames(self):
         def release(tag: str, *, draft: bool = False, prerelease: bool = True) -> dict:
-            filename = f"firmware-tiny-{tag.removeprefix('rc-')}-RC.bin"
+            filenames = [
+                "firmware-sticky-v1.5.0-c1e63f8-RC.bin",
+                "firmware-x3-x4-v1.5.0-c1e63f8-RC.bin",
+            ]
             return {
                 "tag_name": tag,
                 "draft": draft,
@@ -122,6 +125,7 @@ class CrossInkFirmwareTests(unittest.TestCase):
                         "size": 10,
                         "browser_download_url": f"https://github.com/uxjulia/CrossInk/releases/download/{tag}/{filename}",
                     }
+                    for filename in filenames
                 ],
             }
 
@@ -134,7 +138,34 @@ class CrossInkFirmwareTests(unittest.TestCase):
         )
 
         self.assertEqual([item.tag for item in releases], ["rc-development-a1b2c3d"])
-        self.assertIn("tiny", releases[0].assets)
+        self.assertEqual(set(releases[0].assets), {"sticky", "x3-x4"})
+        self.assertEqual(
+            releases[0].assets["sticky"].filename,
+            "firmware-sticky-v1.5.0-c1e63f8-RC.bin",
+        )
+        self.assertEqual(
+            releases[0].assets["x3-x4"].filename,
+            "firmware-x3-x4-v1.5.0-c1e63f8-RC.bin",
+        )
+
+    def test_ignores_non_release_candidate_filenames_in_prereleases(self):
+        releases = parse_prerelease_releases(
+            [
+                {
+                    "tag_name": "rc-development-a1b2c3d",
+                    "prerelease": True,
+                    "assets": [
+                        {
+                            "name": "firmware-sticky-development-a1b2c3d.bin",
+                            "size": 10,
+                            "browser_download_url": "https://github.com/uxjulia/CrossInk/releases/download/rc-development-a1b2c3d/firmware-sticky-development-a1b2c3d.bin",
+                        }
+                    ],
+                }
+            ]
+        )
+
+        self.assertEqual(releases, ())
 
     def test_builds_sticky_beta_release_from_trusted_r2_url(self):
         release = build_sticky_beta_release(

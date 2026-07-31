@@ -10,7 +10,7 @@ import type { FlashStepState } from "../lib/flasher.js";
 import { crossInkSerialFilters } from "../serialTransfer";
 
 type FlashDeviceId = "xteink" | "sticky";
-type StableVariantId = "tiny" | "xlarge" | "sticky";
+type StableVariantId = "tiny" | "xlarge" | "x3-x4" | "sticky";
 type FlashStatus = { tone: "success" | "error"; message: string } | null;
 type StableReleaseInfo = {
   tag: string;
@@ -30,6 +30,34 @@ const DEVICE_CHIPS: Record<FlashDeviceId, string> = {
   xteink: "ESP32-C3",
   sticky: "ESP32-S3"
 };
+
+const XTEINK_VARIANT_IDS: StableVariantId[] = ["x3-x4", "tiny", "xlarge"];
+
+function releaseSupportsDevice(release: StableReleaseInfo, device: FlashDeviceId | null) {
+  return release.variants.some((variant) =>
+    device === "sticky" ? variant.id === "sticky" : XTEINK_VARIANT_IDS.includes(variant.id)
+  );
+}
+
+function firmwareVariantLabel(variantId: StableVariantId) {
+  if (variantId === "x3-x4") return "X3 / X4";
+  if (variantId === "tiny") return "Tiny";
+  if (variantId === "xlarge") return "XLarge";
+  return "Sticky";
+}
+
+function firmwareVariantDetail(variantId: StableVariantId) {
+  if (variantId === "x3-x4") return "Shared ESP32-C3 firmware";
+  if (variantId === "tiny") return "10–16 pt font";
+  if (variantId === "xlarge") return "16–20 pt font";
+  return "ESP32-S3";
+}
+
+function releaseVariantIds(release: StableReleaseInfo | null, device: FlashDeviceId | null) {
+  if (!release) return [];
+  const expectedIds: StableVariantId[] = device === "sticky" ? ["sticky"] : XTEINK_VARIANT_IDS;
+  return expectedIds.filter((variantId) => release.variants.some((variant) => variant.id === variantId));
+}
 
 const STANDARD_STEPS = [
   "Connect to device",
@@ -114,21 +142,13 @@ export function FlashToolsPanel() {
   }, []);
 
   const compatibleStableReleases = stableReleases.filter(
-    (release) =>
-      release.channel === "stable" &&
-      release.variants.some((variant) =>
-        device === "sticky" ? variant.id === "sticky" : variant.id === "tiny" || variant.id === "xlarge"
-      )
+    (release) => release.channel === "stable" && releaseSupportsDevice(release, device)
   );
   const stickyBetaRelease = stableReleases.find(
     (release) => release.channel === "beta" && release.variants.some((variant) => variant.id === "sticky")
   ) || null;
   const compatiblePrereleaseReleases = stableReleases.filter(
-    (release) =>
-      release.channel === "prerelease" &&
-      release.variants.some((variant) =>
-        device === "sticky" ? variant.id === "sticky" : variant.id === "tiny" || variant.id === "xlarge"
-      )
+    (release) => release.channel === "prerelease" && releaseSupportsDevice(release, device)
   );
 
   useEffect(() => {
@@ -284,18 +304,8 @@ export function FlashToolsPanel() {
   const selectedStableVariant = selectedRelease?.variants.find((variant) => variant.id === firmwareChoice) || null;
   const selectedFirmwareName = selectedStableVariant?.filename || "firmware.bin";
   const firmwareReady = Boolean(device && firmwareChoice && selectedStableVariant);
-  const stableVariantIds: StableVariantId[] =
-    device === "sticky"
-      ? compatibleStableReleases.length > 0
-        ? ["sticky"]
-        : []
-      : ["tiny", "xlarge"];
-  const prereleaseVariantIds: StableVariantId[] =
-    device === "sticky"
-      ? compatiblePrereleaseReleases.length > 0
-        ? ["sticky"]
-        : []
-      : ["tiny", "xlarge"];
+  const stableVariantIds = releaseVariantIds(selectedStableRelease, device);
+  const prereleaseVariantIds = releaseVariantIds(selectedPrereleaseRelease, device);
 
   return (
     <section className="flash-tools-page" role="tabpanel" id="flash-tools-panel" aria-labelledby="flash-tools-tab">
@@ -404,10 +414,10 @@ export function FlashToolsPanel() {
                       selectFirmware(variantId);
                     }}
                   >
-                    <strong>{variantId === "tiny" ? "Tiny" : variantId === "xlarge" ? "XLarge" : "Sticky"}</strong>
+                    <strong>{firmwareVariantLabel(variantId)}</strong>
                     <small>
                       {variant
-                        ? `${variantId === "tiny" ? "10–16 pt font" : variantId === "xlarge" ? "16–20 pt font" : "ESP32-S3"} · ${(variant.size / 1024 / 1024).toFixed(1)} MB`
+                        ? `${firmwareVariantDetail(variantId)} · ${(variant.size / 1024 / 1024).toFixed(1)} MB`
                         : selectedStableRelease
                           ? "Unavailable"
                           : stableReleases.length > 0
@@ -460,10 +470,10 @@ export function FlashToolsPanel() {
                           selectFirmware(variantId);
                         }}
                       >
-                        <strong>{variantId === "tiny" ? "Tiny" : variantId === "xlarge" ? "XLarge" : "Sticky"}</strong>
+                        <strong>{firmwareVariantLabel(variantId)}</strong>
                         <small>
                           {variant
-                            ? `${variantId === "tiny" ? "10–16 pt font" : variantId === "xlarge" ? "16–20 pt font" : "ESP32-S3"} · ${(variant.size / 1024 / 1024).toFixed(1)} MB`
+                            ? `${firmwareVariantDetail(variantId)} · ${(variant.size / 1024 / 1024).toFixed(1)} MB`
                             : "Unavailable"}
                         </small>
                       </button>
