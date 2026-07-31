@@ -173,21 +173,47 @@ async def browse_feed(source: Source, target: str | None = None) -> BrowseResult
     items = []
     for entry in parsed.entries:
         entry_url = entry.get("link")
-        if not entry_url:
+        epub_link = _feed_entry_epub_link(entry, url)
+        if not entry_url and not epub_link:
             continue
+        item_url = epub_link[0] if epub_link else entry_url
         items.append(
             BrowseItem(
-                type="article",
-                title=entry.get("title") or display_title_from_url(entry_url),
-                url=entry_url,
+                type="book" if epub_link else "article",
+                title=entry.get("title") or display_title_from_url(item_url),
+                url=item_url,
                 image_url=_feed_entry_image_url(entry),
                 author=entry.get("author"),
                 summary=entry.get("summary"),
                 published=entry.get("published"),
+                size=epub_link[2] if epub_link else None,
+                media_type=epub_link[1] if epub_link else None,
             )
         )
     message = None if items else "No feed entries were found."
     return BrowseResult(source_id=source.id, source_type=source.type, base_url=url, title=title, items=items, message=message)
+
+
+def _feed_entry_epub_link(entry, feed_url: str) -> tuple[str, str, int | None] | None:
+    candidates: list[tuple[int, str, str, int | None]] = []
+    for link in entry.get("links", []):
+        href = link.get("href")
+        media_type = (link.get("type") or "").lower()
+        if not href or "application/epub+zip" not in media_type:
+            continue
+
+        normalized_href = urljoin(feed_url, href)
+        description = f'{link.get("title") or ""} {normalized_href}'.lower()
+        # Prefer the broadly-compatible EPUB over advanced or Kobo variants.
+        preference = 1 if "advanced" in description or "kepub" in description else 0
+        raw_size = str(link.get("length") or "")
+        size = int(raw_size) if raw_size.isdigit() else None
+        candidates.append((preference, normalized_href, media_type, size))
+
+    if not candidates:
+        return None
+    _, href, media_type, size = min(candidates, key=lambda candidate: candidate[0])
+    return href, media_type, size
 
 
 async def search_feed(source: Source, query: str, target: str | None = None) -> BrowseResult:

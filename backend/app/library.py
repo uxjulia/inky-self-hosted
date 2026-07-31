@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from .article_epub import fetch_article_as_epub
 from .config import get_settings
+from .epub_validation import EpubValidationError, validate_epub_archive
 from .models import Job, LibraryItem, Source, utc_now
 from .utils import display_title_from_url, extension_from_url, join_remote, normalize_device_url, safe_filename
 
@@ -66,6 +67,8 @@ async def import_url(
                 with dest.open("wb") as handle:
                     async for chunk in response.aiter_bytes(64 * 1024):
                         handle.write(chunk)
+        if _is_epub(dest):
+            validate_downloaded_epub(dest)
     except Exception:
         dest.unlink(missing_ok=True)
         raise
@@ -407,6 +410,13 @@ def _library_kind_for_path(path: Path) -> str:
 
 def _is_epub(path: Path) -> bool:
     return path.suffix.lower() == EPUB_EXTENSION
+
+
+def validate_downloaded_epub(path: Path) -> None:
+    try:
+        validate_epub_archive(path)
+    except EpubValidationError as exc:
+        raise ValueError(f"The downloaded EPUB is incomplete or invalid: {exc}") from exc
 
 
 def _local_name(tag: str) -> str:

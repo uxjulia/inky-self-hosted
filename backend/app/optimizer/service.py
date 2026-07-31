@@ -8,6 +8,7 @@ from pathlib import Path
 
 from lxml import etree
 
+from app.epub_validation import EpubValidationError, validate_epub_archive
 from app.optimizer.targets import optimization_target_for
 from app.schemas import OptimizeRequest
 from app.utils import safe_filename
@@ -22,6 +23,10 @@ from metadata_handler import extract_metadata, format_filename  # noqa: E402
 
 def optimize_epub(input_path: Path, output_dir: Path, request: OptimizeRequest, progress=None) -> tuple[Path, dict]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        validate_epub_archive(input_path)
+    except EpubValidationError as exc:
+        raise ValueError(f"Cannot optimize an incomplete or invalid EPUB: {exc}") from exc
     target = optimization_target_for(request.device)
     temp = tempfile.NamedTemporaryFile(prefix=".inky-", suffix=".epub", dir=output_dir, delete=False)
     temp_path = Path(temp.name)
@@ -53,6 +58,10 @@ def optimize_epub(input_path: Path, output_dir: Path, request: OptimizeRequest, 
         report = process_epub(str(input_path), str(temp_path), options, progress)
         if not report.success:
             raise RuntimeError(report.error or "EPUB optimization failed")
+        try:
+            validate_epub_archive(temp_path)
+        except EpubValidationError as exc:
+            raise RuntimeError(f"Optimizer produced an incomplete EPUB: {exc}") from exc
 
         device_filename = preferred_output_filename(input_path, request, report.output_filename)
         final_path = _unique_path(output_dir / device_filename)

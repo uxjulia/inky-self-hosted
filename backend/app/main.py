@@ -53,6 +53,7 @@ from .library import (
     register_desktop_library_folder,
     resolve_local_source_file,
     sync_mounted_library,
+    validate_downloaded_epub,
 )
 from .models import Job, LibraryItem, Source
 from .optimizer.service import optimize_epub
@@ -547,6 +548,8 @@ async def import_remote(payload: ImportUrlRequest, db: Session = Depends(get_db)
         return await import_url(db, payload.url, payload.source_id, payload.title, payload.author, payload.cover_url, payload.kind.value, auth)
     except httpx.HTTPError as exc:
         raise_download_error(exc)
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/api/library/import-article", response_model=LibraryItemRead)
@@ -818,8 +821,11 @@ async def source_item_to_temp_epub(source: Source, item: BrowseItem, temp_dir: P
                 with destination.open("wb") as handle:
                     async for chunk in response.aiter_bytes(64 * 1024):
                         handle.write(chunk)
+        validate_downloaded_epub(destination)
     except httpx.HTTPError as exc:
         raise_download_error(exc)
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     return destination
 
 

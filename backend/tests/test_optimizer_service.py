@@ -57,7 +57,7 @@ class OptimizerServiceTests(unittest.TestCase):
         def fake_process_epub(_input_path, output_path, options, _progress):
             nonlocal captured_options
             captured_options = options
-            Path(output_path).write_bytes(b"optimized")
+            Path(output_path).write_bytes(Path(_input_path).read_bytes())
             return SimpleNamespace(
                 success=True,
                 error=None,
@@ -87,7 +87,7 @@ class OptimizerServiceTests(unittest.TestCase):
         def fake_process_epub(_input_path, output_path, options, _progress):
             nonlocal captured_options
             captured_options = options
-            Path(output_path).write_bytes(b"optimized")
+            Path(output_path).write_bytes(Path(_input_path).read_bytes())
             return SimpleNamespace(
                 success=True,
                 error=None,
@@ -124,7 +124,7 @@ class OptimizerServiceTests(unittest.TestCase):
                 def fake_process_epub(_input_path, output_path, options, _progress):
                     nonlocal captured_options
                     captured_options = options
-                    Path(output_path).write_bytes(b"optimized")
+                    Path(output_path).write_bytes(Path(_input_path).read_bytes())
                     return SimpleNamespace(
                         success=True,
                         error=None,
@@ -162,8 +162,11 @@ def write_minimal_epub(path: Path, title: str, author: str) -> None:
             f"""<?xml version="1.0"?>
 <package xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0">
   <metadata><dc:title>{title}</dc:title><dc:creator>{author}</dc:creator></metadata>
+  <manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
+  <spine><itemref idref="chapter"/></spine>
 </package>""",
         )
+        archive.writestr("OEBPS/chapter.xhtml", "<html><body>Complete</body></html>")
 
 
 if __name__ == "__main__":
