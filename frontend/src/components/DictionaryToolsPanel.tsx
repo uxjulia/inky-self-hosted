@@ -4,6 +4,8 @@ import type { DragEvent, FormEvent } from "react";
 import type { DictionaryInputFile, Job, PreparedDictionaryDownload } from "../appTypes";
 import { JobLog } from "./JobLog";
 
+const DICTIONARY_DROP_ERROR = "Only ZIP, 7Z, TAR, and RAR dictionary archives can be dropped.";
+
 type DictionaryToolsPanelProps = {
   busy: boolean;
   dictionaryFiles: DictionaryInputFile[];
@@ -24,6 +26,7 @@ export function DictionaryToolsPanel({
   onDownloadPreparedDictionaryFile
 }: DictionaryToolsPanelProps) {
   const [dragOver, setDragOver] = useState(false);
+  const [dropError, setDropError] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const archiveInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -41,28 +44,37 @@ export function DictionaryToolsPanel({
     }
   }
 
-  async function handleDictionaryDrop(event: DragEvent<HTMLElement>) {
+  function handleDictionaryDrop(event: DragEvent<HTMLElement>) {
     event.preventDefault();
     setDragOver(false);
     const entries = Array.from(event.dataTransfer.items)
       .map((item) => (item as DataTransferItem & { webkitGetAsEntry?: () => FileSystemEntry | null }).webkitGetAsEntry?.())
       .filter((entry): entry is FileSystemEntry => Boolean(entry));
     if (entries.some((entry) => entry.isDirectory)) {
-      onSelectDictionaryFiles((await Promise.all(entries.map((entry) => readDroppedEntry(entry)))).flat());
+      onSelectDictionaryFiles([]);
+      setDropError(DICTIONARY_DROP_ERROR);
       return;
     }
     const [file] = Array.from(event.dataTransfer.files);
-    onSelectDictionaryFiles(file ? [{ file }] : []);
+    if (!file || !isSupportedDictionaryArchive(file.name)) {
+      onSelectDictionaryFiles([]);
+      setDropError(DICTIONARY_DROP_ERROR);
+      return;
+    }
+    setDropError("");
+    onSelectDictionaryFiles([{ file }]);
   }
 
   const selectedName = dictionaryFiles[0]?.relativePath?.split("/")[0] || dictionaryFiles[0]?.file.name;
 
   function selectArchive() {
+    setDropError("");
     setPickerOpen(false);
     archiveInputRef.current?.click();
   }
 
   function selectFolder() {
+    setDropError("");
     setPickerOpen(false);
     folderInputRef.current?.click();
   }
@@ -89,15 +101,24 @@ export function DictionaryToolsPanel({
             onClick={() => setPickerOpen(true)}
           >
             <Upload size={18} />
-            <span>{selectedName ? dictionaryFiles.length > 1 ? `${selectedName} folder (${dictionaryFiles.length} files)` : selectedName : "Drop a dictionary archive or folder here, or click to browse"}</span>
+            <span>{selectedName ? dictionaryFiles.length > 1 ? `${selectedName} folder (${dictionaryFiles.length} files)` : selectedName : "Drop a dictionary archive here, or click to browse"}</span>
           </button>
+          {dropError && (
+            <p className="dictionary-drop-error" role="alert">
+              {dropError}{" "}
+              <button type="button" className="text-button" onClick={selectFolder}>
+                Click here to choose a folder instead.
+              </button>
+            </p>
+          )}
           <input
             ref={archiveInputRef}
             className="dictionary-picker-input"
             type="file"
-            accept=".zip,.tar.zst,.zst,.rar,application/zip,application/x-zip-compressed,application/zstd,application/x-zstd,application/vnd.rar,application/x-rar-compressed"
+            accept=".zip,.7z,.tar,.tar.gz,.tgz,.tar.bz2,.tbz,.tbz2,.tar.xz,.txz,.tar.zst,.tzst,.rar,application/zip,application/x-zip-compressed,application/x-7z-compressed,application/x-tar,application/gzip,application/x-gzip,application/x-bzip2,application/x-xz,application/zstd,application/x-zstd,application/vnd.rar,application/x-rar-compressed"
             onChange={(event) => {
               const [file] = Array.from(event.target.files || []);
+              setDropError("");
               onSelectDictionaryFiles(file ? [{ file }] : []);
             }}
           />
@@ -109,7 +130,15 @@ export function DictionaryToolsPanel({
             className="dictionary-picker-input"
             type="file"
             multiple
-            onChange={(event) => onSelectDictionaryFiles(Array.from(event.target.files || []).map((file) => ({ file, relativePath: file.webkitRelativePath || file.name })))}
+            onChange={(event) => {
+              setDropError("");
+              onSelectDictionaryFiles(
+                Array.from(event.target.files || []).map((file) => ({
+                  file,
+                  relativePath: file.webkitRelativePath || file.name
+                }))
+              );
+            }}
           />
           {pickerOpen && (
             <div className="dictionary-picker-choices" role="dialog" aria-label="Choose dictionary input">
@@ -129,7 +158,7 @@ export function DictionaryToolsPanel({
           )}
         </div>
         <div className="form-help dictionary-help">
-          <p>Drop one StarDict <code>.zip</code>, <code>.tar.zst</code>, or <code>.rar</code> archive, or drop its uncompressed folder. Clicking the area lets you choose an archive or folder. Archives can contain the files directly or inside one folder.</p>
+          <p>Drop one StarDict ZIP, TAR, RAR, or 7z archive. To use an uncompressed folder, click the upload area and choose Folder. Archives can contain the files directly or inside one folder.</p>
           <p>Required files must share the same name: <code>.ifo</code>, <code>.idx</code>, and <code>.dict</code> or <code>.dict.dz</code>. Synonym files like <code>.syn</code> or <code>.syn.dz</code> are optional.</p>
           <p>After preparation, download the new ZIP and unzip its folder into <code>/.dictionaries</code> or <code>/dictionaries</code> on your SD card. Prepared downloads remain available for 10 minutes.</p>
         </div>
@@ -149,26 +178,23 @@ export function DictionaryToolsPanel({
   );
 }
 
-async function readDroppedEntry(entry: FileSystemEntry, relativePath = ""): Promise<DictionaryInputFile[]> {
-  if (entry.isFile) {
-    return new Promise((resolve, reject) => {
-      (entry as FileSystemFileEntry).file(
-        (file) => resolve([{ file, relativePath: relativePath || undefined }]),
-        reject
-      );
-    });
-  }
+const SUPPORTED_DICTIONARY_ARCHIVE_SUFFIXES = [
+  ".tar.bz2",
+  ".tar.zst",
+  ".tar.gz",
+  ".tar.xz",
+  ".tbz2",
+  ".tzst",
+  ".tgz",
+  ".tbz",
+  ".txz",
+  ".tar",
+  ".zip",
+  ".7z",
+  ".rar"
+];
 
-  const directory = entry as FileSystemDirectoryEntry;
-  const entries = await readDirectoryEntries(directory.createReader());
-  return (await Promise.all(entries.map((child) => readDroppedEntry(child, `${relativePath}${entry.name}/`)))).flat();
-}
-
-async function readDirectoryEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
-  const entries: FileSystemEntry[] = [];
-  while (true) {
-    const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => reader.readEntries(resolve, reject));
-    if (batch.length === 0) return entries;
-    entries.push(...batch);
-  }
+function isSupportedDictionaryArchive(filename: string) {
+  const normalized = filename.toLowerCase();
+  return SUPPORTED_DICTIONARY_ARCHIVE_SUFFIXES.some((suffix) => normalized.endsWith(suffix));
 }

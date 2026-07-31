@@ -608,7 +608,7 @@ async def prepare_dictionary(
 
     filename = file.filename or "dictionary.zip"
     if not is_supported_dictionary_archive(filename):
-        raise HTTPException(status_code=400, detail="only StarDict ZIP, TAR.ZST, or RAR files can be prepared")
+        raise HTTPException(status_code=400, detail="only StarDict ZIP, 7Z, TAR, or RAR archives can be prepared")
 
     with tempfile.NamedTemporaryFile(
         suffix=dictionary_archive_suffix(filename),

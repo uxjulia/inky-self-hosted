@@ -12,6 +12,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
+import py7zr
 import zstandard
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -57,22 +58,46 @@ class DictionaryPrepServiceTests(unittest.TestCase):
         self.assertNotIn("sample/sample.dict.dz", names)
 
     def test_tar_zst_generates_prepared_indexes(self):
-        source = self.root / "dictionary.tar.zst"
-        _write_tar_zst(
-            source,
-            {
-                "sample/sample.ifo": _ifo_bytes("sample"),
-                "sample/sample.idx": _idx_bytes(),
-                "sample/sample.dict.dz": _gzip_bytes(b"alpha definition\nbeta definition"),
-            },
+        entries = {
+            "sample/sample.ifo": _ifo_bytes("sample"),
+            "sample/sample.idx": _idx_bytes(),
+            "sample/sample.dict.dz": _gzip_bytes(b"alpha definition\nbeta definition"),
+        }
+
+        for index, filename in enumerate(("dictionary.tar.zst", "dictionary.tzst")):
+            with self.subTest(filename=filename):
+                source = self.root / filename
+                _write_tar_zst(source, entries)
+                result = prepare_dictionary_zip(source, self.root / f"out-zst-{index}")
+                names = self._zip_names(Path(result["output_path"]))
+                self.assertIn("sample/sample.dict", names)
+                self.assertIn("sample/sample.idx.oft", names)
+                self.assertIn("sample/sample.idx.oft.cspt", names)
+
+    def test_common_tar_formats_generate_prepared_indexes(self):
+        entries = {
+            "sample/sample.ifo": _ifo_bytes("sample"),
+            "sample/sample.idx": _idx_bytes(),
+            "sample/sample.dict.dz": _gzip_bytes(b"alpha definition\nbeta definition"),
+        }
+        formats = (
+            ("dictionary.tar", "w"),
+            ("dictionary.tar.gz", "w:gz"),
+            ("dictionary.tgz", "w:gz"),
+            ("dictionary.tar.bz2", "w:bz2"),
+            ("dictionary.tbz", "w:bz2"),
+            ("dictionary.tbz2", "w:bz2"),
+            ("dictionary.tar.xz", "w:xz"),
+            ("dictionary.txz", "w:xz"),
         )
 
-        result = prepare_dictionary_zip(source, self.root / "out")
-
-        names = self._zip_names(Path(result["output_path"]))
-        self.assertIn("sample/sample.dict", names)
-        self.assertIn("sample/sample.idx.oft", names)
-        self.assertIn("sample/sample.idx.oft.cspt", names)
+        for index, (filename, mode) in enumerate(formats):
+            with self.subTest(filename=filename):
+                source = self.root / filename
+                _write_tar(source, entries, mode)
+                result = prepare_dictionary_zip(source, self.root / f"out-{index}")
+                names = self._zip_names(Path(result["output_path"]))
+                self.assertIn("sample/sample.idx.oft", names)
 
     def test_rar_generates_prepared_indexes(self):
         source = self.root / "dictionary.rar"
@@ -96,11 +121,54 @@ class DictionaryPrepServiceTests(unittest.TestCase):
         self.assertIn("sample/sample.idx.oft", names)
         self.assertIn("sample/sample.idx.oft.cspt", names)
 
-    def test_supported_archive_suffixes_include_rar(self):
-        self.assertTrue(is_supported_dictionary_archive("dictionary.zip"))
-        self.assertTrue(is_supported_dictionary_archive("dictionary.tar.zst"))
-        self.assertTrue(is_supported_dictionary_archive("dictionary.rar"))
-        self.assertFalse(is_supported_dictionary_archive("dictionary.7z"))
+    def test_7z_generates_prepared_indexes(self):
+        source = self.root / "dictionary.7z"
+        _write_7z(
+            source,
+            {
+                "sample/sample.ifo": _ifo_bytes("sample"),
+                "sample/sample.idx": _idx_bytes(),
+                "sample/sample.dict.dz": _gzip_bytes(b"alpha definition\nbeta definition"),
+            },
+        )
+
+        result = prepare_dictionary_zip(source, self.root / "out-7z")
+
+        names = self._zip_names(Path(result["output_path"]))
+        self.assertIn("sample/sample.dict", names)
+        self.assertIn("sample/sample.idx.oft", names)
+        self.assertIn("sample/sample.idx.oft.cspt", names)
+
+    def test_7z_unsafe_paths_are_rejected(self):
+        source = self.root / "dictionary.7z"
+        source.write_bytes(b"fake 7z bytes")
+        archive = _Fake7zArchive([_Fake7zInfo("../evil.ifo")])
+
+        with patch("app.dictionary_prep.py7zr.SevenZipFile", return_value=archive):
+            with self.assertRaisesRegex(DictionaryPrepError, "unsafe path"):
+                prepare_dictionary_zip(source, self.root / "out-unsafe-7z")
+
+        self.assertFalse(archive.extracted)
+
+    def test_supported_archive_suffixes_include_common_tar_formats(self):
+        for filename in (
+            "dictionary.zip",
+            "dictionary.tar",
+            "dictionary.tar.gz",
+            "dictionary.tgz",
+            "dictionary.tar.bz2",
+            "dictionary.tbz",
+            "dictionary.tbz2",
+            "dictionary.tar.xz",
+            "dictionary.txz",
+            "dictionary.tar.zst",
+            "dictionary.tzst",
+            "dictionary.7z",
+            "dictionary.rar",
+        ):
+            with self.subTest(filename=filename):
+                self.assertTrue(is_supported_dictionary_archive(filename))
+        self.assertFalse(is_supported_dictionary_archive("dictionary.cab"))
 
     def test_rar_prefers_unar_outside_process_path(self):
         source = self.root / "dictionary.rar"
@@ -353,6 +421,49 @@ class DictionaryPrepareApiTests(unittest.TestCase):
             job = self._wait_for_job(client, response.json()["id"])
             self.assertEqual(job["status"], "succeeded", job)
 
+    def test_prepare_endpoint_accepts_tar_gz(self):
+        source = self.root / "dictionary.tar.gz"
+        _write_tar(
+            source,
+            {
+                "sample/sample.ifo": _ifo_bytes("sample"),
+                "sample/sample.idx": _idx_bytes(),
+                "sample/sample.dict.dz": _gzip_bytes(b"alpha definition"),
+            },
+            "w:gz",
+        )
+        app = self._reload_app()
+
+        with TestClient(app) as client, source.open("rb") as upload:
+            response = client.post(
+                "/api/dictionaries/prepare",
+                files={"file": ("dictionary.tar.gz", upload, "application/gzip")},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            job = self._wait_for_job(client, response.json()["id"])
+            self.assertEqual(job["status"], "succeeded", job)
+
+    def test_prepare_endpoint_accepts_7z(self):
+        source = self.root / "dictionary.7z"
+        _write_7z(
+            source,
+            {
+                "sample/sample.ifo": _ifo_bytes("sample"),
+                "sample/sample.idx": _idx_bytes(),
+                "sample/sample.dict.dz": _gzip_bytes(b"alpha definition"),
+            },
+        )
+        app = self._reload_app()
+
+        with TestClient(app) as client, source.open("rb") as upload:
+            response = client.post(
+                "/api/dictionaries/prepare",
+                files={"file": ("dictionary.7z", upload, "application/x-7z-compressed")},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            job = self._wait_for_job(client, response.json()["id"])
+            self.assertEqual(job["status"], "succeeded", job)
+
     def test_prepare_endpoint_accepts_dictionary_folder(self):
         app = self._reload_app()
 
@@ -440,6 +551,20 @@ def _write_tar_zst(path: Path, entries: dict[str, bytes]) -> None:
     path.write_bytes(zstandard.ZstdCompressor().compress(tar_bytes.getvalue()))
 
 
+def _write_tar(path: Path, entries: dict[str, bytes], mode: str) -> None:
+    with tarfile.open(path, mode=mode) as archive:
+        for name, data in entries.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+
+
+def _write_7z(path: Path, entries: dict[str, bytes]) -> None:
+    with py7zr.SevenZipFile(path, mode="w") as archive:
+        for name, data in entries.items():
+            archive.writestr(data, name)
+
+
 class _FakeRarInfo:
     def __init__(self, filename: str, file_size: int):
         self.filename = filename
@@ -467,6 +592,31 @@ class _FakeRarArchive:
 
     def open(self, member: _FakeRarInfo):
         return io.BytesIO(self.entries[member.filename])
+
+
+class _Fake7zInfo:
+    def __init__(self, filename: str):
+        self.filename = filename
+        self.is_file = True
+        self.is_directory = False
+
+
+class _Fake7zArchive:
+    def __init__(self, members: list[_Fake7zInfo]):
+        self.members = members
+        self.extracted = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def list(self) -> list[_Fake7zInfo]:
+        return self.members
+
+    def extract(self, *, path: Path, targets: list[str]) -> None:
+        self.extracted = True
 
 
 if __name__ == "__main__":

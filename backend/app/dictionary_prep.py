@@ -14,6 +14,7 @@ import zipfile
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
+import py7zr
 import rarfile
 import zstandard
 
@@ -42,6 +43,21 @@ _UNAR_CANDIDATES = (
     "/usr/bin/unar",
 )
 PREPARED_DICTIONARY_RETENTION_SECONDS = 10 * 60
+_SUPPORTED_DICTIONARY_ARCHIVE_SUFFIXES = (
+    ".tar.bz2",
+    ".tar.zst",
+    ".tar.gz",
+    ".tar.xz",
+    ".tbz2",
+    ".tzst",
+    ".tgz",
+    ".tbz",
+    ".txz",
+    ".tar",
+    ".zip",
+    ".7z",
+    ".rar",
+)
 
 
 def prepare_dictionary_zip(source_zip: Path, output_dir: Path, progress: ProgressCallback | None = None) -> dict[str, object]:
@@ -134,19 +150,29 @@ def _report(progress: ProgressCallback | None, percent: int, message: str) -> No
 
 
 def is_supported_dictionary_archive(filename: str) -> bool:
-    normalized = filename.lower()
-    return normalized.endswith(".zip") or normalized.endswith(".tar.zst") or normalized.endswith(".rar")
+    return filename.lower().endswith(_SUPPORTED_DICTIONARY_ARCHIVE_SUFFIXES)
 
 
 def dictionary_archive_suffix(filename: str) -> str:
-    return ".tar.zst" if filename.lower().endswith(".tar.zst") else Path(filename).suffix or ".zip"
+    normalized = filename.lower()
+    return next(
+        (suffix for suffix in _SUPPORTED_DICTIONARY_ARCHIVE_SUFFIXES if normalized.endswith(suffix)),
+        Path(filename).suffix or ".zip",
+    )
 
 
 def _extract_safe_archive(source_archive: Path, destination: Path) -> None:
-    if source_archive.name.lower().endswith(".tar.zst"):
+    normalized = source_archive.name.lower()
+    if normalized.endswith((".tar.zst", ".tzst")):
         _extract_safe_tar_zst(source_archive, destination)
         return
-    if source_archive.name.lower().endswith(".rar"):
+    if normalized.endswith((".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz", ".tbz2", ".tar.xz", ".txz")):
+        _extract_safe_tar(source_archive, destination)
+        return
+    if normalized.endswith(".7z"):
+        _extract_safe_7z(source_archive, destination)
+        return
+    if normalized.endswith(".rar"):
         _extract_safe_rar(source_archive, destination)
         return
     _extract_safe_zip(source_archive, destination)
@@ -175,24 +201,53 @@ def _extract_safe_tar_zst(source_tar_zst: Path, destination: Path) -> None:
         with source_tar_zst.open("rb") as compressed:
             reader = zstandard.ZstdDecompressor().stream_reader(compressed)
             with reader, tarfile.open(fileobj=reader, mode="r|") as archive:
-                for member in archive:
-                    relative_path = _safe_archive_member_path(member.name)
-                    if relative_path is None:
-                        continue
-                    target = destination / relative_path
-                    if member.isdir():
-                        target.mkdir(parents=True, exist_ok=True)
-                        continue
-                    if not member.isfile():
-                        raise DictionaryPrepError(f"unsupported tar member in archive: {member.name}")
-                    extracted = archive.extractfile(member)
-                    if extracted is None:
-                        raise DictionaryPrepError(f"unable to read tar member: {member.name}")
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    with extracted, target.open("wb") as dest:
-                        shutil.copyfileobj(extracted, dest)
+                _extract_safe_tar_members(archive, destination)
     except (tarfile.TarError, zstandard.ZstdError) as exc:
-        raise DictionaryPrepError("invalid dictionary tar.zst") from exc
+        raise DictionaryPrepError("invalid dictionary zstd tar archive") from exc
+
+
+def _extract_safe_tar(source_tar: Path, destination: Path) -> None:
+    try:
+        with tarfile.open(source_tar, mode="r:*") as archive:
+            _extract_safe_tar_members(archive, destination)
+    except tarfile.TarError as exc:
+        raise DictionaryPrepError("invalid dictionary tar archive") from exc
+
+
+def _extract_safe_tar_members(archive: tarfile.TarFile, destination: Path) -> None:
+    for member in archive:
+        relative_path = _safe_archive_member_path(member.name)
+        if relative_path is None:
+            continue
+        target = destination / relative_path
+        if member.isdir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        if not member.isfile():
+            raise DictionaryPrepError(f"unsupported tar member in archive: {member.name}")
+        extracted = archive.extractfile(member)
+        if extracted is None:
+            raise DictionaryPrepError(f"unable to read tar member: {member.name}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with extracted, target.open("wb") as dest:
+            shutil.copyfileobj(extracted, dest)
+
+
+def _extract_safe_7z(source_7z: Path, destination: Path) -> None:
+    try:
+        with py7zr.SevenZipFile(source_7z, mode="r") as archive:
+            safe_files: list[str] = []
+            for member in archive.list():
+                relative_path = _safe_archive_member_path(member.filename)
+                if relative_path is None:
+                    continue
+                if not member.is_file and not member.is_directory:
+                    raise DictionaryPrepError(f"unsupported 7z member in archive: {member.filename}")
+                if member.is_file:
+                    safe_files.append(member.filename)
+            archive.extract(path=destination, targets=safe_files)
+    except (py7zr.exceptions.ArchiveError, py7zr.exceptions.PasswordRequired, py7zr.exceptions.AbsolutePathError) as exc:
+        raise DictionaryPrepError("invalid or password-protected dictionary 7z archive") from exc
 
 
 def _extract_safe_rar(source_rar: Path, destination: Path) -> None:

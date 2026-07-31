@@ -77,5 +77,7 @@ await run([
   "--collect-all",
   "lxml",
   "--collect-all",
-  "PIL"
+  "PIL",
+  "--collect-all",
+  "py7zr"
 ]);
