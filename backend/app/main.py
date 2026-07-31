@@ -29,7 +29,6 @@ from .crossink_firmware import (
     CrossInkFirmwareError,
     SUPPORTED_VARIANTS,
     get_crossink_releases,
-    get_sticky_beta_release,
 )
 from .crossink_fonts import CrossInkFontsError, get_crossink_fonts
 from .crossink_dictionaries import CrossInkDictionariesError, get_crossink_dictionaries
@@ -143,18 +142,8 @@ async def crossink_firmware_releases() -> JSONResponse:
     except CrossInkFirmwareError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    settings = get_settings()
     release_entries = [(release, "stable") for release in stable_releases]
     release_entries.extend((release, "prerelease") for release in prerelease_releases)
-    if settings.sticky_beta_firmware_url:
-        try:
-            sticky_beta = await get_sticky_beta_release(
-                settings.sticky_beta_firmware_url,
-                settings.sticky_beta_version,
-            )
-            release_entries.append((sticky_beta, "beta"))
-        except CrossInkFirmwareError as exc:
-            print(f"Sticky beta metadata unavailable: {exc}", flush=True)
 
     return JSONResponse(
         {
@@ -193,20 +182,6 @@ async def download_crossink_firmware(tag: str, variant: str) -> StreamingRespons
 
     releases = (*stable_releases, *prerelease_releases)
     release = next((item for item in releases if item.tag == tag), None)
-    settings = get_settings()
-    if (
-        not release
-        and variant == "sticky"
-        and settings.sticky_beta_firmware_url
-        and tag == settings.sticky_beta_version.strip()
-    ):
-        try:
-            release = await get_sticky_beta_release(
-                settings.sticky_beta_firmware_url,
-                settings.sticky_beta_version,
-            )
-        except CrossInkFirmwareError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
     if not release:
         raise HTTPException(status_code=404, detail="CrossInk release is not available.")
     asset = release.assets.get(variant)

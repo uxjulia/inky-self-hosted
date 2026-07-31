@@ -6,7 +6,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.crossink_firmware import (
     CrossInkFirmwareError,
-    build_sticky_beta_release,
     parse_prerelease_releases,
     parse_stable_release,
     parse_stable_releases,
@@ -166,26 +165,6 @@ class CrossInkFirmwareTests(unittest.TestCase):
         )
 
         self.assertEqual(releases, ())
-
-    def test_builds_sticky_beta_release_from_trusted_r2_url(self):
-        release = build_sticky_beta_release(
-            "https://downloads.crossink.dev/firmwares/sticky/firmware-sticky.bin",
-            "Sticky Beta",
-            5_785_312,
-        )
-
-        self.assertEqual(release.tag, "Sticky Beta")
-        self.assertEqual(release.assets["sticky"].filename, "firmware-sticky.bin")
-        self.assertEqual(release.assets["sticky"].size, 5_785_312)
-
-    def test_rejects_untrusted_sticky_beta_url(self):
-        with self.assertRaises(CrossInkFirmwareError):
-            build_sticky_beta_release(
-                "https://example.com/firmware-sticky.bin",
-                "Sticky Beta",
-                5_785_312,
-            )
-
 
 if __name__ == "__main__":
     unittest.main()

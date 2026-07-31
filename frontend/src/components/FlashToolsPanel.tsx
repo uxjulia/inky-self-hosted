@@ -14,7 +14,7 @@ type StableVariantId = "tiny" | "xlarge" | "x3-x4" | "sticky";
 type FlashStatus = { tone: "success" | "error"; message: string } | null;
 type StableReleaseInfo = {
   tag: string;
-  channel: "stable" | "prerelease" | "beta";
+  channel: "stable" | "prerelease";
   download_tag?: string;
   published_at: string;
   html_url: string;
@@ -100,11 +100,6 @@ function firmwareDownloadTag(releases: StableReleaseInfo[], selectedTag: string)
   return releases.find((release) => release.tag === selectedTag)?.download_tag || selectedTag;
 }
 
-function firmwareFileDate(publishedAt: string) {
-  const date = new Date(publishedAt);
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
-}
-
 export function FlashToolsPanel() {
   const serialSupported = useMemo(() => typeof navigator !== "undefined" && "serial" in navigator, []);
   const progressRef = useRef<HTMLDivElement | null>(null);
@@ -144,9 +139,6 @@ export function FlashToolsPanel() {
   const compatibleStableReleases = stableReleases.filter(
     (release) => release.channel === "stable" && releaseSupportsDevice(release, device)
   );
-  const stickyBetaRelease = stableReleases.find(
-    (release) => release.channel === "beta" && release.variants.some((variant) => variant.id === "sticky")
-  ) || null;
   const compatiblePrereleaseReleases = stableReleases.filter(
     (release) => release.channel === "prerelease" && releaseSupportsDevice(release, device)
   );
@@ -482,31 +474,9 @@ export function FlashToolsPanel() {
                 </div>
               </div>
             )}
-            {device === "sticky" && stickyBetaRelease && (() => {
-              const variant = stickyBetaRelease.variants.find((item) => item.id === "sticky");
-              if (!variant) return null;
-              const selected = selectedReleaseTag === stickyBetaRelease.tag && firmwareChoice === "sticky";
-              const fileDate = firmwareFileDate(stickyBetaRelease.published_at);
-              return (
-                <div className="flash-firmware-grid">
-                  <button
-                    type="button"
-                    className={selected ? "selected" : ""}
-                    disabled={running}
-                    onClick={() => {
-                      setSelectedReleaseTag(stickyBetaRelease.tag);
-                      selectFirmware("sticky");
-                    }}
-                  >
-                    <strong>Sticky Beta{fileDate && ` (${fileDate})`}</strong>
-                    <small>ESP32-S3 · {(variant.size / 1024 / 1024).toFixed(1)} MB</small>
-                  </button>
-                </div>
-              );
-            })()}
-            {device === "sticky" && !stableReleaseError && stableReleases.length > 0 && !stickyBetaRelease && compatibleStableReleases.length === 0 && (
+            {device === "sticky" && !stableReleaseError && stableReleases.length > 0 && compatibleStableReleases.length === 0 && compatiblePrereleaseReleases.length === 0 && (
               <div className="flash-message warning">
-                No Sticky firmware is available in the latest three stable CrossInk releases.
+                No Sticky firmware is currently available from GitHub.
               </div>
             )}
             {stableReleaseError && <div className="flash-message error">{stableReleaseError}</div>}
