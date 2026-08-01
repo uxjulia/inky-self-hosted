@@ -19,8 +19,6 @@
     "build:desktop": "VITE_INKY_APP_MODE=self-hosted VITE_INKY_PUBLIC_READ_ONLY=0 npm run build --prefix frontend && backend/.venv/bin/python -m compileall backend/app",
     "build:hosted": "VITE_INKY_APP_MODE=hosted npm run build --prefix frontend",
     "build:public": "VITE_INKY_APP_MODE=public npm run build --prefix frontend",
-    "ios:sync": "npm run build && npx cap sync ios",
-    "ios:open": "npm run ios:sync && npx cap open ios",
     "desktop:backend": "node scripts/build-backend-desktop.mjs",
     "desktop:dev": "node scripts/desktop-dev.mjs",
     "desktop:dist": "npm run desktop:backend && npm run build:desktop && electron-builder",
@@ -70,15 +68,10 @@
     }
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.4.1",
     "concurrently": "^10.0.3",
     "electron": "^42.4.0",
     "electron-builder": "^26.15.3",
     "prettier": "^3.9.0",
     "wait-on": "^9.0.10"
-  },
-  "dependencies": {
-    "@capacitor/core": "^8.4.1",
-    "@capacitor/ios": "^8.4.1"
   }
 }

@@ -34,7 +34,6 @@ import {
   markStandaloneFileSent
 } from "./standaloneLibrary";
 import {
-  apiBaseUrlStorageKey,
   authStorageKey,
   defaultOptimizerSettings,
   deviceStorageKey,
@@ -118,10 +117,6 @@ declare global {
       apiBaseUrl?: string;
       selectLibraryFolder?: () => Promise<string | null>;
     };
-    Capacitor?: {
-      isNativePlatform?: () => boolean;
-      getPlatform?: () => string;
-    };
   }
 }
 
@@ -134,12 +129,8 @@ const usesBrowserLibraryByDefault = isPublicApp || import.meta.env.VITE_INKY_LIB
 const isPublicReadOnly = isPublicApp || import.meta.env.VITE_INKY_PUBLIC_READ_ONLY === "1";
 const dictionaryToolsEnabled = import.meta.env.VITE_INKY_DICTIONARY_TOOLS === "1";
 const isDesktopApp = Boolean(window.inkyDesktop?.selectLibraryFolder);
-const isNativeApp = Boolean(window.Capacitor?.isNativePlatform?.());
-const isIosApp = window.Capacitor?.getPlatform?.() === "ios";
-const iosServerSettingsEnabled = isIosApp && import.meta.env.VITE_INKY_IOS_SERVER_SETTINGS === "1";
-const canConfigureApiBaseUrl = !window.inkyDesktop?.apiBaseUrl && iosServerSettingsEnabled;
-const initialStandaloneMode = (isNativeApp || isHostedApp) && !getInitialApiBaseUrl();
-const isSelfHostedBrowser = !isDesktopApp && !isNativeApp && !isHostedApp;
+const initialStandaloneMode = isHostedApp;
+const isSelfHostedBrowser = !isDesktopApp && !isHostedApp;
 const canUseWifiTransfer = !isHostedApp && !isPublicReadOnly;
 const browsePageSize = 25;
 const defaultDeviceHost = isSelfHostedBrowser ? "" : "crosspoint.local";
@@ -190,7 +181,6 @@ export default function App() {
   const [referencePageCharactersDraft, setReferencePageCharactersDraft] = useState(() =>
     String(optimizerSettings.characters_per_reference_page)
   );
-  const [apiBaseUrlDraft, setApiBaseUrlDraft] = useState(() => getInitialApiBaseUrl());
   const [standaloneMode, setStandaloneMode] = useState(initialStandaloneMode);
   const usesBrowserLibrary = standaloneMode || usesBrowserLibraryByDefault;
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme());
@@ -203,14 +193,12 @@ export default function App() {
   const [searching, setSearching] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [error, setError] = useState("");
-  const [apiConnectionError, setApiConnectionError] = useState("");
   const [deviceError, setDeviceError] = useState("");
   const [deviceStatus, setDeviceStatus] = useState("");
   const [testingDevice, setTestingDevice] = useState(false);
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
   const [optimizerModalOpen, setOptimizerModalOpen] = useState(false);
   const [dictionaryFiles, setDictionaryFiles] = useState<DictionaryInputFile[]>([]);
-  const [serverModalOpen, setServerModalOpen] = useState(false);
   const [stablePageTooltipPosition, setStablePageTooltipPosition] = useState<FloatingTooltipPosition | null>(null);
   const [editingSource, setEditingSource] = useState<Source | null>(null);
   const [draggedSourceId, setDraggedSourceId] = useState<number | null>(null);
@@ -443,17 +431,14 @@ export default function App() {
 
   async function checkAuth(forceStandaloneMode = standaloneMode) {
     if (forceStandaloneMode) {
-      setApiConnectionError("");
       setAuthEnabled(false);
       setIsAuthenticated(true);
       setAuthChecked(true);
       return true;
     }
 
-    setApiConnectionError("");
     try {
       const status = await publicApi<{ enabled: boolean }>("/api/auth/status");
-      setApiBaseUrlDraft(getApiBaseUrl());
       setAuthEnabled(status.enabled);
       if (!status.enabled) {
         setIsAuthenticated(true);
@@ -474,9 +459,7 @@ export default function App() {
         setIsAuthenticated(false);
         return true;
       }
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      setApiConnectionError(message);
+    } catch {
       setIsAuthenticated(false);
       return false;
     } finally {
@@ -507,34 +490,6 @@ export default function App() {
     setLibrary([]);
     setJobs([]);
     setSelectedSourceId(null);
-  }
-
-  async function saveServerSettings(event: FormEvent) {
-    event.preventDefault();
-    const nextApiBaseUrl = persistApiBaseUrl(apiBaseUrlDraft);
-    setApiBaseUrlDraft(nextApiBaseUrl);
-    const nextStandaloneMode = isNativeApp && !nextApiBaseUrl;
-    setStandaloneMode(nextStandaloneMode);
-    if (nextStandaloneMode) {
-      setSources([]);
-      setSelectedSourceId(localSourceId);
-      setBrowseResult(null);
-      setSearchResult(null);
-      setJobs([]);
-      setActiveJobId(null);
-    }
-    setAuthChecked(false);
-    const connected = await checkAuth(nextStandaloneMode);
-    if (connected) {
-      setServerModalOpen(false);
-      await refreshAll(false);
-      showToast("Server updated");
-    }
-  }
-
-  function openServerSettings() {
-    setApiBaseUrlDraft(getApiBaseUrl());
-    setServerModalOpen(true);
   }
 
   async function refreshAll(showFeedback = true) {
@@ -1782,38 +1737,6 @@ export default function App() {
     );
   }
 
-  if (apiConnectionError && canConfigureApiBaseUrl) {
-    return (
-      <main className="app-shell auth-shell">
-        <form className="auth-card" onSubmit={saveServerSettings}>
-          <span className="brand-logo" aria-hidden="true" />
-          <h1>Inky</h1>
-          <p>{isNativeApp ? "Connect to your Inky server." : "Connect to the Inky API."}</p>
-          <div className="auth-error">{readableError(apiConnectionError)}</div>
-          <label className="field">
-            <span>{isNativeApp ? "Inky server URL" : "API server URL"}</span>
-            <input
-              value={apiBaseUrlDraft}
-              onChange={(event) => setApiBaseUrlDraft(event.target.value)}
-              placeholder="http://192.168.1.25:8000"
-              inputMode="url"
-              autoCapitalize="none"
-            />
-          </label>
-          <div className="server-actions">
-            <button type="button" onClick={() => setApiBaseUrlDraft("")}>
-              Clear
-            </button>
-            <button className="primary" type="submit">
-              <Server size={16} />
-              Connect
-            </button>
-          </div>
-        </form>
-      </main>
-    );
-  }
-
   if (authEnabled && !isAuthenticated) {
     return (
       <main className="app-shell auth-shell">
@@ -1879,12 +1802,6 @@ export default function App() {
           >
             {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
-          {canConfigureApiBaseUrl && (
-            <button className="icon-text" type="button" onClick={openServerSettings} title="Server">
-              <Server size={16} />
-              Server
-            </button>
-          )}
           {authEnabled && (
             <button type="button" onClick={logout} title="Sign out" aria-label="Sign out">
               <LogOut size={16} />
@@ -2220,50 +2137,6 @@ export default function App() {
         />
       )}
 
-      {serverModalOpen && (
-        <div className="modal-backdrop" role="presentation">
-          <form
-            className="panel form-panel modal-card"
-            onSubmit={saveServerSettings}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="server-modal-title"
-          >
-            <div className="panel-header">
-              <h2 id="server-modal-title">Server</h2>
-              <button
-                type="button"
-                onClick={() => setServerModalOpen(false)}
-                title="Close"
-                aria-label="Close server settings"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <label className="field">
-              <span>{isNativeApp ? "Inky server URL" : "API server URL"}</span>
-              <input
-                value={apiBaseUrlDraft}
-                onChange={(event) => setApiBaseUrlDraft(event.target.value)}
-                placeholder="http://192.168.1.25:8000"
-                inputMode="url"
-                autoCapitalize="none"
-              />
-            </label>
-            {apiConnectionError && <div className="auth-error">{readableError(apiConnectionError)}</div>}
-            <div className="modal-actions">
-              <button type="button" onClick={() => setApiBaseUrlDraft("")}>
-                Clear
-              </button>
-              <button className="primary" type="submit">
-                <Save size={16} />
-                Save Server
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
       {toast && (
         <div
           className={`toast ${toast.tone === "error" ? "error-toast" : "success-toast"}`}
@@ -2284,26 +2157,8 @@ function mediaUrl(url: string) {
   return apiBaseUrl && url.startsWith("/api/") ? `${apiBaseUrl}${url}` : url;
 }
 
-function getInitialApiBaseUrl() {
-  return normalizeApiBaseUrl(
-    window.inkyDesktop?.apiBaseUrl || window.localStorage.getItem(apiBaseUrlStorageKey) || bundledApiBaseUrl
-  );
-}
-
 function getApiBaseUrl() {
-  return normalizeApiBaseUrl(
-    window.inkyDesktop?.apiBaseUrl || window.localStorage.getItem(apiBaseUrlStorageKey) || bundledApiBaseUrl
-  );
-}
-
-function persistApiBaseUrl(value: string) {
-  const apiBaseUrl = normalizeApiBaseUrl(value);
-  if (apiBaseUrl) {
-    window.localStorage.setItem(apiBaseUrlStorageKey, apiBaseUrl);
-  } else {
-    window.localStorage.removeItem(apiBaseUrlStorageKey);
-  }
-  return apiBaseUrl;
+  return normalizeApiBaseUrl(bundledApiBaseUrl);
 }
 
 function getInitialTheme(): Theme {

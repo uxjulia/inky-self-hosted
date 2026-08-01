@@ -6,7 +6,6 @@ export const sortModeBySourceStorageKey = "inky-sort-mode-by-source";
 export const optimizerSettingsStorageKey = "inky-optimizer-settings";
 export const deviceStorageKey = "inky-device-target";
 export const transferModeStorageKey = "inky-transfer-mode";
-export const apiBaseUrlStorageKey = "inky-api-base-url";
 export const authStorageKey = "inky-basic-auth";
 export const helpStorageBannerDismissedStorageKey = "inky-help-storage-banner-dismissed";
 export const localSourceId = -1;

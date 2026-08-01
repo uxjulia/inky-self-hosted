@@ -8,7 +8,6 @@ backend/storage
 backend/desktop-build
 backend/desktop-dist
 release
-ios
 *.log
 **/__pycache__
 **/*.pyc

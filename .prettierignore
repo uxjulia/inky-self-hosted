@@ -12,8 +12,3 @@ backend/.venv/
 backend/desktop-build/
 backend/desktop-dist/
 library/
-
-ios/App/App/Assets.xcassets/
-ios/App/App/capacitor.config.json
-ios/App/App/public/
-ios/App/CapApp-SPM/

@@ -1,297 +1,187 @@
 # Inky
 
-Self-hosted companion app for CrossInk devices. The MVP stores OPDS catalogs,
-WebDAV libraries, RSS/Atom feeds, and local uploads; imports books/articles into
-a local library; optimizes EPUBs with the vendored `auto-epub-optimizer` Python
-pipeline; and sends files to an X3/X4 running CrossInk File Transfer mode.
+Inky is a self-hosted and desktop companion app for
+[CrossInk](https://github.com/uxjulia/CrossInk) e-readers. It provides one place
+to collect books and articles, prepare them for an e-ink display, and send them
+to a reader over Wi-Fi or USB.
 
-## Run With Docker Compose
+> Inky is under active development. Back up your library before upgrading and
+> review the changelog when moving between versions.
+
+## Features
+
+- Browse OPDS catalogs, WebDAV libraries, and RSS/Atom feeds.
+- Import EPUBs and turn feed articles into EPUBs.
+- Optimize EPUB images, CSS, typography, locations, and reference-page data for
+  CrossInk devices.
+- Send EPUB, TXT, XTC, XTCH, BMP, and PNG files to a reader.
+- Transfer over the local network or through Web Serial in Chrome and Edge.
+- Download CrossInk fonts and dictionaries.
+- Prepare StarDict archives for installation on a reader.
+- Browse a host folder without copying its contents into Inky's managed
+  library.
+
+## Self-host With Docker
+
+### Requirements
+
+- Docker Engine with Docker Compose v2, or Docker Desktop
+- A CrossInk reader for device transfers
+
+Copy the example configuration and start the services:
 
 ```bash
 cp .env.example .env
-docker compose up --build
+docker compose up --build -d
 ```
 
-Open:
+Open [http://localhost:3000](http://localhost:3000). The API is available at
+`http://localhost:8000`, and the in-app guide is at
+`http://localhost:3000/#help`.
 
-```text
-http://localhost:3000
+Stop Inky with:
+
+```bash
+docker compose down
 ```
 
-### Basic Auth
+Library metadata and managed files live in the `inky-data` Docker volume, so a
+normal `docker compose down` does not delete them. Do not add `--volumes` unless
+you intend to remove that data.
 
-For a self-hosted install, set both auth variables in `.env` before starting
-Compose:
+### Configuration
+
+Edit `.env` before starting the containers. The main options are:
+
+| Variable                     | Default     | Purpose                                                  |
+| ---------------------------- | ----------- | -------------------------------------------------------- |
+| `FRONTEND_PORT`              | `3000`      | Port used by the web interface.                          |
+| `INKY_AUTH_USERNAME`         | empty       | Username for optional HTTP Basic Auth.                   |
+| `INKY_AUTH_PASSWORD`         | empty       | Password for optional HTTP Basic Auth.                   |
+| `INKY_AUTH_REALM`            | `Inky`      | Realm shown by the authentication challenge.             |
+| `INKY_LOCAL_LIBRARY_PATH`    | `./library` | Host folder mounted read-only as a local library.        |
+| `VITE_INKY_DICTIONARY_TOOLS` | `0`         | Set to `1` to include Dictionary Tools in the web build. |
+
+Set both authentication values to enable sign-in:
 
 ```bash
 INKY_AUTH_USERNAME=your-user
-INKY_AUTH_PASSWORD=choose-a-long-password
+INKY_AUTH_PASSWORD=choose-a-long-unique-password
 ```
 
-When both values are set, the API requires HTTP Basic Auth and the web app shows
-a sign-in screen. Leave either value blank to disable authentication. Basic Auth
-protects against casual access on a trusted private network; use HTTPS or a VPN
-if you expose Inky outside your LAN.
+Basic Auth is suitable for a trusted private network. Put Inky behind HTTPS or
+a VPN before making it reachable from outside your LAN.
 
-The in-app guide is available at:
-
-```text
-http://localhost:3000/#help
-```
-
-The API is also exposed at:
-
-```text
-http://localhost:8000
-```
-
-To expose an existing local library folder in the app, set this in `.env` before
-starting Docker Compose:
+To expose an existing folder of books, set an absolute host path:
 
 ```bash
 INKY_LOCAL_LIBRARY_PATH=/path/to/your/books
 ```
 
-Docker mounts that folder read-only at `/library`. Inky scans `.epub`, `.txt`,
-`.xtc`, `.xtch`, `.bmp`, and `.png` files from there into the Local Library view
-so they can be sent to a device without importing or copying them into Inky
-storage. Only EPUBs are optimized before sending.
+The folder is mounted read-only. Inky can scan and send its supported files,
+but it cannot rename, replace, or delete the originals.
 
-## Deployment Modes
+## Send Files to a Reader
 
-Inky has three frontend modes:
+1. On the reader, open **File Transfer**.
+2. For Wi-Fi, choose **Join Network** or **Create Hotspot**, then enter the
+   address shown by the reader in Inky's Device panel.
+3. For USB, connect the reader by cable, choose **USB**, and select the device
+   when the browser asks. Web Serial requires desktop Chrome or Edge.
+4. Add or import a file, then choose **Send**.
 
-- `self-hosted`: private backend-backed app. Sources, Local Library, optimizer
-  jobs, and sends use the local FastAPI backend.
-- `public`: public backend-backed app. Visitors can browse backend-seeded
-  sources, but their Local Library stays in their browser and sends use USB
-  only. Pair this with `INKY_PUBLIC_READ_ONLY=1` on the backend.
-- `hosted`: static browser-only app. No backend sources are used; visitors add
-  EPUBs in the browser, optimize locally, and send over USB.
+Wi-Fi transfers use the reader's local HTTP upload endpoint. USB transfers use
+CrossInk's serial file-transfer protocol. A successful build or connection test
+does not replace testing transfers on physical hardware.
 
-## Hosted Browser Build
+## Build the Desktop App
 
-Use the `hosted` build for a public static frontend where users add an EPUB,
-optimize it locally in their browser, and send it to a CrossInk device over USB.
-This mode does not use the FastAPI backend, and files are not uploaded to an
-Inky server.
+The desktop app packages the React interface in Electron and bundles the
+FastAPI backend as a local PyInstaller executable. Build on each target
+operating system and CPU architecture; the compiled Python dependencies are not
+portable between platforms.
+
+### Requirements
+
+- Node.js 22 or later with npm
+- Python 3.12
+- Cairo, required for SVG rasterization
+
+Install Cairo before installing the project dependencies:
 
 ```bash
-npm run build:hosted
+# macOS
+brew install cairo unar
+
+# Debian or Ubuntu
+sudo apt-get install -y libcairo2 unar
 ```
 
-Deploy the generated `frontend/dist` folder to any static host. The hosted build:
+`unar` is used when preparing RAR-packaged dictionaries.
 
-- Starts in local-file mode and stores selected EPUBs in that browser's local
-  storage until the user removes them.
-- Uses the browser-side EPUB optimizer before USB sends.
-- Uses Web Serial for USB transfer, so users need Chrome or Edge on desktop and
-  the site must be served over HTTPS.
-- Does not include OPDS, WebDAV, RSS/Atom, local folder browsing, or backend
-  article conversion.
-
-The current private self-hosted default remains
-`VITE_INKY_APP_MODE=self-hosted`.
-
-## Deploy On Railway
-
-Railway should use the root `Dockerfile`, which builds the React frontend and
-runs it with the FastAPI backend in one web service. The included `railway.json`
-selects Dockerfile builds and checks `/api/health` after deploy.
-
-The Railway build uses `VITE_INKY_APP_MODE=public` by default. That lets the
-public app read backend-seeded sources while keeping each visitor's Local
-Library in that browser instead of the shared Railway database. The backend
-still needs `INKY_PUBLIC_READ_ONLY=1` so public visitors can read and browse
-seeded sources without writing to the backend.
-
-Public EPUB sends use the server optimizer through a temporary upload. The
-optimized EPUB is streamed back to the browser for USB transfer, and the server
-removes the temporary input/output files after the response. To keep small
-Railway instances responsive, temporary public optimizations run one at a time
-in a worker thread.
-
-Recommended Railway variables for an open public instance:
+Then install the JavaScript and Python dependencies:
 
 ```bash
-INKY_DATA_DIR=/data
-INKY_DATABASE_URL=sqlite:////data/inky.db
-INKY_PUBLIC_READ_ONLY=1
-VITE_INKY_APP_MODE=public
-VITE_INKY_DICTIONARY_TOOLS=1
-```
-
-`VITE_` variables are baked into the React frontend during the Docker build. If
-you change one in Railway, redeploy the service so Railway rebuilds the frontend
-bundle.
-
-Attach a Railway volume mounted at `/data` if you want the library database and
-uploaded files to survive redeploys.
-
-## Downloads and Dictionary Tools
-
-The **Downloads** tab groups the public packages needed by CrossInk devices:
-
-- **Reader Fonts** for book reading.
-- **Dictionary Fonts**, which include IPA and other glyphs used in dictionary definitions.
-- **Ready-made Dictionaries** in StarDict archive format.
-
-Inky reads the available packages from the public [CrossInk fonts repository](https://github.com/uxjulia/crossink-fonts) and [CrossInk dictionaries repository](https://github.com/uxjulia/crossink-dictionaries), then proxies the selected download. No GitHub or R2 credentials are required for users.
-
-Use **Dictionary Tools** to prepare a downloaded dictionary before installing it: upload the archive, download the prepared ZIP, and unzip its folder into `/.dictionaries` or `/dictionaries` on the device SD card. Enable this tool in backend-backed builds with:
-
-```bash
-VITE_INKY_DICTIONARY_TOOLS=1
-```
-
-`VITE_` variables are applied when the frontend is built, so rebuild or redeploy after changing this setting.
-
-Only set `INKY_AUTH_USERNAME` and `INKY_AUTH_PASSWORD` for a private instance.
-
-## Local Development
-
-Install all frontend and backend dependencies:
-
-```bash
-# Required by backend SVG rasterization.
-# Debian/Ubuntu/WSL: sudo apt-get install -y libcairo2
-# macOS: brew install cairo
-
 npm install
 ```
 
-Run the API and frontend together with live reload:
-
-```bash
-npm run dev
-```
-
-Format supported frontend, desktop, config, and documentation files:
-
-```bash
-npm run format
-```
-
-Open:
-
-```text
-http://localhost:5173
-```
-
-To test public backend-backed mode locally:
-
-```bash
-INKY_PUBLIC_READ_ONLY=1 VITE_INKY_APP_MODE=public npm run dev
-```
-
-To test the static hosted browser mode locally:
-
-```bash
-VITE_INKY_APP_MODE=hosted npm run dev --prefix frontend
-```
-
 The root `postinstall` script installs the frontend packages and creates the
-backend Python virtualenv at `backend/.venv`. The API runs on
-`http://localhost:8001`, and Vite proxies `/api` to it.
+Python virtual environment at `backend/.venv`.
 
-## iOS App For Local Testing
-
-The iOS target wraps the React frontend with Capacitor. When no Inky server URL
-is configured, the iOS app runs in standalone mode: it stores local files on the
-phone and sends them directly to a CrossInk device in File Transfer mode.
-
-Open the iOS project:
-
-```bash
-npm run ios:open
-```
-
-To show the development-only Server button for testing against a LAN backend,
-sync the iOS build with:
-
-```bash
-VITE_INKY_IOS_SERVER_SETTINGS=1 npm run ios:open
-```
-
-In Xcode, choose your personal Apple Account as the signing team, select your
-iPhone, and run the app.
-
-Standalone mode currently supports local file import and direct device sends.
-Backend-backed catalog sources, RSS article conversion, WebDAV browsing, and
-EPUB optimization still require the FastAPI backend.
-
-To use the iOS app with a backend instead of standalone mode, start the backend
-on your LAN:
-
-```bash
-npm run dev:api:lan
-```
-
-Find your Mac's Wi-Fi IP address:
-
-```bash
-ipconfig getifaddr en0
-```
-
-Then use the development Server button in the iOS app and set the Inky server
-URL to:
-
-```text
-http://YOUR_MAC_IP:8000
-```
-
-The iOS build uses local-network HTTP so it can talk to CrossInk device transfer
-endpoints and, optionally, a development backend.
-
-## Desktop App
-
-Run the desktop app in development:
+Run the desktop app with live frontend reload:
 
 ```bash
 npm run desktop:dev
 ```
 
-This starts the Vite frontend, opens Electron, and launches the FastAPI backend
-on a local loopback port. Desktop storage lives in the operating system app data
-folder, separate from `backend/storage`.
-
-Build an unpacked desktop app for local testing:
+Create an unpacked app for a local smoke test:
 
 ```bash
 npm run desktop:pack
 ```
 
-Build distributable installers/packages:
+Create distributable packages for the current platform:
 
 ```bash
 npm run desktop:dist
 ```
 
-The desktop package includes the React build and a PyInstaller-built FastAPI
-backend executable. Build releases on each target OS/architecture so compiled
-Python dependencies match that platform.
+Build output is written to `release/`. The configured targets are DMG and ZIP
+on macOS, NSIS on Windows, and AppImage and DEB on Linux. Code signing and
+notarization are not configured by this repository.
 
-## Device Send Flow
+Desktop data is stored in the operating system's application-data directory,
+separate from the development database under `backend/storage`.
 
-1. On the reader, open **File Transfer**.
-2. For Wi-Fi, use **Join Network** or **Create Hotspot**, then put the shown
-   host/IP in Inky's Device field.
-3. For USB, connect the reader by cable and select **USB** in the Device panel.
-4. Import an item, then send it from the Library panel.
+## Local Development
 
-Wi-Fi sends use CrossInk's HTTP `/upload` endpoint. USB sends use the browser
-Web Serial API and the reader's `CMND` serial file-write protocol.
+After `npm install`, start the Vite frontend and FastAPI backend together:
 
-## Architecture Notes
+```bash
+npm run dev
+```
 
-- `backend/app/connectors.py` handles OPDS, WebDAV, and RSS/Atom browsing.
-- `backend/app/article_epub.py` turns feed articles into simple EPUBs.
-- `backend/app/optimizer/epubkit_pipeline/` is copied from
-  `~/code/auto-epub-optimizer`.
-- `backend/app/jobs.py` runs optimize/send work as API background jobs.
-- The frontend treats local uploads as a virtual Local Library source; files
-  saved from external sources are persisted by the backend library store.
-- Desktop folder picks are modeled as Local Folder sources and can be browsed
-  without copying their files into Local Library.
-- SQLite is the default store, but `INKY_DATABASE_URL` is isolated so Postgres
-  can replace it when multi-user auth becomes real.
+Open [http://localhost:5173](http://localhost:5173). Vite proxies `/api` to the
+backend at `http://localhost:8001`.
+
+Useful checks:
+
+```bash
+npm run build
+npm run format:check
+git diff --check
+```
+
+## Project Structure
+
+- `frontend/src` contains the React/Vite interface and browser transfer code.
+- `backend/app` contains the FastAPI API, connectors, library, jobs, and EPUB
+  optimizer.
+- `electron` contains the desktop shell and its restricted preload bridge.
+- `scripts` contains the development and desktop packaging helpers.
+- `docker-compose.yml`, `backend/Dockerfile`, and `frontend/Dockerfile` define
+  the self-hosted deployment.
+
+## License
+
+Inky is licensed under the [GNU General Public License v3.0](LICENSE).
