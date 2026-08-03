@@ -1847,7 +1847,7 @@ export default function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand">
+        <div className="brand" onClick={openApp}>
           <span className="brand-logo" aria-hidden="true" />
           <div>
             <div className="brand-title">
