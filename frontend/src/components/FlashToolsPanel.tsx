@@ -492,7 +492,8 @@ export function FlashToolsPanel() {
             <div className="flash-message warning">
               {lockedDevice
                 ? <p>
-                  <strong>Steps when Flashing from Stock Xteink Firmware:</strong>
+                  <p><strong>Option 1:</strong></p>
+                  Steps when Flashing from <strong>Stock Xteink Firmware:</strong>
                   <ol>
                     <li>Download the <code>update.bin</code> file</li>
                     <li>Copy it to the root of your SD card (not inside any folders)</li>
@@ -500,7 +501,9 @@ export function FlashToolsPanel() {
                     <li>Plug your device into USB power</li>
                     <li>Hold the power + up buttons at the same time for 3+ seconds until you see the device begin installation. Note: On the X3, the "Up" button is on the left side.</li>
                   </ol>
-                  <strong>Steps when Updating from Cross<span className="serif">I</span>nk</strong>
+                  <hr />
+                  <p><strong>Option 2:</strong></p>
+                  Steps when Updating from <strong>Cross<span className="serif">I</span>nk</strong> (or other firmware with SD Card Firmware Update capabilities)
                   <ol>
                     <li>Download the <code>update.bin</code> file (note when updating from Cross<span className="serif">I</span>nk, the filename does not matter)</li>
                     <li>Copy it anywhere on your SD card</li>
