@@ -1,18 +1,4 @@
-import {
-  BookOpen,
-  CircleHelp,
-  Folder,
-  Home,
-  LogIn,
-  LogOut,
-  Moon,
-  Plus,
-  Rss,
-  Save,
-  Server,
-  Sun,
-  X
-} from "lucide-react";
+import { BookOpen, CircleHelp, Folder, Home, LogIn, LogOut, Moon, Plus, Rss, Save, Server, Sun, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, FormEvent, KeyboardEvent } from "react";
 import { optimizeEpubInBrowser } from "./browserEpubOptimizer";
@@ -80,7 +66,6 @@ import {
   downloadBlob,
   downloadOptimizedFiles,
   filenameFromContentDisposition,
-  folderNameFromPath,
   hasEpubExtension,
   insertLocalSource,
   isMountedLibraryItem,
@@ -111,26 +96,15 @@ import { FontDownloadsPanel } from "./components/FontDownloadsPanel";
 import { OptimizerSettingsModal } from "./components/OptimizerSettingsModal";
 import { SourcePanel } from "./components/SourcePanel";
 
-declare global {
-  interface Window {
-    inkyDesktop?: {
-      apiBaseUrl?: string;
-      selectLibraryFolder?: () => Promise<string | null>;
-    };
-  }
-}
-
-const bundledApiBaseUrl = window.inkyDesktop?.apiBaseUrl || import.meta.env.VITE_API_BASE_URL || "";
+const bundledApiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
 
 const appMode = normalizeAppMode(import.meta.env.VITE_INKY_APP_MODE);
 const isHostedApp = appMode === "hosted";
 const isPublicApp = appMode === "public";
 const usesBrowserLibraryByDefault = isPublicApp || import.meta.env.VITE_INKY_LIBRARY_MODE === "browser";
 const isPublicReadOnly = isPublicApp || import.meta.env.VITE_INKY_PUBLIC_READ_ONLY === "1";
-const dictionaryToolsEnabled = import.meta.env.VITE_INKY_DICTIONARY_TOOLS === "1";
-const isDesktopApp = Boolean(window.inkyDesktop?.selectLibraryFolder);
 const initialStandaloneMode = isHostedApp;
-const isSelfHostedBrowser = !isDesktopApp && !isHostedApp;
+const isSelfHostedBrowser = !isHostedApp;
 const canUseWifiTransfer = !isHostedApp && !isPublicReadOnly;
 const browsePageSize = 25;
 const defaultDeviceHost = isSelfHostedBrowser ? "" : "crosspoint.local";
@@ -255,7 +229,7 @@ export default function App() {
   const sortOptions: SortMode[] = isLocalSource
     ? ["source", "date_added", "type", "title_asc", "title_desc"]
     : ["source", "title_asc", "title_desc"];
-  const availableSourceTypes = useMemo(() => sourceTypes.filter((type) => type !== "local_folder" || isDesktopApp), []);
+  const availableSourceTypes = sourceTypes;
   const sortedLibrary = useMemo(() => sortLibraryItems(displayedLibrary, sortMode), [displayedLibrary, sortMode]);
   const sortedRemoteItems = useMemo(() => sortBrowseItems(remoteItems, activeSortMode), [remoteItems, activeSortMode]);
   const displayedItems = isLocalSource ? sortedLibrary : sortedRemoteItems;
@@ -290,7 +264,7 @@ export default function App() {
       : `Catalog Page ${remotePage}`
     : `Page ${clampedBrowsePage} of ${totalPages}`;
   const sortLabel = sortLabelForMode(activeSortMode);
-  const canPrepareDictionaries = dictionaryToolsEnabled && !standaloneMode && !isHostedApp;
+  const canPrepareDictionaries = !standaloneMode && !isHostedApp;
   const showAppTabs = true;
   const effectiveEinkQuantize = optimizerSettings.grayscale && optimizerSettings.eink_quantize;
 
@@ -423,7 +397,6 @@ export default function App() {
 
   const sourceIcon = useMemo(() => {
     if (selectedSource?.type === "local") return <Folder size={16} />;
-    if (selectedSource?.type === "local_folder") return <Folder size={16} />;
     if (selectedSource?.type === "webdav") return <Server size={16} />;
     if (selectedSource?.type === "feed") return <Rss size={16} />;
     return <BookOpen size={16} />;
@@ -632,28 +605,8 @@ export default function App() {
     setForm(emptySourceForm);
   }
 
-  async function selectSourceType(type: RemoteSourceType) {
-    if (type !== "local_folder") {
-      setForm((current) => ({ ...current, type }));
-      return;
-    }
-
-    const selectLibraryFolder = window.inkyDesktop?.selectLibraryFolder;
-    if (!selectLibraryFolder) {
-      showToast("Local Folder sources are available in the desktop app.", "error");
-      return;
-    }
-
-    const folderPath = await selectLibraryFolder();
-    if (!folderPath) return;
-    setForm((current) => ({
-      ...current,
-      type,
-      name: current.name || folderNameFromPath(folderPath),
-      url: folderPath,
-      username: "",
-      password: ""
-    }));
+  function selectSourceType(type: RemoteSourceType) {
+    setForm((current) => ({ ...current, type }));
   }
 
   async function saveSource(event: FormEvent) {
@@ -669,8 +622,8 @@ export default function App() {
               type: form.type,
               name: form.name,
               url: form.url,
-              username: form.type === "local_folder" ? null : form.username || null,
-              password: form.type === "local_folder" ? null : form.password || null
+              username: form.username || null,
+              password: form.password || null
             })
           });
           setSelectedSourceId(updatedSource.id);
@@ -686,8 +639,8 @@ export default function App() {
             type: form.type,
             name: form.name,
             url: form.url,
-            username: form.type === "local_folder" ? null : form.username || null,
-            password: form.type === "local_folder" ? null : form.password || null
+            username: form.username || null,
+            password: form.password || null
           })
         });
         setForm(emptySourceForm);
@@ -1022,22 +975,6 @@ export default function App() {
             return;
           }
 
-          if (selectedSource?.type === "local_folder" && item.path) {
-            const job = await api<Job>(`/api/sources/${selectedSourceId}/send-local-file`, {
-              method: "POST",
-              body: JSON.stringify({
-                ...defaultOptimizePayload(),
-                path: item.path,
-                device_url: resolvedDeviceUrl,
-                destination_path: destinationPath,
-                optimize_first: true
-              })
-            });
-            trackJob(job);
-            showToast("Send queued");
-            return;
-          }
-
           const imported = await importBrowseItem(item);
           if (!imported) return;
           const job = await api<Job>(`/api/library/${imported.id}/send`, {
@@ -1125,13 +1062,6 @@ export default function App() {
           title: item.title,
           cover_url: item.image_url
         })
-      });
-    }
-
-    if (item.type === "file" && item.path && selectedSource?.type === "local_folder") {
-      return api<LibraryItem>("/api/library/import-local-file", {
-        method: "POST",
-        body: JSON.stringify({ source_id: selectedSourceId, path: item.path, title: item.title })
       });
     }
 
@@ -1475,7 +1405,7 @@ export default function App() {
 
   async function sendLibraryItemViaUsb(item: LibraryItem) {
     if (!serialTransferSupported()) {
-      throw new Error("USB serial is not available in this browser. Use Chrome, Edge, or the Inky desktop app.");
+      throw new Error("USB serial is not available in this browser. Use Chrome or Edge.");
     }
 
     if (canOptimizeLibraryItem(item)) {
@@ -1632,9 +1562,9 @@ export default function App() {
           : usesBrowserLibrary
             ? await probeStandaloneDevice(resolvedDeviceUrl)
             : await api<Record<string, unknown>>("/api/devices/probe", {
-              method: "POST",
-              body: JSON.stringify({ device_url: resolvedDeviceUrl })
-            });
+                method: "POST",
+                body: JSON.stringify({ device_url: resolvedDeviceUrl })
+              });
       setDeviceStatus(
         `Successfully connected to: ${status.device || "Device"} at ${transferMode === "usb" ? "USB" : status.ip || resolvedDeviceUrl}`
       );
@@ -1866,7 +1796,6 @@ export default function App() {
       {view === "help" ? (
         <HelpPage
           onOpenApp={openApp}
-          isDesktopApp={isDesktopApp}
           isSelfHostedBrowser={isSelfHostedBrowser}
           standaloneMode={standaloneMode}
           isHostedApp={isHostedApp}
@@ -1927,7 +1856,6 @@ export default function App() {
               sourceMenuId={sourceMenuId}
               standaloneMode={standaloneMode}
               isPublicReadOnly={isPublicReadOnly}
-              isDesktopApp={isDesktopApp}
               onOpenAddSourceModal={openAddSourceModal}
               onSelectSource={setSelectedSourceId}
               onSetSourceMenuId={setSourceMenuId}
@@ -2069,33 +1997,22 @@ export default function App() {
                 onChange={(event) => setForm({ ...form, name: event.target.value })}
                 placeholder="Name"
               />
-              {form.type === "local_folder" ? (
-                <div className="folder-source-field">
-                  <input value={form.url} readOnly placeholder="Select a folder" />
-                  <button type="button" onClick={() => selectSourceType("local_folder")}>
-                    Browse
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <input
-                    value={form.url}
-                    onChange={(event) => setForm({ ...form, url: event.target.value })}
-                    placeholder="URL"
-                  />
-                  <input
-                    value={form.username}
-                    onChange={(event) => setForm({ ...form, username: event.target.value })}
-                    placeholder="Username"
-                  />
-                  <input
-                    value={form.password}
-                    onChange={(event) => setForm({ ...form, password: event.target.value })}
-                    placeholder={editingSource ? "New password (leave blank to keep current)" : "Password"}
-                    type="password"
-                  />
-                </>
-              )}
+              <input
+                value={form.url}
+                onChange={(event) => setForm({ ...form, url: event.target.value })}
+                placeholder="URL"
+              />
+              <input
+                value={form.username}
+                onChange={(event) => setForm({ ...form, username: event.target.value })}
+                placeholder="Username"
+              />
+              <input
+                value={form.password}
+                onChange={(event) => setForm({ ...form, password: event.target.value })}
+                placeholder={editingSource ? "New password (leave blank to keep current)" : "Password"}
+                type="password"
+              />
               <div className="modal-actions">
                 <button type="button" onClick={closeSourceModal}>
                   Cancel

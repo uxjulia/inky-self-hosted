@@ -12,7 +12,6 @@ declare global {
 }
 
 type HelpPageProps = {
-  isDesktopApp: boolean;
   isSelfHostedBrowser: boolean;
   isHostedApp: boolean;
   isPublicReadOnly: boolean;
@@ -21,7 +20,6 @@ type HelpPageProps = {
 };
 
 export function HelpPage({
-  isDesktopApp,
   isSelfHostedBrowser,
   isHostedApp,
   isPublicReadOnly,
@@ -65,8 +63,8 @@ export function HelpPage({
       {usbOnlyMode && !storageBannerDismissed && (
         <div className="help-storage-banner" role="note">
           <span>
-            <strong>Note:</strong> All files are stored in your local browser and are <strong>NOT</strong> saved to any servers.
-            Switching browsers or clearing your browser cache will remove your library.
+            <strong>Note:</strong> All files are stored in your local browser and are <strong>NOT</strong> saved to any
+            servers. Switching browsers or clearing your browser cache will remove your library.
           </span>
           <button type="button" onClick={dismissStorageBanner} title="Dismiss note" aria-label="Dismiss storage note">
             <X size={16} />
@@ -145,7 +143,6 @@ export function HelpPage({
                       <li>RSS and Atom feeds expose articles that Inky can convert into simple EPUB files.</li>
                     </>
                   )}
-                  {isDesktopApp && <li>Local Folder sources allow adding folders from your computer.</li>}
                   <li>Local Library contains uploaded files and items saved from external sources.</li>
                 </ul>
               </>

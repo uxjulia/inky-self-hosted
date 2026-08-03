@@ -142,10 +142,11 @@ export async function createOptimizedDownloadsZipBlob(downloads: RecentOptimized
 
 function uniqueZipFilename(filename: string, usedNames: Set<string>) {
   const fallback = "optimized.epub";
-  const cleaned = filename
-    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim() || fallback;
+  const cleaned =
+    filename
+      .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim() || fallback;
   const extensionStart = cleaned.lastIndexOf(".");
   const hasExtension = extensionStart > 0;
   const stem =
@@ -189,7 +190,7 @@ export function optimizedDeviceFilename(job: Job) {
 }
 
 export function isMountedLibraryItem(item: LibraryItem) {
-  return item.source_url?.startsWith("mounted-library://") || item.source_url?.startsWith("desktop-folder://") || false;
+  return item.source_url?.startsWith("mounted-library://") || false;
 }
 
 export function canOptimizeLibraryItem(item: LibraryItem) {
@@ -236,7 +237,10 @@ function readableErrorDetail(detail: unknown): string {
   const record = detail as Record<string, unknown>;
   const nestedMessage = readableErrorDetail(record.msg ?? record.message ?? record.detail);
   const location = Array.isArray(record.loc)
-    ? record.loc.filter((part) => part !== "body").map(String).join(".")
+    ? record.loc
+        .filter((part) => part !== "body")
+        .map(String)
+        .join(".")
     : "";
   if (nestedMessage) return location ? `${location}: ${nestedMessage}` : nestedMessage;
 
@@ -434,18 +438,11 @@ export function sortLabelForMode(sortMode: SortMode) {
 }
 
 export function sourceTypeLabel(type: RemoteSourceType) {
-  if (type === "local_folder") return "Local Folder";
   return type.toUpperCase();
 }
 
 export function sourceTypeShortLabel(type: SourceType) {
-  if (type === "local_folder") return "Folder";
   return type;
-}
-
-export function folderNameFromPath(path: string) {
-  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  return normalized.split("/").pop() || "Local Folder";
 }
 
 export function moveSource(sources: Source[], draggedSourceId: number, targetSourceId: number, insertAfter: boolean) {

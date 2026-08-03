@@ -17,7 +17,6 @@ class SourceType(str, Enum):
     opds = "opds"
     webdav = "webdav"
     feed = "feed"
-    local_folder = "local_folder"
 
 
 class JobStatus(str, Enum):

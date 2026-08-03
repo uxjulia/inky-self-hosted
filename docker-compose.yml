@@ -4,29 +4,25 @@ services:
       context: ./backend
     restart: unless-stopped
     environment:
-      INKY_DATABASE_URL: ${INKY_DATABASE_URL:-sqlite:////data/inky.db}
-      INKY_DATA_DIR: ${INKY_DATA_DIR:-/data}
+      INKY_DATABASE_URL: sqlite:////data/inky.db
+      INKY_DATA_DIR: /data
       INKY_MOUNTED_LIBRARY_DIR: /library
       INKY_AUTH_USERNAME: ${INKY_AUTH_USERNAME:-}
       INKY_AUTH_PASSWORD: ${INKY_AUTH_PASSWORD:-}
       INKY_AUTH_REALM: ${INKY_AUTH_REALM:-Inky}
     volumes:
       - inky-data:/data
-      - ${INKY_LOCAL_LIBRARY_PATH:-./library}:/library:ro
-    ports:
-      - "8000:8000"
-
+      - ${INKY_MOUNTED_LIBRARY_DIR:-./library}:/library:ro
   web:
     build:
       context: ./frontend
       args:
         VITE_INKY_APP_MODE: ${VITE_INKY_APP_MODE:-self-hosted}
-        VITE_INKY_DICTIONARY_TOOLS: ${VITE_INKY_DICTIONARY_TOOLS:-0}
     restart: unless-stopped
     depends_on:
       - api
     ports:
-      - "${FRONTEND_PORT:-3000}:80"
+      - "${INKY_PORT:-8000}:80"
 
 volumes:
   inky-data:

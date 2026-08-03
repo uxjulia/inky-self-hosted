@@ -104,25 +104,6 @@ def run_send_job(job_id: str, item_id: int, request: DeviceSendRequest) -> None:
         db.close()
 
 
-def run_send_path_job(job_id: str, source_path: str, request: DeviceSendRequest) -> None:
-    db = SessionLocal()
-    try:
-        job = db.get(Job, job_id)
-        if not job:
-            return
-        job.status = JobStatus.running.value
-        job.progress = 5
-        job.message = "Preparing file"
-        db.commit()
-
-        file_path, device_filename = _send_path(job_id, job, Path(source_path), request)
-        _send_file(job_id, job, file_path, request, device_filename)
-    except Exception as exc:
-        set_job(job_id, status=JobStatus.failed.value, progress=100, message="Send failed", error=str(exc))
-    finally:
-        db.close()
-
-
 def run_dictionary_prepare_job(
     job_id: str,
     source_zip: str,

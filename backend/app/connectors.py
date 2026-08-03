@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from time import perf_counter
 from urllib.parse import quote, unquote, urljoin, urlparse
 from xml.etree import ElementTree as ET
@@ -36,8 +35,6 @@ async def browse_source(db: Session, source_id: int, target: str | None = None) 
         return await browse_feed(source, target)
     if source.type == "webdav":
         return await browse_webdav(source, target or "/")
-    if source.type == "local_folder":
-        return browse_local_folder(source, target)
     raise ValueError(f"unsupported source type: {source.type}")
 
 
@@ -56,8 +53,6 @@ async def search_source(db: Session, source_id: int, query: str, target: str | N
         return await search_feed(source, normalized_query, target)
     if source.type == "webdav":
         return await search_webdav(source, normalized_query, target or "/")
-    if source.type == "local_folder":
-        return search_local_folder(source, normalized_query, target)
     raise ValueError(f"unsupported source type: {source.type}")
 
 
@@ -284,81 +279,6 @@ async def search_webdav(source: Source, query: str, target: str = "/") -> Browse
     result.title = f'Search "{query}"'
     result.message = None if result.items else f'No results found for "{query}" in this folder.'
     return result
-
-
-def browse_local_folder(source: Source, target: str | None = None) -> BrowseResult:
-    root = Path(source.url).expanduser().resolve()
-    folder = _resolve_local_folder_target(root, target)
-    items: list[BrowseItem] = []
-
-    try:
-        children = sorted(folder.iterdir(), key=lambda path: (not path.is_dir(), path.name.lower()))
-    except OSError as exc:
-        raise ValueError(f"Unable to open local folder: {exc}") from exc
-
-    for child in children:
-        if child.name.startswith("."):
-            continue
-        if child.is_dir():
-            items.append(
-                BrowseItem(
-                    type="directory",
-                    title=child.name,
-                    path=child.resolve().relative_to(root).as_posix(),
-                )
-            )
-            continue
-        if child.is_file() and child.suffix.lower() in SENDABLE_FILE_EXTENSIONS:
-            items.append(
-                BrowseItem(
-                    type="file",
-                    title=child.name,
-                    path=child.resolve().relative_to(root).as_posix(),
-                    size=child.stat().st_size,
-                    media_type=_local_file_media_type(child),
-                )
-            )
-
-    relative = "." if folder == root else folder.relative_to(root).as_posix()
-    message = None if items else "No sendable files were found in this folder."
-    return BrowseResult(
-        source_id=source.id,
-        source_type=source.type,
-        base_url=relative,
-        title=source.name if relative == "." else folder.name,
-        items=items,
-        message=message,
-    )
-
-
-def search_local_folder(source: Source, query: str, target: str | None = None) -> BrowseResult:
-    result = browse_local_folder(source, target)
-    result.items = [item for item in result.items if _matches_item(item, query)]
-    result.title = f'Search "{query}"'
-    result.message = None if result.items else f'No results found for "{query}" in this folder.'
-    return result
-
-
-def _resolve_local_folder_target(root: Path, target: str | None) -> Path:
-    folder = root if not target or target == "." else (root / target).resolve()
-    if not folder.is_relative_to(root):
-        raise ValueError("local folder target is outside the source root")
-    if not folder.exists() or not folder.is_dir():
-        raise ValueError("local folder not found")
-    return folder
-
-
-def _local_file_media_type(path: Path) -> str:
-    suffix = path.suffix.lower()
-    if suffix == ".epub":
-        return "application/epub+zip"
-    if suffix == ".txt":
-        return "text/plain"
-    if suffix == ".bmp":
-        return "image/bmp"
-    if suffix == ".png":
-        return "image/png"
-    return "application/octet-stream"
 
 
 def _local_name(tag: str) -> str:

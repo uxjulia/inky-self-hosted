@@ -296,7 +296,7 @@ class SerialConnection {
 
 async function openSerialConnection() {
   if (!navigator.serial) {
-    throw new Error("USB serial is not available in this browser. Use Chrome, Edge, or the Inky desktop app.");
+    throw new Error("USB serial is not available in this browser. Use Chrome or Edge.");
   }
 
   if (retainedSerialConnection?.isOpen) {
@@ -307,8 +307,7 @@ async function openSerialConnection() {
 
   const grantedPorts = await navigator.serial.getPorts();
   const port =
-    grantedPorts.find(isCrossInkSerialPort) ||
-    (await navigator.serial.requestPort({ filters: crossInkSerialFilters }));
+    grantedPorts.find(isCrossInkSerialPort) || (await navigator.serial.requestPort({ filters: crossInkSerialFilters }));
   try {
     await port.open({ baudRate: 115200, bufferSize: 8192 });
   } catch (error) {
@@ -431,9 +430,7 @@ async function writeSerialFile(
         if (line.startsWith("BUSY:write:")) {
           diagnostic?.(`Device writing to SD (${formatUploadProgress(sent, data.length)}): ${line}`);
         } else if (line.startsWith("BUSY:read:")) {
-          diagnostic?.(
-            `Device waiting for serial bytes (${formatUploadProgress(sent, data.length)}): ${line}`
-          );
+          diagnostic?.(`Device waiting for serial bytes (${formatUploadProgress(sent, data.length)}): ${line}`);
         }
       },
       signal

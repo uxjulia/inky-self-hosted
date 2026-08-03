@@ -12,7 +12,6 @@ type SourcePanelProps = {
   sourceMenuId: number | null;
   standaloneMode: boolean;
   isPublicReadOnly: boolean;
-  isDesktopApp: boolean;
   onOpenAddSourceModal: () => void;
   onSelectSource: (sourceId: number) => void;
   onSetSourceMenuId: (sourceId: number | null | ((current: number | null) => number | null)) => void;
@@ -32,7 +31,6 @@ export function SourcePanel({
   sourceMenuId,
   standaloneMode,
   isPublicReadOnly,
-  isDesktopApp,
   onOpenAddSourceModal,
   onSelectSource,
   onSetSourceMenuId,
@@ -118,7 +116,7 @@ export function SourcePanel({
                 </button>
                 {sourceMenuId === source.id && (
                   <div className="source-menu" role="menu">
-                    {source.id !== localSourceId && (source.type !== "local_folder" || isDesktopApp) && (
+                    {source.id !== localSourceId && (
                       <button
                         type="button"
                         onClick={(event) => {

@@ -12,7 +12,7 @@ export const localSourceId = -1;
 
 export const emptySourceForm: SourceForm = { type: "opds", name: "", url: "", username: "", password: "" };
 export const localSource: Source = { id: localSourceId, type: "local", name: "Local Library", url: "local://library" };
-export const sourceTypes: RemoteSourceType[] = ["opds", "webdav", "feed", "local_folder"];
+export const sourceTypes: RemoteSourceType[] = ["opds", "webdav", "feed"];
 
 export const defaultOptimizerSettings: OptimizerSettings = {
   use_original_filename: true,

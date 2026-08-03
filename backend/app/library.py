@@ -6,7 +6,6 @@ import threading
 import time
 import uuid
 import zipfile
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from xml.etree import ElementTree as ET
@@ -24,7 +23,6 @@ from .utils import display_title_from_url, extension_from_url, join_remote, norm
 
 
 MOUNTED_LIBRARY_SOURCE_PREFIX = "mounted-library://"
-DESKTOP_LIBRARY_SOURCE_PREFIX = "desktop-folder://"
 LOCAL_LIBRARY_EXTENSIONS = {".epub", ".txt", ".xtc", ".xtch"}
 IMAGE_LIBRARY_EXTENSIONS = {".bmp", ".png"}
 SENDABLE_LIBRARY_EXTENSIONS = LOCAL_LIBRARY_EXTENSIONS | IMAGE_LIBRARY_EXTENSIONS
@@ -123,28 +121,6 @@ async def import_webdav_file(db: Session, source: Source, path: str, title: str 
     return await import_url(db, url, source.id, title or Path(path).name, cover_url=cover_url, kind="file", auth=auth)
 
 
-def import_local_source_file(db: Session, source: Source, path: str, title: str | None = None) -> LibraryItem:
-    source_path = resolve_local_source_file(source, path)
-    destination = _unique_path(get_settings().originals_dir / safe_filename(source_path.name, "upload.epub"))
-    shutil.copyfile(source_path, destination)
-    metadata = _epub_metadata(destination) if _is_epub(destination) else EpubMetadata()
-    item = LibraryItem(
-        source_id=source.id,
-        kind=_library_kind_for_path(destination),
-        title=metadata.title or title or source_path.stem,
-        author=metadata.author,
-        original_path=str(destination),
-        source_url=f"local-folder://{source.id}/{path}",
-    )
-    db.add(item)
-    db.flush()
-    if metadata.cover_path:
-        item.cover_url = _library_cover_url(item.id)
-    db.commit()
-    db.refresh(item)
-    return item
-
-
 def copy_uploaded_file(db: Session, source_path: Path, filename: str) -> LibraryItem:
     destination = _unique_path(get_settings().originals_dir / safe_filename(filename, "upload.epub"))
     shutil.copyfile(source_path, destination)
@@ -191,21 +167,7 @@ def _sync_mounted_library_now(db: Session) -> None:
             scan_time=scan_time,
         )
 
-    for folder in _registered_desktop_library_folders():
-        if folder.exists() and folder.is_dir():
-            _sync_library_root(
-                db,
-                folder.resolve(),
-                DESKTOP_LIBRARY_SOURCE_PREFIX,
-                current_source_urls,
-                include_root_in_source_url=True,
-                scan_time=scan_time,
-            )
-
-    folder_items = db.query(LibraryItem).filter(
-        LibraryItem.source_url.like(f"{MOUNTED_LIBRARY_SOURCE_PREFIX}%")
-        | LibraryItem.source_url.like(f"{DESKTOP_LIBRARY_SOURCE_PREFIX}%")
-    ).all()
+    folder_items = db.query(LibraryItem).filter(LibraryItem.source_url.like(f"{MOUNTED_LIBRARY_SOURCE_PREFIX}%")).all()
     if folder_items and not current_source_urls:
         now = time.monotonic()
         if _last_empty_synced_scan_at is None or now - _last_empty_synced_scan_at < EMPTY_MOUNTED_SCAN_GRACE_SECONDS:
@@ -222,35 +184,6 @@ def _sync_mounted_library_now(db: Session) -> None:
             item.is_missing = True
             item.last_scan_at = scan_time
     db.commit()
-
-
-def register_desktop_library_folder(db: Session, folder_path: Path) -> list[LibraryItem]:
-    folder = folder_path.expanduser().resolve()
-    if not folder.exists() or not folder.is_dir():
-        raise ValueError("folder not found")
-
-    folders = _registered_desktop_library_folders()
-    if folder not in folders:
-        folders.append(folder)
-        _save_desktop_library_folders(folders)
-
-    sync_mounted_library(db, force=True)
-    return db.query(LibraryItem).order_by(LibraryItem.updated_at.desc()).all()
-
-
-def resolve_local_source_file(source: Source, path: str) -> Path:
-    if source.type != "local_folder":
-        raise ValueError("Local folder source not found")
-
-    root = Path(source.url).expanduser().resolve()
-    file_path = (root / path).resolve()
-    if not file_path.is_relative_to(root):
-        raise ValueError("local file is outside the source root")
-    if not file_path.exists() or not file_path.is_file():
-        raise ValueError("local file not found")
-    if file_path.suffix.lower() not in SENDABLE_LIBRARY_EXTENSIONS:
-        raise ValueError("local file type is not supported")
-    return file_path
 
 
 def _sync_library_root(
@@ -440,43 +373,12 @@ def _is_readable_library_path(path: Path) -> bool:
     roots = [settings.data_dir.resolve()]
     if settings.mounted_library_dir and settings.mounted_library_dir.exists():
         roots.append(settings.mounted_library_dir.resolve())
-    roots.extend(_registered_desktop_library_folders())
     resolved = path.resolve()
     return any(resolved.is_relative_to(root) for root in roots)
 
 
 def _is_synced_library_item(item: LibraryItem) -> bool:
-    return bool(
-        item.source_url
-        and (item.source_url.startswith(MOUNTED_LIBRARY_SOURCE_PREFIX) or item.source_url.startswith(DESKTOP_LIBRARY_SOURCE_PREFIX))
-    )
-
-
-def _desktop_library_folders_path() -> Path:
-    return get_settings().data_dir / "library-folders.json"
-
-
-def _registered_desktop_library_folders() -> list[Path]:
-    registry_path = _desktop_library_folders_path()
-    try:
-        data = json.loads(registry_path.read_text())
-    except (OSError, json.JSONDecodeError):
-        return []
-    if not isinstance(data, list):
-        return []
-
-    folders: list[Path] = []
-    for value in data:
-        if isinstance(value, str):
-            folders.append(Path(value).expanduser().resolve())
-    return folders
-
-
-def _save_desktop_library_folders(folders: list[Path]) -> None:
-    registry_path = _desktop_library_folders_path()
-    registry_path.parent.mkdir(parents=True, exist_ok=True)
-    unique_folders = sorted({folder.expanduser().resolve().as_posix() for folder in folders})
-    registry_path.write_text(json.dumps(unique_folders, indent=2))
+    return bool(item.source_url and item.source_url.startswith(MOUNTED_LIBRARY_SOURCE_PREFIX))
 
 
 def delete_library_item(db: Session, item: LibraryItem) -> None:

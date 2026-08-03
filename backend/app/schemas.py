@@ -87,16 +87,6 @@ class WebDavImportRequest(BaseModel):
     cover_url: str | None = None
 
 
-class LocalFileImportRequest(BaseModel):
-    source_id: int
-    path: str = Field(min_length=1)
-    title: str | None = None
-
-
-class LocalFolderImportRequest(BaseModel):
-    path: str = Field(min_length=1)
-
-
 class LibraryItemRead(BaseModel):
     id: int
     source_id: int | None
@@ -186,7 +176,3 @@ class DeviceSendRequest(OptimizeRequest):
     device_url: str
     destination_path: str = "/"
     optimize_first: bool = True
-
-
-class LocalFileSendRequest(DeviceSendRequest):
-    path: str = Field(min_length=1)

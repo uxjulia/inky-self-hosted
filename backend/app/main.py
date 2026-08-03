@@ -38,19 +38,16 @@ from .dictionary_prep import (
     is_supported_dictionary_archive,
     schedule_existing_prepared_dictionary_cleanup,
 )
-from .jobs import create_job, run_dictionary_prepare_job, run_optimize_job, run_send_job, run_send_path_job
+from .jobs import create_job, run_dictionary_prepare_job, run_optimize_job, run_send_job
 from .library import (
     copy_uploaded_file,
     delete_library_item,
     get_library_item_cover,
     get_library_item_file_path,
     import_article,
-    import_local_source_file,
     import_url,
     import_webdav_file,
     probe_device,
-    register_desktop_library_folder,
-    resolve_local_source_file,
     sync_mounted_library,
     validate_downloaded_epub,
 )
@@ -66,9 +63,6 @@ from .schemas import (
     ImportUrlRequest,
     JobRead,
     LibraryItemRead,
-    LocalFileImportRequest,
-    LocalFileSendRequest,
-    LocalFolderImportRequest,
     OptimizeRequest,
     SourceCreate,
     SourceOptimizeRequest,
@@ -546,17 +540,6 @@ async def import_from_webdav(payload: WebDavImportRequest, db: Session = Depends
         raise_download_error(exc)
 
 
-@app.post("/api/library/import-local-file", response_model=LibraryItemRead)
-def import_from_local_folder(payload: LocalFileImportRequest, db: Session = Depends(get_db)) -> LibraryItem:
-    source = db.get(Source, payload.source_id)
-    if not source or source.type != "local_folder":
-        raise HTTPException(status_code=404, detail="Local folder source not found")
-    try:
-        return import_local_source_file(db, source, payload.path, payload.title)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
 @app.post("/api/library/upload", response_model=LibraryItemRead)
 async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)) -> LibraryItem:
     suffix = Path(file.filename or "upload.epub").suffix or ".epub"
@@ -770,14 +753,6 @@ async def source_item_to_temp_epub(source: Source, item: BrowseItem, temp_dir: P
     if item.type == "article" and item.url:
         return await fetch_article_as_epub(item.url, temp_dir, item.title, item.author)
 
-    if item.type == "file" and item.path and source.type == "local_folder":
-        source_path = resolve_local_source_file(source, item.path)
-        if source_path.suffix.lower() != ".epub":
-            raise HTTPException(status_code=400, detail="only EPUB files can be optimized")
-        destination = temp_dir / safe_filename(source_path.name, "source.epub")
-        shutil.copyfile(source_path, destination)
-        return destination
-
     url = item.url
     if not url and item.path and source.type == "webdav":
         url = join_remote(source.url, item.path)
@@ -811,14 +786,6 @@ def is_epub_browse_item(item: BrowseItem) -> bool:
         or Path((item.url or "").split("?", 1)[0]).suffix.lower() == ".epub"
         or Path((item.path or "").split("?", 1)[0]).suffix.lower() == ".epub"
     )
-
-
-@app.post("/api/library/folders", response_model=list[LibraryItemRead])
-def add_library_folder(payload: LocalFolderImportRequest, db: Session = Depends(get_db)) -> list[LibraryItem]:
-    try:
-        return register_desktop_library_folder(db, Path(payload.path))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/library/{item_id}/cover")
@@ -876,25 +843,6 @@ def send_item(item_id: int, payload: DeviceSendRequest, background: BackgroundTa
         raise HTTPException(status_code=404, detail="library item not found")
     job = create_job(db, "send", item_id)
     background.add_task(run_send_job, job.id, item_id, payload)
-    return job
-
-
-@app.post("/api/sources/{source_id}/send-local-file", response_model=JobRead)
-def send_local_source_file(
-    source_id: int,
-    payload: LocalFileSendRequest,
-    background: BackgroundTasks,
-    db: Session = Depends(get_db),
-) -> Job:
-    source = db.get(Source, source_id)
-    if not source or source.type != "local_folder":
-        raise HTTPException(status_code=404, detail="Local folder source not found")
-    try:
-        file_path = resolve_local_source_file(source, payload.path)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    job = create_job(db, "send")
-    background.add_task(run_send_path_job, job.id, str(file_path), payload)
     return job
 
 

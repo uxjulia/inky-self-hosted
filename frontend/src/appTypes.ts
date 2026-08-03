@@ -1,6 +1,6 @@
 export type InkyAppMode = "self-hosted" | "public" | "hosted";
 export type AppView = "app" | "help";
-export type RemoteSourceType = "opds" | "webdav" | "feed" | "local_folder";
+export type RemoteSourceType = "opds" | "webdav" | "feed";
 export type SourceType = "local" | RemoteSourceType;
 export type Theme = "light" | "dark";
 export type DeviceTarget = "x4" | "x3" | "sticky";

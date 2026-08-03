@@ -1,43 +1,35 @@
 # Inky
 
-Inky is a self-hosted and desktop companion app for
-[CrossInk](https://github.com/uxjulia/CrossInk) e-readers. It provides one place
-to collect books and articles, prepare them for an e-ink display, and send them
-to a reader over Wi-Fi or USB.
+Inky is a self-hosted companion app for [CrossInk](https://github.com/uxjulia/CrossInk) e-readers. It collects books and articles, prepares them for an e-ink display, and sends them to a reader over Wi-Fi or USB.
 
-> Inky is under active development. Back up your library before upgrading and
-> review the changelog when moving between versions.
+> Inky is under active development. Back up your library before upgrading and review the changelog when moving between versions.
 
 ## Features
 
 - Browse OPDS catalogs, WebDAV libraries, and RSS/Atom feeds.
 - Import EPUBs and turn feed articles into EPUBs.
-- Optimize EPUB images, CSS, typography, locations, and reference-page data for
-  CrossInk devices.
+- Optimize EPUB images, CSS, typography, locations, and reference-page data for CrossInk devices.
 - Send EPUB, TXT, XTC, XTCH, BMP, and PNG files to a reader.
 - Transfer over the local network or through Web Serial in Chrome and Edge.
 - Download CrossInk fonts and dictionaries.
 - Prepare StarDict archives for installation on a reader.
-- Browse a host folder without copying its contents into Inky's managed
-  library.
+- Scan a host folder as a read-only Local Library.
 
-## Self-host With Docker
+## Self-host with Docker
 
 ### Requirements
 
 - Docker Engine with Docker Compose v2, or Docker Desktop
 - A CrossInk reader for device transfers
 
-Copy the example configuration and start the services:
+Copy the example configuration and start Inky:
 
 ```bash
 cp .env.example .env
 docker compose up --build -d
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The API is available at
-`http://localhost:8000`, and the in-app guide is at
-`http://localhost:3000/#help`.
+Open [http://localhost:8000](http://localhost:8000). Docker keeps the API inside the Compose network and routes browser requests through the web service.
 
 Stop Inky with:
 
@@ -45,69 +37,20 @@ Stop Inky with:
 docker compose down
 ```
 
-Library metadata and managed files live in the `inky-data` Docker volume, so a
-normal `docker compose down` does not delete them. Do not add `--volumes` unless
-you intend to remove that data.
+Library metadata and managed files live in the `inky-data` Docker volume, so a normal `docker compose down` does not delete them. Do not add `--volumes` unless you intend to remove that data.
 
-### Configuration
+## Self-host without Docker
 
-Edit `.env` before starting the containers. The main options are:
-
-| Variable                     | Default     | Purpose                                                  |
-| ---------------------------- | ----------- | -------------------------------------------------------- |
-| `FRONTEND_PORT`              | `3000`      | Port used by the web interface.                          |
-| `INKY_AUTH_USERNAME`         | empty       | Username for optional HTTP Basic Auth.                   |
-| `INKY_AUTH_PASSWORD`         | empty       | Password for optional HTTP Basic Auth.                   |
-| `INKY_AUTH_REALM`            | `Inky`      | Realm shown by the authentication challenge.             |
-| `INKY_LOCAL_LIBRARY_PATH`    | `./library` | Host folder mounted read-only as a local library.        |
-| `VITE_INKY_DICTIONARY_TOOLS` | `0`         | Set to `1` to include Dictionary Tools in the web build. |
-
-Set both authentication values to enable sign-in:
-
-```bash
-INKY_AUTH_USERNAME=your-user
-INKY_AUTH_PASSWORD=choose-a-long-unique-password
-```
-
-Basic Auth is suitable for a trusted private network. Put Inky behind HTTPS or
-a VPN before making it reachable from outside your LAN.
-
-To expose an existing folder of books, set an absolute host path:
-
-```bash
-INKY_LOCAL_LIBRARY_PATH=/path/to/your/books
-```
-
-The folder is mounted read-only. Inky can scan and send its supported files,
-but it cannot rename, replace, or delete the originals.
-
-## Send Files to a Reader
-
-1. On the reader, open **File Transfer**.
-2. For Wi-Fi, choose **Join Network** or **Create Hotspot**, then enter the
-   address shown by the reader in Inky's Device panel.
-3. For USB, connect the reader by cable, choose **USB**, and select the device
-   when the browser asks. Web Serial requires desktop Chrome or Edge.
-4. Add or import a file, then choose **Send**.
-
-Wi-Fi transfers use the reader's local HTTP upload endpoint. USB transfers use
-CrossInk's serial file-transfer protocol. A successful build or connection test
-does not replace testing transfers on physical hardware.
-
-## Build the Desktop App
-
-The desktop app packages the React interface in Electron and bundles the
-FastAPI backend as a local PyInstaller executable. Build on each target
-operating system and CPU architecture; the compiled Python dependencies are not
-portable between platforms.
+This runs the React frontend and FastAPI server directly on the host. It is the recommended path when you already manage Python and Node.js on the server.
 
 ### Requirements
 
 - Node.js 22 or later with npm
 - Python 3.12
 - Cairo, required for SVG rasterization
+- `unar`, required only for RAR-packaged dictionaries
 
-Install Cairo before installing the project dependencies:
+Install the native packages before installing Inky:
 
 ```bash
 # macOS
@@ -117,41 +60,63 @@ brew install cairo unar
 sudo apt-get install -y libcairo2 unar
 ```
 
-`unar` is used when preparing RAR-packaged dictionaries.
-
-Then install the JavaScript and Python dependencies:
+Create the configuration, install dependencies, build the browser app, and start the server:
 
 ```bash
+cp .env.example .env
 npm install
+npm run build
+npm run start
 ```
 
-The root `postinstall` script installs the frontend packages and creates the
-Python virtual environment at `backend/.venv`.
+Open [http://localhost:8000](http://localhost:8000). `npm run start` serves the built frontend and API from the same address. By default it stores Inky data in `backend/storage/`; set `INKY_DATA_DIR` and `INKY_DATABASE_URL` in `.env` to place persistent data elsewhere.
 
-Run the desktop app with live frontend reload:
+For a LAN server, keep `INKY_HOST=0.0.0.0` and set `INKY_PORT` to the port you want to expose. Put Inky behind HTTPS or a VPN before making it reachable from outside your trusted network.
+
+## Configuration
+
+Edit `.env` before starting either deployment. These are the main options:
+
+| Variable                   | Default                               | Used by     | Purpose                                                                                            |
+| -------------------------- | ------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------- |
+| `INKY_DATABASE_URL`        | `sqlite:///./backend/storage/inky.db` | Direct host | The SQLite file that remembers your sources, library entries, and jobs.                            |
+| `INKY_DATA_DIR`            | `./backend/storage`                   | Direct host | Where Inky saves uploaded books, optimized EPUBs, and prepared dictionaries.                       |
+| `INKY_MOUNTED_LIBRARY_DIR` | empty (or `./library` for Docker)     | Both        | Read-only folder of books to show in Local Library.                                                |
+| `INKY_HOST`                | `0.0.0.0`                             | Direct host | Network address the server listens on. Keep `0.0.0.0` to open Inky from other devices on your LAN. |
+| `INKY_PORT`                | `8000`                                | Both        | Port to open in your browser. Docker maps it to the web service automatically.                     |
+| `INKY_AUTH_USERNAME`       | empty                                 | Both        | Username for the optional sign-in prompt.                                                          |
+| `INKY_AUTH_PASSWORD`       | empty                                 | Both        | Password for the optional sign-in prompt.                                                          |
+| `INKY_AUTH_REALM`          | `Inky`                                | Both        | Name shown by the browser's sign-in prompt.                                                        |
+
+Note: `Both` in the table above means the variable is used by a Direct Host (without Docker) and by Docker installations.
+
+Set both authentication values to enable sign-in:
 
 ```bash
-npm run desktop:dev
+INKY_AUTH_USERNAME=your-user
+INKY_AUTH_PASSWORD=choose-a-long-unique-password
 ```
 
-Create an unpacked app for a local smoke test:
+Basic Auth is suitable for a trusted private network. Put Inky behind HTTPS or a VPN before making it reachable from outside your LAN.
+
+To show an existing book folder (like your Calibre library), set the following environment variable:
 
 ```bash
-npm run desktop:pack
+INKY_MOUNTED_LIBRARY_DIR=/path/to/books
 ```
 
-Create distributable packages for the current platform:
+When using Docker Compose, this is the host path that Docker mounts at `/library`; leave it blank to use `./library`. The Local Library folder is always read-only. Inky can scan and send supported files from it, but cannot rename, replace, or delete the originals.
 
-```bash
-npm run desktop:dist
-```
+## Send Files to a Reader
 
-Build output is written to `release/`. The configured targets are DMG and ZIP
-on macOS, NSIS on Windows, and AppImage and DEB on Linux. Code signing and
-notarization are not configured by this repository.
+1. On the reader, open **File Transfer**.
+2. For Wi-Fi, choose **Join Network** so the reader and Inky server are on the same network, then enter the address shown by the reader in Inky's Device panel.
+3. For USB, connect the reader by cable, choose **USB**, and select the device when the browser asks. Web Serial requires desktop Chrome or Edge.
+4. Add or import a file, then choose **Send**.
 
-Desktop data is stored in the operating system's application-data directory,
-separate from the development database under `backend/storage`.
+Wi-Fi transfers use the reader's local HTTP upload endpoint. USB transfers use CrossInk's serial file-transfer protocol. A successful build or connection test does not replace testing transfers on physical hardware.
+
+> **Hotspot mode:** Choose **Create Hotspot** only when the Inky server itself can reach the reader's hotspot, such as when Inky runs locally on the same computer. A typical server on your home network cannot reach a reader hotspot without losing its LAN connection; use **Join Network** or USB instead.
 
 ## Local Development
 
@@ -161,8 +126,7 @@ After `npm install`, start the Vite frontend and FastAPI backend together:
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173). Vite proxies `/api` to the
-backend at `http://localhost:8001`.
+Open [http://localhost:5173](http://localhost:5173). Vite proxies `/api` to the backend at `http://localhost:8001`.
 
 Useful checks:
 
@@ -175,12 +139,9 @@ git diff --check
 ## Project Structure
 
 - `frontend/src` contains the React/Vite interface and browser transfer code.
-- `backend/app` contains the FastAPI API, connectors, library, jobs, and EPUB
-  optimizer.
-- `electron` contains the desktop shell and its restricted preload bridge.
-- `scripts` contains the development and desktop packaging helpers.
-- `docker-compose.yml`, `backend/Dockerfile`, and `frontend/Dockerfile` define
-  the self-hosted deployment.
+- `backend/app` contains the FastAPI API, connectors, library, jobs, and EPUB optimizer.
+- `scripts/dev.mjs` starts the local frontend and backend development servers.
+- `docker-compose.yml`, `backend/Dockerfile`, and `frontend/Dockerfile` define the optional Docker deployment.
 
 ## License
 
