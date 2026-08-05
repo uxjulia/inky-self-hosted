@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 type DownloadPackage = {
   filename: string;
   size: number;
+  description?: string;
 };
 
 type DownloadSectionProps = {
@@ -104,6 +105,9 @@ function DownloadSection({ title, description, endpoint, responseKey, sourceUrl,
                 <div>
                   <strong>{item.filename.replace(/\.zip$/, "")}</strong>
                   <span>{formatSize(item.size)} ZIP</span>
+                  {item.description && (
+                    <p className="downloads-package-description">{item.description}</p>
+                  )}
                 </div>
                 <button className="primary icon-text" type="button" disabled={Boolean(downloading)} onClick={() => void downloadPackage(item)}>
                   <Download size={15} />
