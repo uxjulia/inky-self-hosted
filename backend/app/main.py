@@ -337,7 +337,16 @@ async def crossink_dictionary_catalog() -> JSONResponse:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return JSONResponse(
-        {"dictionaries": [{"filename": item.filename, "size": item.size} for item in dictionaries]},
+        {
+            "dictionaries": [
+                {
+                    "filename": item.filename,
+                    "size": item.size,
+                    "description": item.description,
+                }
+                for item in dictionaries
+            ]
+        },
         headers={"Cache-Control": "public, max-age=300"},
     )
 

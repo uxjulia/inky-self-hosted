@@ -1410,6 +1410,7 @@ progress {
 }
 
 .downloads-package-card {
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   padding: 9px 0;
@@ -1435,6 +1436,13 @@ progress {
 .downloads-package-card span {
   color: var(--color-muted);
   font-size: 12px;
+}
+
+.downloads-package-description {
+  margin: 4px 0 0;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .flash-tools-content {

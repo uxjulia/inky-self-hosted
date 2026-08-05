@@ -8,6 +8,27 @@ from app.crossink_dictionaries import CrossInkDictionariesError, parse_dictionar
 
 
 class CrossInkDictionaryTests(unittest.TestCase):
+    def test_parses_manifest_metadata(self):
+        dictionaries = parse_dictionaries(
+            {
+                "dictionaries": [
+                    {
+                        "filename": "Cambridge.zip",
+                        "size": 16_684_207,
+                        "description": "Learner-focused dictionary.",
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(dictionaries[0].filename, "Cambridge.zip")
+        self.assertEqual(dictionaries[0].size, 16_684_207)
+        self.assertEqual(dictionaries[0].description, "Learner-focused dictionary.")
+        self.assertEqual(
+            dictionaries[0].download_url,
+            "https://raw.githubusercontent.com/uxjulia/crossink-dictionaries/main/English/Cambridge.zip",
+        )
+
     def test_parses_trusted_zip_packages(self):
         dictionaries = parse_dictionaries(
             [

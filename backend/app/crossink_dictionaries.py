@@ -8,8 +8,8 @@ from urllib.parse import quote
 import httpx
 
 
-DICTIONARY_CONTENTS_API_URL = "https://api.github.com/repos/uxjulia/crossink-dictionaries/contents/English"
 DICTIONARY_DOWNLOAD_URL_PREFIX = "https://raw.githubusercontent.com/uxjulia/crossink-dictionaries/main/English/"
+DICTIONARY_MANIFEST_URL = "https://raw.githubusercontent.com/uxjulia/crossink-dictionaries/refs/heads/main/English/manifest.json"
 DICTIONARY_CACHE_SECONDS = 300
 
 
@@ -21,6 +21,7 @@ class CrossInkDictionariesError(RuntimeError):
 class CrossInkDictionary:
     filename: str
     size: int
+    description: str
     download_url: str
 
 
@@ -29,28 +30,50 @@ _dictionary_cache_lock = asyncio.Lock()
 
 
 def parse_dictionaries(payload: object) -> tuple[CrossInkDictionary, ...]:
-    if not isinstance(payload, list):
+    if isinstance(payload, dict):
+        items = payload.get("dictionaries")
+        manifest_payload = True
+    elif isinstance(payload, list):
+        # Keep accepting the GitHub contents response while the catalog migrates
+        # to the checked-in manifest format.
+        items = payload
+        manifest_payload = False
+    else:
+        raise CrossInkDictionariesError("GitHub returned invalid dictionary metadata.")
+    if not isinstance(items, list):
         raise CrossInkDictionariesError("GitHub returned invalid dictionary metadata.")
 
     dictionaries: list[CrossInkDictionary] = []
-    for item in payload:
+    for item in items:
         if not isinstance(item, dict):
             continue
-        filename = item.get("name")
+        filename = item.get("filename" if manifest_payload else "name")
         size = item.get("size")
+        description = item.get("description", "")
         download_url = item.get("download_url")
         if (
-            item.get("type") != "file"
+            (not manifest_payload and item.get("type") != "file")
             or not isinstance(filename, str)
             or not filename.endswith(".zip")
             or "/" in filename
             or type(size) is not int
             or size <= 0
-            or not isinstance(download_url, str)
-            or download_url != f"{DICTIONARY_DOWNLOAD_URL_PREFIX}{quote(filename)}"
+            or not isinstance(description, str)
         ):
             continue
-        dictionaries.append(CrossInkDictionary(filename=filename, size=size, download_url=download_url))
+        expected_download_url = f"{DICTIONARY_DOWNLOAD_URL_PREFIX}{quote(filename)}"
+        if manifest_payload:
+            download_url = expected_download_url
+        elif not isinstance(download_url, str) or download_url != expected_download_url:
+            continue
+        dictionaries.append(
+            CrossInkDictionary(
+                filename=filename,
+                size=size,
+                description=description.strip(),
+                download_url=download_url,
+            )
+        )
 
     if not dictionaries:
         raise CrossInkDictionariesError("No downloadable CrossInk dictionary packages are available.")
@@ -72,12 +95,8 @@ async def get_crossink_dictionaries() -> tuple[CrossInkDictionary, ...]:
         try:
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
                 response = await client.get(
-                    DICTIONARY_CONTENTS_API_URL,
-                    headers={
-                        "Accept": "application/vnd.github+json",
-                        "User-Agent": "Inky",
-                        "X-GitHub-Api-Version": "2022-11-28",
-                    },
+                    DICTIONARY_MANIFEST_URL,
+                    headers={"Accept": "application/json", "User-Agent": "Inky"},
                 )
                 response.raise_for_status()
         except httpx.HTTPError as exc:
