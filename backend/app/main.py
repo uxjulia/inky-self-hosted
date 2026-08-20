@@ -27,8 +27,10 @@ from .config import ensure_data_dirs, get_settings
 from .connectors import browse_source, search_source
 from .crossink_firmware import (
     CrossInkFirmwareError,
+    LOCAL_DEVELOPMENT_TAG,
     SUPPORTED_VARIANTS,
     get_crossink_releases,
+    get_local_development_release,
 )
 from .crossink_fonts import CrossInkFontsError, get_crossink_fonts
 from .crossink_dictionaries import CrossInkDictionariesError, get_crossink_dictionaries
@@ -131,13 +133,18 @@ def health() -> dict:
 
 @app.get("/api/firmware/crossink/releases")
 async def crossink_firmware_releases() -> JSONResponse:
+    local_development_release = get_local_development_release()
     try:
         stable_releases, prerelease_releases = await get_crossink_releases()
     except CrossInkFirmwareError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        if not local_development_release:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        stable_releases, prerelease_releases = (), ()
 
     release_entries = [(release, "stable") for release in stable_releases]
     release_entries.extend((release, "prerelease") for release in prerelease_releases)
+    if local_development_release:
+        release_entries.append((local_development_release[0], "prerelease"))
 
     return JSONResponse(
         {
@@ -168,6 +175,18 @@ async def crossink_firmware_releases() -> JSONResponse:
 async def download_crossink_firmware(tag: str, variant: str) -> StreamingResponse:
     if variant not in SUPPORTED_VARIANTS:
         raise HTTPException(status_code=404, detail="Unknown CrossInk firmware variant.")
+
+    local_development_release = get_local_development_release()
+    if tag == LOCAL_DEVELOPMENT_TAG:
+        if not local_development_release or variant != "x4-pro":
+            raise HTTPException(status_code=404, detail="Local X4 Pro firmware is not available.")
+        release, firmware_path = local_development_release
+        return FileResponse(
+            firmware_path,
+            media_type="application/octet-stream",
+            filename=release.assets[variant].filename,
+            headers={"Cache-Control": "no-store"},
+        )
 
     try:
         stable_releases, prerelease_releases = await get_crossink_releases()

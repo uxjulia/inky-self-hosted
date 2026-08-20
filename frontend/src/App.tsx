@@ -106,6 +106,7 @@ const isPublicReadOnly = isPublicApp || import.meta.env.VITE_INKY_PUBLIC_READ_ON
 const initialStandaloneMode = isHostedApp;
 const isSelfHostedBrowser = !isHostedApp;
 const canUseWifiTransfer = !isHostedApp && !isPublicReadOnly;
+const canUseFlashTools = !isHostedApp;
 const browsePageSize = 25;
 const defaultDeviceHost = isSelfHostedBrowser ? "" : "crosspoint.local";
 const deviceHostPlaceholder = isSelfHostedBrowser ? "192.168." : "crosspoint.local";
@@ -360,7 +361,7 @@ export default function App() {
   }, [optimizerModalOpen]);
 
   useEffect(() => {
-    if (!isPublicApp && activeAppTab === "flash") {
+    if (!canUseFlashTools && activeAppTab === "flash") {
       setActiveAppTab("epub");
     }
   }, [activeAppTab]);
@@ -1565,6 +1566,9 @@ export default function App() {
                 method: "POST",
                 body: JSON.stringify({ device_url: resolvedDeviceUrl })
               });
+      if (transferMode === "usb" && status.device_id === "x4-pro") {
+        setDevice("x4");
+      }
       setDeviceStatus(
         `Successfully connected to: ${status.device || "Device"} at ${transferMode === "usb" ? "USB" : status.ip || resolvedDeviceUrl}`
       );
@@ -1777,7 +1781,7 @@ export default function App() {
           >
             Downloads
           </button>
-          {isPublicApp && (
+          {canUseFlashTools && (
             <button
               id="flash-tools-tab"
               type="button"
@@ -1811,7 +1815,7 @@ export default function App() {
           onPrepareDictionaryZip={prepareDictionaryZip}
           onDownloadPreparedDictionaryFile={downloadPreparedDictionaryFile}
         />
-      ) : activeAppTab === "flash" && isPublicApp ? (
+      ) : activeAppTab === "flash" && canUseFlashTools ? (
         <FlashToolsPanel />
       ) : activeAppTab === "downloads" ? (
         <FontDownloadsPanel apiFetch={apiFetch} />
@@ -2117,7 +2121,7 @@ function getInitialView(): AppView {
 function getInitialAppTab(): AppTab {
   if (window.location.hash === "#dictionary-tools") return "dictionary";
   if (window.location.hash === "#downloads" || window.location.hash === "#font-downloads") return "downloads";
-  if (isPublicApp && window.location.hash === "#flash-tools") return "flash";
+  if (canUseFlashTools && window.location.hash === "#flash-tools") return "flash";
   return "epub";
 }
 

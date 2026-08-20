@@ -18,6 +18,7 @@ services:
       context: ./frontend
       args:
         VITE_INKY_APP_MODE: ${VITE_INKY_APP_MODE:-self-hosted}
+        VITE_INKY_DICTIONARY_TOOLS: ${VITE_INKY_DICTIONARY_TOOLS:-1}
     restart: unless-stopped
     depends_on:
       - api

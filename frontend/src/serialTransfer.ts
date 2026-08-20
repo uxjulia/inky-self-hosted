@@ -7,6 +7,15 @@ export type SerialTransferResult = {
   response: string;
 };
 
+export type SerialStatus = {
+  device?: string;
+  firmware?: string;
+  protocol?: string;
+  free?: string;
+  largest?: string;
+  [key: string]: string | undefined;
+};
+
 type SerialPortInfo = {
   usbVendorId?: number;
   usbProductId?: number;
@@ -57,13 +66,30 @@ export function isSerialTransferCanceled(error: unknown) {
   return error instanceof Error && error.message === serialTransferCanceledMessage;
 }
 
+export function parseSerialStatus(statusLine: string): SerialStatus {
+  return Object.fromEntries(
+    statusLine
+      .split(",")
+      .map((part) => part.split("=", 2).map((value) => value.trim()))
+      .filter(([key, value]) => key && value)
+  );
+}
+
 export async function probeSerialDevice(): Promise<Record<string, unknown>> {
   return withSerialOperation(async () => {
     const connection = await openSerialConnection();
     try {
       await connection.write(new Uint8Array([...commandMagic, 0x53]));
       const status = await readUntil(connection, (line) => line.startsWith("STATUS:"), 3000, "USB serial status");
-      return { device: "USB Serial", ip: status.replace(/^STATUS:/, "") || "USB" };
+      const rawStatus = status.replace(/^STATUS:/, "").trim();
+      const fields = parseSerialStatus(rawStatus);
+      const deviceId = fields.device;
+      return {
+        device: deviceId === "x4-pro" ? "Xteink X4 Pro" : deviceId || "USB Serial",
+        device_id: deviceId,
+        ip: fields.ip || rawStatus || "USB",
+        serial_status: fields
+      };
     } catch (error) {
       await closeSerialConnection(connection);
       if (error instanceof Error && error.message.includes("Timed out")) {
@@ -86,7 +112,7 @@ export async function sendBlobToSerialDevice(
 ): Promise<SerialTransferResult> {
   return withSerialOperation(async () => {
     throwIfSerialTransferCanceled(signal);
-    const connection = await openSerialConnection();
+    let connection = await openSerialConnection();
     const finalName = deviceFilename(filename);
     const devicePath = joinSerialPath(destinationPath, finalName);
     const closeOnAbort = () => {
@@ -94,9 +120,9 @@ export async function sendBlobToSerialDevice(
     };
     signal?.addEventListener("abort", closeOnAbort, { once: true });
 
-    try {
+    const transfer = async (isRetry: boolean) => {
       throwIfSerialTransferCanceled(signal);
-      progress?.(2, "Connected over USB");
+      progress?.(2, isRetry ? "Retrying USB upload" : "Connected over USB");
       await ensureSerialFolder(connection, destinationPath, progress, signal);
       await writeSerialFile(connection, devicePath, blob, progress, diagnostic, signal);
       throwIfSerialTransferCanceled(signal);
@@ -106,8 +132,25 @@ export async function sendBlobToSerialDevice(
         filename: finalName,
         response: "OK"
       };
+    };
+
+    try {
+      try {
+        return await transfer(false);
+      } catch (error) {
+        await closeSerialConnection(connection);
+        if (!isSerialCrcError(error)) throw error;
+
+        throwIfSerialTransferCanceled(signal);
+        connection = await openSerialConnection();
+        try {
+          return await transfer(true);
+        } catch (retryError) {
+          await closeSerialConnection(connection);
+          throw retryError;
+        }
+      }
     } catch (error) {
-      await closeSerialConnection(connection);
       if (signal?.aborted || isSerialTransferCanceled(error)) {
         throw createSerialTransferCanceledError();
       }
@@ -116,6 +159,10 @@ export async function sendBlobToSerialDevice(
       signal?.removeEventListener("abort", closeOnAbort);
     }
   });
+}
+
+function isSerialCrcError(error: unknown) {
+  return error instanceof Error && /^ERR:crc(?::|$)/.test(error.message);
 }
 
 class SerialConnection {

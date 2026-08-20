@@ -114,6 +114,7 @@ class OptimizerServiceTests(unittest.TestCase):
         expected_targets = {
             "x4": (800, 480),
             "x3": (792, 528),
+            "x4-pro": (800, 480),
             "sticky": (800, 480),
         }
 

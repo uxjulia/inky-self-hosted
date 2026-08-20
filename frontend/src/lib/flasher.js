@@ -109,6 +109,23 @@ function md5(input) {
 
 const ESP_IMAGE_MAGIC = 0xE9;
 const IMG_HEADER_SIZE = 24;
+
+// esp_chip_id_t from the ESP image extended header (bytes 12-13, LE).
+// Legacy images use 0xFFFF ("any"), so unknown IDs are left unclassified.
+const ESP_IMAGE_CHIP_IDS = {
+  ESP32: 0x0000,
+  'ESP32-S2': 0x0002,
+  'ESP32-C3': 0x0005,
+  'ESP32-S3': 0x0009,
+};
+
+export function imageChipName(data) {
+  if (data.length < 14) return null;
+  const id = data[12] | (data[13] << 8);
+  const entry = Object.entries(ESP_IMAGE_CHIP_IDS).find(([, chipId]) => chipId === id);
+  return entry ? entry[0] : null;
+}
+
 const IMG_SEG_HEADER_SIZE = 8;
 const IMG_SHA_TRAILER = 32;
 const IMG_CHECKSUM_SEED = 0xEF;
@@ -505,6 +522,15 @@ export class BrowserFirmwareFlasher {
     if (!this.layout) await this.readLayout();
   }
 
+  assertImageChip(data, label) {
+    const imageChip = imageChipName(data);
+    if (!this.expectedChip || !imageChip || imageChip === this.expectedChip) return;
+    throw new Error(
+      `${label} targets ${imageChip}, but the connected device uses ${this.expectedChip}. ` +
+      'Flashing was aborted before anything was written.'
+    );
+  }
+
   // Diagnostic-only: returns the raw PT plus which known layout it matches.
   // Does not set this.layout; flashFirmware calls readLayout() for that.
   async readPartitionTable() {
@@ -604,6 +630,7 @@ export class BrowserFirmwareFlasher {
     // Image-shape gate before connect. A bad .bin (HTML error page, partial
     // download, wrong-shape file) fails here without touching flash.
     await validateFirmwareImage(firmwareData);
+    this.assertImageChip(firmwareData, 'Firmware');
 
     step(0, 'running');
     await this.connect();
@@ -729,6 +756,7 @@ export class BrowserFirmwareFlasher {
     if (!otadata || !app0) throw new Error('Reference layout is missing otadata or app0.');
     if (firmwareData) {
       await validateFirmwareImage(firmwareData);
+      this.assertImageChip(firmwareData, 'Firmware');
       if (firmwareData.length > app0.size) {
         throw new Error(`Firmware too large: ${firmwareData.length} bytes won't fit in app0 (${app0.size} bytes).`);
       }
@@ -737,6 +765,7 @@ export class BrowserFirmwareFlasher {
       if (bootloaderData[0] !== ESP_IMAGE_MAGIC) {
         throw new Error('Invalid bootloader: ESP image magic byte (0xE9) missing. Are you sure this is a bootloader .bin?');
       }
+      this.assertImageChip(bootloaderData, 'Bootloader');
       if (bootloaderData.length > 0x8000) {
         throw new Error(`Bootloader too large: ${bootloaderData.length} bytes won't fit below the partition table at 0x8000.`);
       }

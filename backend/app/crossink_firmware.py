@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
@@ -14,10 +16,13 @@ CROSSINK_RELEASE_PAGE_PREFIX = "https://github.com/uxjulia/CrossInk/releases/"
 RELEASE_CACHE_SECONDS = 300
 STABLE_RELEASE_LIMIT = 3
 PRERELEASE_LIMIT = 3
-SUPPORTED_VARIANTS = ("tiny", "xlarge", "x3-x4", "sticky")
-_FIRMWARE_NAME_PATTERN = re.compile(r"^firmware-(tiny|xlarge|x3-x4|sticky)-[^/]+\.bin$")
+SUPPORTED_VARIANTS = ("tiny", "xlarge", "x3-x4", "x4-pro", "sticky")
+LOCAL_DEVELOPMENT_TAG = "local-x4-pro"
+LOCAL_DEVELOPMENT_FIRMWARE_NAME = "firmware-x4-pro.bin"
+DEV_FIRMWARE_DIR_ENV = "INKY_DEV_FIRMWARE_DIR"
+_FIRMWARE_NAME_PATTERN = re.compile(r"^firmware-(tiny|xlarge|x3-x4|x4-pro|sticky)-[^/]+\.bin$")
 _PRERELEASE_FIRMWARE_NAME_PATTERN = re.compile(
-    r"^firmware-(tiny|xlarge|x3-x4|sticky)-v\d+(?:\.\d+){2,3}-[0-9a-f]{7,40}-RC\.bin$"
+    r"^firmware-(tiny|xlarge|x3-x4|x4-pro|sticky)-v\d+(?:\.\d+){2,3}-[0-9a-f]{7,40}-RC\.bin$"
 )
 
 
@@ -176,6 +181,34 @@ async def get_crossink_releases() -> tuple[
 def clear_release_cache() -> None:
     global _release_cache
     _release_cache = None
+
+
+def get_local_development_release() -> tuple[CrossInkStableRelease, Path] | None:
+    """Return the opt-in local X4 Pro image exposed by the development server."""
+    firmware_dir = os.environ.get(DEV_FIRMWARE_DIR_ENV)
+    if not firmware_dir:
+        return None
+
+    firmware_path = Path(firmware_dir).expanduser() / LOCAL_DEVELOPMENT_FIRMWARE_NAME
+    if not firmware_path.is_file():
+        return None
+
+    return (
+        CrossInkStableRelease(
+            tag=LOCAL_DEVELOPMENT_TAG,
+            published_at="",
+            html_url="",
+            assets={
+                "x4-pro": CrossInkFirmwareAsset(
+                    variant="x4-pro",
+                    filename=LOCAL_DEVELOPMENT_FIRMWARE_NAME,
+                    size=firmware_path.stat().st_size,
+                    download_url="",
+                )
+            },
+        ),
+        firmware_path,
+    )
 
 
 def _is_trusted_release_asset_url(url: str, tag: str) -> bool:
