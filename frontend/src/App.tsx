@@ -1563,9 +1563,9 @@ export default function App() {
           : usesBrowserLibrary
             ? await probeStandaloneDevice(resolvedDeviceUrl)
             : await api<Record<string, unknown>>("/api/devices/probe", {
-                method: "POST",
-                body: JSON.stringify({ device_url: resolvedDeviceUrl })
-              });
+              method: "POST",
+              body: JSON.stringify({ device_url: resolvedDeviceUrl })
+            });
       if (transferMode === "usb" && status.device_id === "x4-pro") {
         setDevice("x4");
       }
@@ -1709,7 +1709,7 @@ export default function App() {
           <div>
             <div className="brand-title">
               <h1>Inky</h1>
-              <span className="beta-badge">Beta</span>
+              <span className="badge">Self-Hosted</span>
             </div>
             <span>
               A Cross<span className="serif">I</span>nk Companion App
