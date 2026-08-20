@@ -12,3 +12,5 @@ backend/.venv/
 backend/desktop-build/
 backend/desktop-dist/
 library/
+docker-compose.override.yml
+docker-compose.local.yml
