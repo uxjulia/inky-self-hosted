@@ -26,7 +26,6 @@ type BrowsePanelProps = {
   usesBrowserLibrary: boolean;
   isHostedApp: boolean;
   refreshing: boolean;
-  rescanningLibrary: boolean;
   localFileInputRef: RefObject<HTMLInputElement | null>;
   searchQuery: string;
   trimmedSearchQuery: string;
@@ -55,7 +54,6 @@ type BrowsePanelProps = {
   mediaUrl: (url: string) => string;
   onBrowseBack: () => void;
   onRefresh: () => void;
-  onRescanLibrary: () => void;
   onUploadLocalFiles: (files: FileList | null) => void | Promise<void>;
   onSearchSelectedSource: (event: FormEvent) => void | Promise<void>;
   onUpdateSearchQuery: (value: string) => void;
@@ -95,7 +93,6 @@ export function BrowsePanel({
   usesBrowserLibrary,
   isHostedApp,
   refreshing,
-  rescanningLibrary,
   localFileInputRef,
   searchQuery,
   trimmedSearchQuery,
@@ -124,7 +121,6 @@ export function BrowsePanel({
   mediaUrl,
   onBrowseBack,
   onRefresh,
-  onRescanLibrary,
   onUploadLocalFiles,
   onSearchSelectedSource,
   onUpdateSearchQuery,
@@ -170,7 +166,18 @@ export function BrowsePanel({
           <h2>{isLocalSource ? localSource.name : activeBrowseResult?.title || selectedSource?.name || "Browse"}</h2>
         </div>
         <div className="toolbar">
-          <button type="button" onClick={onRefresh} disabled={refreshing} title="Refresh sources and library">
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshing}
+            title={
+              isLocalSource
+                ? usesBrowserLibrary
+                  ? "Refresh local library"
+                  : "Refresh and sync mounted library"
+                : "Refresh sources and library"
+            }
+          >
             <RefreshCw className={refreshing ? "spin" : ""} size={15} />
             {refreshing ? "Refreshing" : "Refresh"}
           </button>
@@ -181,12 +188,6 @@ export function BrowsePanel({
           )}
           {isLocalSource && (
             <>
-              {!usesBrowserLibrary && (
-                <button type="button" onClick={onRescanLibrary} disabled={rescanningLibrary} title="Rescan mounted library">
-                  <RefreshCw className={rescanningLibrary ? "spin" : ""} size={15} />
-                  {rescanningLibrary ? "Rescanning" : "Rescan"}
-                </button>
-              )}
               <label className="file-button border-0" title="Upload file" aria-label="Upload file">
                 <Plus size={16} />
                 <input

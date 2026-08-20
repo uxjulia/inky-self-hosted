@@ -163,7 +163,6 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [pendingBrowseAction, setPendingBrowseAction] = useState<PendingBrowseAction | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [rescanningLibrary, setRescanningLibrary] = useState(false);
   const [browseLoading, setBrowseLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -475,6 +474,15 @@ export default function App() {
           return;
         }
 
+        if (isLocalSource) {
+          await Promise.all([
+            loadSources(),
+            refreshLocalLibrary(),
+            activeJobId ? loadVisibleJob(activeJobId) : Promise.resolve()
+          ]);
+          return;
+        }
+
         await Promise.all([
           loadSources(),
           loadLibrary(),
@@ -527,22 +535,15 @@ export default function App() {
     if (loadSeq === libraryLoadSeq.current) setLibrary(data);
   }
 
-  async function rescanLibrary() {
-    if (usesBrowserLibrary) return;
-    const loadSeq = ++libraryLoadSeq.current;
-    setRescanningLibrary(true);
-    try {
-      const refreshed = await runAction(
-        async () => {
-          const data = await api<LibraryItem[]>("/api/library/rescan", { method: "POST" });
-          if (loadSeq === libraryLoadSeq.current) setLibrary(data);
-        },
-        { toastOnError: true }
-      );
-      if (refreshed !== undefined) showToast("Library rescan complete");
-    } finally {
-      setRescanningLibrary(false);
+  async function refreshLocalLibrary() {
+    if (usesBrowserLibrary) {
+      await loadLibrary();
+      return;
     }
+
+    const loadSeq = ++libraryLoadSeq.current;
+    const data = await api<LibraryItem[]>("/api/library/rescan", { method: "POST" });
+    if (loadSeq === libraryLoadSeq.current) setLibrary(data);
   }
 
   async function loadVisibleJob(jobId: string) {
@@ -1882,7 +1883,6 @@ export default function App() {
             usesBrowserLibrary={usesBrowserLibrary}
             isHostedApp={isHostedApp}
             refreshing={refreshing}
-            rescanningLibrary={rescanningLibrary}
             localFileInputRef={localFileInputRef}
             searchQuery={searchQuery}
             trimmedSearchQuery={trimmedSearchQuery}
@@ -1911,7 +1911,6 @@ export default function App() {
             mediaUrl={mediaUrl}
             onBrowseBack={browseBack}
             onRefresh={() => refreshAll()}
-            onRescanLibrary={rescanLibrary}
             onUploadLocalFiles={uploadLocalFiles}
             onSearchSelectedSource={searchSelectedSource}
             onUpdateSearchQuery={updateSearchQuery}
