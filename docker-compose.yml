@@ -1,5 +1,5 @@
 services:
-  api:
+  inky-api:
     build:
       context: ./backend
     restart: unless-stopped
@@ -13,7 +13,7 @@ services:
     volumes:
       - inky-data:/data
       - ${INKY_MOUNTED_LIBRARY_DIR:-./library}:/library:ro
-  web:
+  inky-web:
     build:
       context: ./frontend
       args:
@@ -21,7 +21,7 @@ services:
         VITE_INKY_DICTIONARY_TOOLS: ${VITE_INKY_DICTIONARY_TOOLS:-1}
     restart: unless-stopped
     depends_on:
-      - api
+      - inky-api
     ports:
       - "${INKY_PORT:-8000}:80"
 
