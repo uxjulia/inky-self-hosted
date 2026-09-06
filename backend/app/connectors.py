@@ -19,7 +19,7 @@ SENDABLE_FILE_EXTENSIONS = {".epub", ".txt", ".xtc", ".xtch", ".bmp", ".png"}
 
 
 def _auth(source: Source) -> tuple[str, str] | None:
-    if source.username and source.password:
+    if source.username is not None and source.password is not None:
         return source.username, source.password
     return None
 

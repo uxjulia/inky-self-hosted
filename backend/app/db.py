@@ -7,11 +7,22 @@ from .config import get_settings
 from .models import Base, Source
 
 
-DEFAULT_SOURCES = [
-    {"type": "opds", "name": "Mayberry", "url": "https://mayberry.pub"},
-    {"type": "feed", "name": "Standard Ebooks", "url": "https://standardebooks.org/feeds/atom/new-releases"},
-    {"type": "opds", "name": "Project Gutenberg", "url": "https://m.gutenberg.org/ebooks.opds/"},
-]
+def _default_sources() -> list[dict[str, str | None]]:
+    settings = get_settings()
+    mayberry_username = settings.mayberry_username or None
+    mayberry_password = settings.mayberry_password if mayberry_username else None
+
+    return [
+        {
+            "type": "opds",
+            "name": "Mayberry",
+            "url": "https://mayberry.pub",
+            "username": mayberry_username,
+            "password": mayberry_password,
+        },
+        {"type": "feed", "name": "Standard Ebooks", "url": "https://standardebooks.org/feeds/atom/new-releases"},
+        {"type": "opds", "name": "Project Gutenberg", "url": "https://m.gutenberg.org/ebooks.opds/"},
+    ]
 
 
 def _connect_args() -> dict:
@@ -62,12 +73,21 @@ def _ensure_library_columns() -> None:
 
 def _seed_default_sources() -> None:
     with Session(engine) as db:
-        existing_urls = {url for (url,) in db.query(Source.url).all()}
+        existing_sources = {source.url: source for source in db.query(Source).all()}
         current_order = db.query(Source.display_order).order_by(Source.display_order.desc()).first()
         next_order = 0 if current_order is None else current_order[0] + 1
 
-        for source_data in DEFAULT_SOURCES:
-            if source_data["url"] in existing_urls:
+        for source_data in _default_sources():
+            existing_source = existing_sources.get(source_data["url"])
+            if existing_source:
+                if (
+                    source_data["name"] == "Mayberry"
+                    and existing_source.username is None
+                    and existing_source.password is None
+                    and source_data["username"] is not None
+                ):
+                    existing_source.username = source_data["username"]
+                    existing_source.password = source_data["password"]
                 continue
             db.add(Source(**source_data, display_order=next_order))
             next_order += 1

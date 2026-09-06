@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     data_dir: Path = Path("/data")
     mounted_library_dir: Path | None = None
     http_timeout_seconds: float = 30.0
+    mayberry_username: str = ""
+    mayberry_password: str = ""
     auth_username: str = ""
     auth_password: str = ""
     auth_realm: str = "Inky"
