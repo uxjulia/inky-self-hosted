@@ -543,6 +543,70 @@ function isIgnorableSplitNode(node: Node) {
   return node.nodeType === Node.TEXT_NODE && !(node.textContent || "").trim();
 }
 
+const SECTION_SPLIT_NATURAL_BOUNDARY_LOOKAHEAD_BYTES = 8192;
+
+function hasNaturalSectionPageBoundary(node: Node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) return false;
+  const elements = [node as Element, ...Array.from((node as Element).querySelectorAll("*"))];
+  return elements.some((element) => {
+    const name = element.localName.toLowerCase();
+    if (name === "hr") return true;
+    const epubType = element.getAttributeNS("http://www.idpf.org/2007/ops", "type") || element.getAttribute("epub:type") || "";
+    const role = element.getAttribute("role") || "";
+    const style = element.getAttribute("style") || "";
+    return (
+      /(^|\s)pagebreak(\s|$)/i.test(epubType) ||
+      /(^|\s)doc-pagebreak(\s|$)/i.test(role) ||
+      /(?:^|;)\s*(?:-epub-)?(?:page-break|break)-(?:before|after)\s*:\s*(?:always|page|left|right|recto|verso)\b/i.test(style)
+    );
+  });
+}
+
+function isNaturalSectionSplitBoundary(previous: Node, next: Node) {
+  return hasNaturalSectionPageBoundary(previous) || hasNaturalSectionPageBoundary(next) || isHeadingNode(next);
+}
+
+function findNaturalSectionSplitIndex(
+  splitChildren: Node[],
+  candidateIndex: number,
+  current: Node[],
+  currentBytes: number,
+  byteThreshold: number,
+  hardByteLimit: number,
+  serializer: XMLSerializer,
+) {
+  const byteLimit = Math.min(
+    hardByteLimit,
+    Math.max(currentBytes, byteThreshold) + SECTION_SPLIT_NATURAL_BOUNDARY_LOOKAHEAD_BYTES,
+  );
+  let projectedBytes = currentBytes;
+  for (let index = candidateIndex; index < splitChildren.length; index++) {
+    if (index > candidateIndex) {
+      projectedBytes += new TextEncoder().encode(serializer.serializeToString(splitChildren[index - 1])).length;
+    }
+    if (projectedBytes > byteLimit) break;
+    const priorNodes = current.concat(splitChildren.slice(candidateIndex, index));
+    const previous = [...priorNodes].reverse().find((node) => !isIgnorableSplitNode(node));
+    const next = splitChildren[index];
+    const canBreakBefore = Boolean(previous) && isSafeSplitElement(next) && !keepsSplitCluster(next) && !isHeadingNode(previous!);
+    if (canBreakBefore && isNaturalSectionSplitBoundary(previous!, next)) return index;
+  }
+  return candidateIndex;
+}
+
+function findNaturalSectionSplitOffsetInCurrent(current: Node[], serializer: XMLSerializer) {
+  let trailingBytes = 0;
+  for (let offset = current.length - 1; offset > 0; offset--) {
+    trailingBytes += new TextEncoder().encode(serializer.serializeToString(current[offset])).length;
+    if (trailingBytes > SECTION_SPLIT_NATURAL_BOUNDARY_LOOKAHEAD_BYTES) break;
+    const previous = [...current.slice(0, offset)].reverse().find((node) => !isIgnorableSplitNode(node));
+    const next = current[offset];
+    const canBreakBefore = Boolean(previous) && isSafeSplitElement(next) && !keepsSplitCluster(next) && !isHeadingNode(previous!);
+    if (canBreakBefore && isNaturalSectionSplitBoundary(previous!, next)) return offset;
+  }
+  return -1;
+}
+
 function chunkHasReaderContent(nodes: Node[]): boolean {
   const visit = (node: Node, hidden: boolean): boolean => {
     if (node.nodeType === Node.TEXT_NODE) return !hidden && Boolean(node.textContent?.trim());
@@ -629,14 +693,46 @@ function splitLongXhtmlSections(
       currentBytes = fixedBytes;
     };
 
-    for (const child of splitChildren) {
+    for (let childIndex = 0; childIndex < splitChildren.length; childIndex++) {
+      const child = splitChildren[childIndex];
       const childText = child.textContent || "";
       const childWords = countWords(childText);
       const childBytes = new TextEncoder().encode(serializer.serializeToString(child)).length;
       const lastContentNode = [...current].reverse().find((node) => !isIgnorableSplitNode(node));
       const wouldExceed = Boolean(lastContentNode) && (currentWords + childWords > wordThreshold || currentBytes + childBytes > byteThreshold);
       const canBreakBefore = Boolean(lastContentNode) && isSafeSplitElement(child) && !keepsSplitCluster(child) && !isHeadingNode(lastContentNode!);
-      if (wouldExceed && canBreakBefore) flush();
+      const naturalSplitOffset =
+        wouldExceed && currentBytes <= hardByteLimit ? findNaturalSectionSplitOffsetInCurrent(current, serializer) : -1;
+      if (naturalSplitOffset > 0) {
+        const completed = current.splice(0, naturalSplitOffset);
+        chunks.push(completed);
+        currentWords = current.reduce((sum, node) => sum + countWords(node.textContent || ""), 0);
+        currentBytes =
+          fixedBytes +
+          current.reduce((sum, node) => sum + new TextEncoder().encode(serializer.serializeToString(node)).length, 0);
+      } else if (wouldExceed && canBreakBefore) {
+        const naturalSplitIndex = findNaturalSectionSplitIndex(
+          splitChildren,
+          childIndex,
+          current,
+          currentBytes,
+          byteThreshold,
+          hardByteLimit,
+          serializer,
+        );
+        if (naturalSplitIndex > childIndex) {
+          for (let index = childIndex; index < naturalSplitIndex; index++) {
+            const node = splitChildren[index];
+            current.push(node);
+            currentWords += countWords(node.textContent || "");
+            currentBytes += new TextEncoder().encode(serializer.serializeToString(node)).length;
+          }
+          flush();
+          childIndex = naturalSplitIndex - 1;
+          continue;
+        }
+        flush();
+      }
 
       current.push(child);
       currentWords += childWords;
