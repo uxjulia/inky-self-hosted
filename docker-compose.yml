@@ -10,6 +10,8 @@ services:
       INKY_AUTH_USERNAME: ${INKY_AUTH_USERNAME:-}
       INKY_AUTH_PASSWORD: ${INKY_AUTH_PASSWORD:-}
       INKY_AUTH_REALM: ${INKY_AUTH_REALM:-Inky}
+      INKY_MAYBERRY_USERNAME: ${INKY_MAYBERRY_USERNAME:-}
+      INKY_MAYBERRY_PASSWORD: ${INKY_MAYBERRY_PASSWORD:-}
     volumes:
       - inky-data:/data
       - ${INKY_MOUNTED_LIBRARY_DIR:-./library}:/library:ro
