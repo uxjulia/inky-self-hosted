@@ -530,7 +530,10 @@ async function readAck(
         deadline = Date.now() + timeoutMs;
         continue;
       }
-      if (!line || isSerialLog(line)) continue;
+      // Native X4 Pro USB can truncate the optional BUSY:write diagnostic when
+      // its non-blocking CDC log transport is full, leaving only `:<offset>`.
+      // It is not a protocol response; keep waiting for the ACK that follows.
+      if (!line || isSerialLog(line) || isTruncatedBusyStatus(line)) continue;
       if (line.startsWith("ERR:")) throw new Error(`${line} while waiting for ${label}.`);
       throw new Error(`Device returned unexpected serial response while waiting for ${label}: ${line}`);
     }
@@ -586,6 +589,10 @@ function isCrossInkSerialPort(port: SerialPort) {
 
 function isSerialLog(line: string) {
   return /^[IWED] \(\d+\)/.test(line) || /^\[\d+\] \[[^\]]+\]/.test(line);
+}
+
+function isTruncatedBusyStatus(line: string) {
+  return /^:\d+(?:\/\d+)?$/.test(line);
 }
 
 async function withSerialOperation<T>(operation: () => Promise<T>): Promise<T> {
