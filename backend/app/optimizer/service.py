@@ -35,6 +35,7 @@ def optimize_epub(input_path: Path, output_dir: Path, request: OptimizeRequest, 
     try:
         options = ProcessingOptions(
             grayscale=request.grayscale,
+            preserve_cover_color=request.preserve_cover_color,
             contrast_boost=request.contrast_boost,
             contrast_factor=request.contrast_factor,
             quality=request.quality,

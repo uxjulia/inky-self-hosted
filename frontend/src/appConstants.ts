@@ -20,6 +20,7 @@ export const defaultOptimizerSettings: OptimizerSettings = {
   filename_render_second: "Author",
   quality: 70,
   grayscale: true,
+  preserve_cover_color: false,
   contrast_boost: true,
   contrast_factor: 1.2,
   eink_quantize: true,

@@ -16,6 +16,7 @@ export type OptimizerSettings = {
   filename_render_second: string;
   quality: number;
   grayscale: boolean;
+  preserve_cover_color: boolean;
   contrast_boost: boolean;
   contrast_factor: number;
   eink_quantize: boolean;

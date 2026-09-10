@@ -110,6 +110,33 @@ class OptimizerServiceTests(unittest.TestCase):
         self.assertFalse(captured_options.grayscale)
         self.assertFalse(captured_options.eink_quantize)
 
+    def test_cover_color_option_is_forwarded_to_processor(self):
+        captured_options = None
+
+        def fake_process_epub(_input_path, output_path, options, _progress):
+            nonlocal captured_options
+            captured_options = options
+            Path(output_path).write_bytes(Path(_input_path).read_bytes())
+            return SimpleNamespace(
+                success=True,
+                error=None,
+                output_filename="optimized.epub",
+                original_size=100,
+                optimized_size=50,
+                summary=lambda: "optimized",
+            )
+
+        with tempfile.TemporaryDirectory(prefix="inky_optimizer_service_") as tmp:
+            tmpdir = Path(tmp)
+            epub_path = tmpdir / "source.epub"
+            write_minimal_epub(epub_path, "The Book", "O'Brian")
+
+            with patch("app.optimizer.service.process_epub", fake_process_epub):
+                optimize_epub(epub_path, tmpdir / "out", OptimizeRequest(preserve_cover_color=False))
+
+        self.assertIsNotNone(captured_options)
+        self.assertFalse(captured_options.preserve_cover_color)
+
     def test_device_targets_are_forwarded_to_processor(self):
         expected_targets = {
             "x4": (800, 480),

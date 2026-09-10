@@ -178,6 +178,14 @@ export function OptimizerSettingsModal({
           <label className="toggle-field">
             <input
               type="checkbox"
+              checked={optimizerSettings.preserve_cover_color}
+              onChange={(event) => onUpdateOptimizerSetting("preserve_cover_color", event.target.checked)}
+            />
+            <span>Keep cover image in color</span>
+          </label>
+          <label className="toggle-field">
+            <input
+              type="checkbox"
               checked={optimizerSettings.contrast_boost}
               onChange={(event) => onUpdateOptimizerSetting("contrast_boost", event.target.checked)}
             />

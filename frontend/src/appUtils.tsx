@@ -305,6 +305,10 @@ export function normalizeOptimizerSettings(value: unknown): OptimizerSettings {
     ),
     quality: clampNumber(Number(stored.quality ?? defaultOptimizerSettings.quality), 1, 100),
     grayscale: booleanOrDefault(stored.grayscale, defaultOptimizerSettings.grayscale),
+    preserve_cover_color: booleanOrDefault(
+      stored.preserve_cover_color,
+      defaultOptimizerSettings.preserve_cover_color
+    ),
     contrast_boost: booleanOrDefault(stored.contrast_boost, defaultOptimizerSettings.contrast_boost),
     contrast_factor: clampNumber(Number(stored.contrast_factor ?? defaultOptimizerSettings.contrast_factor), 0.5, 3),
     eink_quantize: booleanOrDefault(stored.eink_quantize, defaultOptimizerSettings.eink_quantize),

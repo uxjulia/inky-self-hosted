@@ -60,6 +60,32 @@ class ImageProcessorTests(unittest.TestCase):
         self.assertFalse(result.was_converted)
         self.assertEqual(result.output_bytes, original)
 
+    def test_color_cover_is_resized_as_a_baseline_jpeg_without_grayscale(self):
+        image = Image.new("RGB", (1800, 2400), (230, 20, 20))
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+
+        result = process_image(
+            buffer.getvalue(),
+            "cover.png",
+            ImageOptions(
+                grayscale=False,
+                contrast_boost=False,
+                quality=70,
+                max_width=600,
+                max_height=800,
+                eink_quantize=False,
+            ),
+        )[0]
+
+        output = Image.open(io.BytesIO(result.output_bytes))
+        self.assertEqual(output.format, "JPEG")
+        self.assertFalse(output.info.get("progressive", False))
+        self.assertLessEqual(output.width, 600)
+        self.assertLessEqual(output.height, 800)
+        red, green, blue = output.convert("RGB").getpixel((0, 0))
+        self.assertGreater(red - max(green, blue), 100)
+
 
 if __name__ == "__main__":
     unittest.main()

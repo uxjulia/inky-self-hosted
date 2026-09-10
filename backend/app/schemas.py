@@ -128,6 +128,7 @@ class OptimizeRequest(BaseModel):
     filename_render_second: str = Field(default="Author", max_length=240)
     quality: int = Field(default=70, ge=1, le=100)
     grayscale: bool = True
+    preserve_cover_color: bool = False
     contrast_boost: bool = True
     contrast_factor: float = Field(default=1.5, ge=0.5, le=3.0)
     eink_quantize: bool = True

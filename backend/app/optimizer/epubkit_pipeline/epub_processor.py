@@ -40,10 +40,18 @@ from epub_structure import (
 )
 
 
+# Covers are used outside the reading flow, where retaining their original color is
+# useful. This universal portrait-friendly bound keeps them inexpensive to decode
+# on both X3 and X4 without cropping or exceeding the firmware JPEG limit.
+COVER_MAX_WIDTH = 600
+COVER_MAX_HEIGHT = 800
+
+
 @dataclass
 class ProcessingOptions:
     """All user-configurable processing options."""
     grayscale: bool = True
+    preserve_cover_color: bool = False
     contrast_boost: bool = True
     contrast_factor: float = 1.5  # Higher default for 4-level display
     quality: int = 70
@@ -395,8 +403,22 @@ def process_epub(input_path: str, output_path: str,
             light_novel_mode=options.light_novel_mode,
             light_novel_rotate_left=options.light_novel_rotate_left,
         )
+        cover_image_options = ImageOptions(
+            grayscale=True,
+            contrast_boost=True,
+            quality=options.quality,
+            max_width=COVER_MAX_WIDTH,
+            max_height=COVER_MAX_HEIGHT,
+            eink_quantize=True,
+            light_novel_mode=False,
+        )
 
         image_files = content_files['images']
+        cover_path = None
+        if options.preserve_cover_color:
+            cover_href = metadata.get('cover_href', '')
+            if cover_href:
+                cover_path = _norm_path(Path(opf_path).parent / unquote(cover_href))
         report.images_total = len(image_files)
         processed_images = {}  # old_rel_path -> new_filename
         image_cache_entries = []
@@ -415,7 +437,13 @@ def process_epub(input_path: str, output_path: str,
             if not should_process(img_path):
                 continue
 
-            results = process_image(img_bytes, Path(img_path).name, image_options, source_path=img_path)
+            is_cover = cover_path is not None and _norm_path(img_path) == cover_path
+            results = process_image(
+                img_bytes,
+                Path(img_path).name,
+                cover_image_options if is_cover else image_options,
+                source_path=img_path,
+            )
 
             for j, result in enumerate(results):
                 new_path = Path(img_path).parent / result.new_filename

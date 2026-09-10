@@ -8,6 +8,7 @@ export type BrowserOptimizerSettings = {
   filename_render_second: string;
   quality: number;
   grayscale: boolean;
+  preserve_cover_color: boolean;
   contrast_boost: boolean;
   contrast_factor: number;
   eink_quantize: boolean;
@@ -73,6 +74,8 @@ const crossInkOptimizerManifestPath = "META-INF/crossink/optimizer-v1.json";
 const wordsPerLocation = 64;
 const defaultCharactersPerReferencePage = 1500;
 const splitSuffixPattern = /__ci_section_\d{3}(?=\.[^.]+$)/i;
+const coverMaxWidth = 600;
+const coverMaxHeight = 800;
 
 export async function optimizeEpubInBrowser(
   file: Blob,
@@ -92,6 +95,18 @@ export async function optimizeEpubInBrowser(
   let opfPath = "";
   let opfText = "";
 
+  for (const [path, entry] of entries) {
+    if (!entry.dir && path.toLowerCase().endsWith(".opf")) {
+      opfPath = path;
+      opfText = await entry.async("text");
+      break;
+    }
+  }
+  if (!opfPath || !opfText) {
+    throw new Error("Could not find the EPUB package document.");
+  }
+  const coverPath = settings.preserve_cover_color ? findCoverPath(opfText, opfPath) : null;
+
   const mimetype = zip.file("mimetype");
   if (mimetype) {
     out.file("mimetype", await mimetype.async("arraybuffer"), {
@@ -106,8 +121,6 @@ export async function optimizeEpubInBrowser(
     if (path === crossInkLocationManifestPath || path === crossInkOptimizerManifestPath) continue;
     const lower = path.toLowerCase();
     if (lower.endsWith(".opf")) {
-      opfPath = path;
-      opfText = await entry.async("text");
       continue;
     }
     if (cssExtensionPattern.test(path)) {
@@ -123,7 +136,13 @@ export async function optimizeEpubInBrowser(
 
     if (imageExtensionPattern.test(path)) {
       try {
-        const result = await processImage(await entry.async("arraybuffer"), device, settings, imageMimeType(path));
+        const result = await processImage(
+          await entry.async("arraybuffer"),
+          device,
+          settings,
+          imageMimeType(path),
+          path === coverPath
+        );
         const outputPath = imageRenameMap.get(path) || path;
         out.file(outputPath, result.blob, {
           compression: "DEFLATE",
@@ -273,9 +292,12 @@ async function processImage(
   data: ArrayBuffer,
   device: BrowserOptimizeDevice,
   settings: BrowserOptimizerSettings,
-  mimeType = ""
+  mimeType = "",
+  preserveColor = false
 ): Promise<ImageProcessResult> {
-  const dimensions = deviceTargetDefinition(device).profile;
+  const dimensions = preserveColor
+    ? { width: coverMaxWidth, height: coverMaxHeight }
+    : deviceTargetDefinition(device).profile;
   const image = await loadImage(data, mimeType);
   const scale = Math.min(1, dimensions.width / image.naturalWidth, dimensions.height / image.naturalHeight);
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
@@ -284,7 +306,7 @@ async function processImage(
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d", {
-    willReadFrequently: settings.grayscale || settings.contrast_boost
+    willReadFrequently: !preserveColor && (settings.grayscale || settings.contrast_boost)
   });
   if (!context) throw new Error("Canvas is not available.");
   context.imageSmoothingQuality = "high";
@@ -293,7 +315,7 @@ async function processImage(
   context.drawImage(image, 0, 0, width, height);
   URL.revokeObjectURL(image.src);
 
-  if (settings.grayscale || settings.contrast_boost) {
+  if (!preserveColor && (settings.grayscale || settings.contrast_boost)) {
     const imageData = context.getImageData(0, 0, width, height);
     applyImageTone(imageData.data, settings);
     context.putImageData(imageData, 0, 0);
@@ -301,6 +323,21 @@ async function processImage(
 
   const blob = await canvasToBlob(canvas, settings.quality);
   return { blob, width, height };
+}
+
+function findCoverPath(opfText: string, opfPath: string): string | null {
+  const doc = new DOMParser().parseFromString(opfText, "application/xml");
+  if (doc.getElementsByTagName("parsererror").length > 0) return null;
+
+  const coverId = Array.from(doc.getElementsByTagName("meta"))
+    .find((meta) => meta.getAttribute("name") === "cover")
+    ?.getAttribute("content");
+  const coverItem = Array.from(doc.getElementsByTagName("item")).find((item) => {
+    const properties = item.getAttribute("properties") || "";
+    return item.getAttribute("id") === coverId || properties.split(/\s+/).includes("cover-image");
+  });
+  const href = coverItem?.getAttribute("href");
+  return href ? resolvePath(opfPath, href) : null;
 }
 
 function loadImage(data: ArrayBuffer, mimeType = ""): Promise<HTMLImageElement> {
