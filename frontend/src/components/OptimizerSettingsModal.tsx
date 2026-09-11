@@ -181,7 +181,17 @@ export function OptimizerSettingsModal({
               checked={optimizerSettings.preserve_cover_color}
               onChange={(event) => onUpdateOptimizerSetting("preserve_cover_color", event.target.checked)}
             />
-            <span>Keep cover image in color</span>
+            <span className="toggle-label-content">
+              <span>Keep cover image in color</span>
+              <span
+                className="toggle-info"
+                role="img"
+                aria-label="Keep cover image in color help"
+                title="Preserves the cover’s original color and tonal detail. The device converts it to its four-level grayscale palette when displaying it, which can produce a more natural-looking cover."
+              >
+                <CircleHelp size={14} />
+              </span>
+            </span>
           </label>
           <label className="toggle-field">
             <input

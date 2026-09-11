@@ -193,7 +193,7 @@ export function FlashToolsPanel() {
         `/api/firmware/crossink/releases/${encodeURIComponent(downloadTag)}/${firmwareChoice}`
       );
       if (!response.ok) {
-        const detail = await response.json().catch(() => null) as { detail?: string } | null;
+        const detail = (await response.json().catch(() => null)) as { detail?: string } | null;
         throw new Error(detail?.detail || "Unable to download CrossInk firmware.");
       }
 
@@ -243,7 +243,7 @@ export function FlashToolsPanel() {
         `/api/firmware/crossink/releases/${encodeURIComponent(downloadTag)}/${firmwareChoice}`
       );
       if (!response.ok) {
-        const detail = await response.json().catch(() => null) as { detail?: string } | null;
+        const detail = (await response.json().catch(() => null)) as { detail?: string } | null;
         throw new Error(detail?.detail || "Unable to download CrossInk firmware.");
       }
       const firmwareData = new Uint8Array(await response.arrayBuffer());
@@ -258,10 +258,7 @@ export function FlashToolsPanel() {
       };
 
       if (device === "sticky") {
-        const [bootloaderData, otadataData] = await Promise.all([
-          fetchStickyBootloader(),
-          fetchStickyBootApp0()
-        ]);
+        const [bootloaderData, otadataData] = await Promise.all([fetchStickyBootloader(), fetchStickyBootApp0()]);
         const flasher = new BrowserFirmwareFlasher(serialPort, {
           baudrate: 921600,
           expectedChip: DEVICE_CHIPS[device],
@@ -318,7 +315,16 @@ export function FlashToolsPanel() {
             <Zap size={16} />
             <h2>Flash Tools</h2>
           </div>
-          {!lockedDevice ? <p>Install a Cross<span className="serif">I</span>nk release directly from your browser over USB.</p> : <p>Download a Cross<span className="serif">I</span>nk release as an <code>update.bin</code> file to copy to your SD card.</p>}
+          {!lockedDevice ? (
+            <p>
+              Install a Cross<span className="serif">I</span>nk release directly from your browser over USB.
+            </p>
+          ) : (
+            <p>
+              Download a Cross<span className="serif">I</span>nk release as an <code>update.bin</code> file to copy to
+              your SD card.
+            </p>
+          )}
 
           <label className="toggle-field flash-locked-toggle">
             <input
@@ -354,19 +360,21 @@ export function FlashToolsPanel() {
             <span>1</span>
             <h2>Select your device</h2>
           </div>
-          <div className={`flash-device-grid${lockedDevice ? " single" : ""}`}>
-            {DEVICES.filter((option) => !lockedDevice || option.id === "xteink").map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                className={device === option.id ? "selected" : ""}
-                disabled={running}
-                onClick={() => selectDevice(option.id)}
-              >
-                <strong>{option.name}</strong>
-                <small>{option.detail}</small>
-              </button>
-            ))}
+          <div className="flash-device-grid">
+            {DEVICES.filter((option) => !lockedDevice || option.id === "xteink" || option.id === "x4-pro").map(
+              (option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={device === option.id ? "selected" : ""}
+                  disabled={running}
+                  onClick={() => selectDevice(option.id)}
+                >
+                  <strong>{option.name}</strong>
+                  <small>{option.detail}</small>
+                </button>
+              )
+            )}
           </div>
         </section>
 
@@ -378,7 +386,9 @@ export function FlashToolsPanel() {
             </div>
             {compatibleStableReleases.length > 0 && (
               <label className="field flash-version-field">
-                <span>Stable Cross<span className="serif">I</span>nk version (last 3 shown)</span>
+                <span>
+                  Stable Cross<span className="serif">I</span>nk version (last 3 shown)
+                </span>
                 <span className="select-control">
                   <select
                     value={selectedStableRelease?.tag || ""}
@@ -395,7 +405,8 @@ export function FlashToolsPanel() {
                   >
                     {compatibleStableReleases.map((release, index) => (
                       <option key={release.tag} value={release.tag}>
-                        {release.tag}{index === 0 ? " (latest)" : ""}
+                        {release.tag}
+                        {index === 0 ? " (latest)" : ""}
                       </option>
                     ))}
                   </select>
@@ -435,7 +446,9 @@ export function FlashToolsPanel() {
               <div className="flash-prerelease-section">
                 <hr />
                 <label className="field flash-version-field">
-                  <span id="pr-label">Pre-Release Cross<span className="serif">I</span>nk builds</span>
+                  <span id="pr-label">
+                    Pre-Release Cross<span className="serif">I</span>nk builds
+                  </span>
                   <span className="select-control">
                     <select
                       value={selectedPrereleaseRelease?.tag || ""}
@@ -452,7 +465,8 @@ export function FlashToolsPanel() {
                     >
                       {compatiblePrereleaseReleases.map((release, index) => (
                         <option key={release.tag} value={release.tag}>
-                          {release.tag}{index === 0 ? " (latest)" : ""}
+                          {release.tag}
+                          {index === 0 ? " (latest)" : ""}
                         </option>
                       ))}
                     </select>
@@ -466,7 +480,9 @@ export function FlashToolsPanel() {
                       <button
                         key={variantId}
                         type="button"
-                        className={selectedRelease?.channel === "prerelease" && firmwareChoice === variantId ? "selected" : ""}
+                        className={
+                          selectedRelease?.channel === "prerelease" && firmwareChoice === variantId ? "selected" : ""
+                        }
                         disabled={running || !variant}
                         onClick={() => {
                           if (selectedPrereleaseRelease) setSelectedReleaseTag(selectedPrereleaseRelease.tag);
@@ -485,11 +501,15 @@ export function FlashToolsPanel() {
                 </div>
               </div>
             )}
-            {(device === "sticky" || device === "x4-pro") && !stableReleaseError && stableReleases.length > 0 && compatibleStableReleases.length === 0 && compatiblePrereleaseReleases.length === 0 && (
-              <div className="flash-message warning">
-                No {device === "x4-pro" ? "X4 Pro" : "Sticky"} firmware is currently available from GitHub.
-              </div>
-            )}
+            {(device === "sticky" || device === "x4-pro") &&
+              !stableReleaseError &&
+              stableReleases.length > 0 &&
+              compatibleStableReleases.length === 0 &&
+              compatiblePrereleaseReleases.length === 0 && (
+                <div className="flash-message warning">
+                  No {device === "x4-pro" ? "X4 Pro" : "Sticky"} firmware is currently available from GitHub.
+                </div>
+              )}
             {stableReleaseError && <div className="flash-message error">{stableReleaseError}</div>}
           </section>
         )}
@@ -501,32 +521,71 @@ export function FlashToolsPanel() {
               <h2>Flash</h2>
             </div>
             <div className="flash-message warning">
-              {lockedDevice
-                ? <p>
-                  <p><strong>Option 1:</strong></p>
-                  Steps when Flashing from <strong>Stock Xteink Firmware:</strong>
+              {lockedDevice ? (
+                <p>
+                  {device !== "x4-pro" ? (
+                    <>
+                      <p>
+                        <strong>Option 1:</strong>
+                      </p>
+                      Steps when Flashing from <strong>Stock Xteink Firmware:</strong>
+                      <ol>
+                        <li>
+                          Download the <code>update.bin</code> file
+                        </li>
+                        <li>Copy it to the root of your SD card (not inside any folders)</li>
+                        <li>Re-insert the SD card into the device and restart it</li>
+                        <li>Plug your device into USB power</li>
+                        <li>
+                          Hold the power + up buttons at the same time for 3+ seconds until you see the device begin
+                          installation. Note: On the X3, the "Up" button is on the left side.
+                        </li>
+                      </ol>
+                      <hr />
+                      <p>
+                        <strong>Option 2:</strong>
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ textAlign: "center", fontSize: "18px" }}>
+                        <span>
+                          Coming from <strong>Stock Xteink Firmware</strong>? You must use the{" "}
+                          <a href="https://crosspointreader.com/unlocker">OTA Unlocker</a> first!
+                        </span>
+                        <hr />
+                      </p>
+                    </>
+                  )}
+                  Steps when <strong><i>updating</i></strong> from{" "}
+                  <strong>
+                    Cross<span className="serif">I</span>nk
+                  </strong>{" "}
+                  (or other firmware with SD Card Firmware Update capabilities)
                   <ol>
-                    <li>Download the <code>update.bin</code> file</li>
-                    <li>Copy it to the root of your SD card (not inside any folders)</li>
-                    <li>Re-insert the SD card into the device and restart it</li>
-                    <li>Plug your device into USB power</li>
-                    <li>Hold the power + up buttons at the same time for 3+ seconds until you see the device begin installation. Note: On the X3, the "Up" button is on the left side.</li>
-                  </ol>
-                  <hr />
-                  <p><strong>Option 2:</strong></p>
-                  Steps when Updating from <strong>Cross<span className="serif">I</span>nk</strong> (or other firmware with SD Card Firmware Update capabilities)
-                  <ol>
-                    <li>Download the <code>update.bin</code> file (note when updating from Cross<span className="serif">I</span>nk, the filename does not matter)</li>
+                    <li>
+                      Download the <code>update.bin</code> file (note when updating from Cross
+                      <span className="serif">I</span>nk, the filename does not matter)
+                    </li>
                     <li>Copy it anywhere on your SD card</li>
                     <li>Re-insert the SD card into the device and restart it</li>
-                    <li>In CrossInk, go to <code>Settings {`>`} System {`>`} SD Card Firmware Update</code></li>
-                    <li>Navigate to the downloaded <code>update.bin</code> file. The device will validate the firmware and begin installation.</li>
+                    <li>
+                      In CrossInk, go to{" "}
+                      <code>
+                        Settings {`>`} System {`>`} SD Card Firmware Update
+                      </code>
+                    </li>
+                    <li>
+                      Navigate to the downloaded <code>update.bin</code> file. The device will validate the firmware and
+                      begin installation.
+                    </li>
                   </ol>
                 </p>
-
-                : device === "x4-pro"
-                  ? "Keep the X4 Pro awake at its home screen and leave the USB cable connected until flashing completes. If the browser cannot detect it, remove the SD card and try again."
-                  : "Keep the device awake at its home screen and leave the USB cable connected until flashing completes."}
+              ) : device === "x4-pro" ? (
+                "Keep the X4 Pro awake at its home screen and leave the USB cable connected until flashing completes. If the browser cannot detect it, remove the SD card and try again."
+              ) : (
+                "Keep the device awake at its home screen and leave the USB cable connected until flashing completes."
+              )}
             </div>
             {lockedDevice ? (
               <button
@@ -553,9 +612,12 @@ export function FlashToolsPanel() {
                   <strong>Optional: manual SD card download</strong>
                   {device === "x4-pro" ? (
                     <p>
-                      An X4 Pro already running Cross<span className="serif">I</span>nk can install this <code>.bin</code> file
-                      from <code>Settings {`>`} System {`>`} SD Card Firmware Update</code>. Stock Xteink firmware cannot
-                      install it from SD; use USB flashing above instead.
+                      An X4 Pro already running Cross<span className="serif">I</span>nk can install this{" "}
+                      <code>.bin</code> file from{" "}
+                      <code>
+                        Settings {`>`} System {`>`} SD Card Firmware Update
+                      </code>
+                      . Stock Xteink firmware cannot install it from SD; use USB flashing above instead.
                     </p>
                   ) : (
                     <p>

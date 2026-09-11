@@ -1504,10 +1504,6 @@ progress {
   gap: 8px;
 }
 
-.flash-device-grid.single {
-  grid-template-columns: 1fr;
-}
-
 .flash-firmware-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1843,6 +1839,19 @@ progress {
 
 .toggle-field span {
   min-width: 0;
+}
+
+.toggle-label-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toggle-info {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  cursor: help;
 }
 
 .plain-toggle-field {

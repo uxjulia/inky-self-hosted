@@ -220,17 +220,15 @@ export function HelpPage({
               <p>Optimized EPUBs include extra data and cleanup that CrossInk can use while reading.</p>
               <ul>
                 <li>
-                  Page locations let CrossInk jump and resume using stable content-based positions instead of fragile
-                  screen pages.
+                  Special metadata files bundled with the optimized EPUB allows CrossInk to properly group split sections (if the option is selected) so that chapter estimates and KOReader sync works seamlessly.
                 </li>
                 <li>
-                  Reference pages give a consistent stable page number that stays useful even when font size, margins,
-                  or orientation change.
+                  Reference pages are calculated and stored with the EPUB so that Crossink can display Stable Page Numbers in the firmware. This gives a consistent page number that stays useful even when font size, margins, or orientation change.
                 </li>
                 <li>TOC, cover, image, and metadata cleanup help books open cleaner and use less device memory.</li>
                 <li>
                   Images are prepared for the selected device's screen so covers and images fit the target display
-                  better.
+                  better and load faster.
                 </li>
               </ul>
             </div>
