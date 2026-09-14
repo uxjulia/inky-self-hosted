@@ -670,7 +670,7 @@ export function FlashToolsPanel() {
             <p>
               {device === "x4-pro"
                 ? "Unplug and reconnect the USB cable, then press and hold the power button to boot."
-                : "Unplug and reconnect the USB cable, then press and hold the power button for 3–5 seconds."}
+                : "Unplug and reconnect the USB cable, then reset the device (tap the reset button and then hold power)"}
             </p>
           </section>
         )}
