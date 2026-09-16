@@ -206,6 +206,27 @@ def _rewrite_spine_reference(value: str, source_path: Path, redirects: dict[str,
     return rewritten + (separator + fragment if separator else '')
 
 
+def remove_missing_cover_spine_references(opf_path: str) -> int:
+    """Drop an optional ``cover`` spine reference when its manifest item is absent."""
+    tree = etree.parse(opf_path)
+    root = tree.getroot()
+    manifest = _find_element(root, 'manifest')
+    spine = _find_element(root, 'spine')
+    if manifest is None or spine is None:
+        return 0
+
+    manifest_ids = {item.get('id') for item in _find_elements(manifest, 'item') if item.get('id')}
+    refs_to_remove = [
+        ref for ref in _find_elements(spine, 'itemref')
+        if (ref.get('idref') or '').lower() == 'cover' and ref.get('idref') not in manifest_ids
+    ]
+    for ref in refs_to_remove:
+        spine.remove(ref)
+    if refs_to_remove:
+        tree.write(opf_path, xml_declaration=True, encoding='utf-8', pretty_print=True)
+    return len(refs_to_remove)
+
+
 def collapse_reader_empty_spine_items(opf_path: str) -> int:
     """Remove converter-created decorative-only spine stubs and redirect their links.
 

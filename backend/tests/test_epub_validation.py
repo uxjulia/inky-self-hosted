@@ -25,6 +25,19 @@ class EpubValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(EpubValidationError, "reading-order file is missing"):
                 validate_epub_archive(path)
 
+    def test_accepts_missing_optional_cover_manifest_item(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "book.epub"
+            write_epub(path, spine_idrefs=["cover", "chapter"])
+            validate_epub_archive(path)
+
+    def test_rejects_missing_non_cover_manifest_item(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "book.epub"
+            write_epub(path, spine_idrefs=["missing", "chapter"])
+            with self.assertRaisesRegex(EpubValidationError, "reading-order item 'missing' is not in the manifest"):
+                validate_epub_archive(path)
+
     def test_rejects_truncated_archive(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "book.epub"
@@ -34,7 +47,8 @@ class EpubValidationTests(unittest.TestCase):
                 validate_epub_archive(path)
 
 
-def write_epub(path: Path, *, include_chapter: bool = True) -> None:
+def write_epub(path: Path, *, include_chapter: bool = True, spine_idrefs: list[str] | None = None) -> None:
+    spine_idrefs = spine_idrefs or ["chapter"]
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("mimetype", "application/epub+zip")
         archive.writestr(
@@ -45,9 +59,9 @@ def write_epub(path: Path, *, include_chapter: bool = True) -> None:
         )
         archive.writestr(
             "OEBPS/content.opf",
-            """<package xmlns="http://www.idpf.org/2007/opf">
+            f"""<package xmlns="http://www.idpf.org/2007/opf">
   <manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
-  <spine><itemref idref="chapter"/></spine>
+  <spine>{"".join(f'<itemref idref="{idref}"/>' for idref in spine_idrefs)}</spine>
 </package>""",
         )
         if include_chapter:

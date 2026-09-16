@@ -36,7 +36,8 @@ from epub_structure import (
     update_xhtml_references, update_css_references,
     fix_svg_covers, fix_toc, find_content_files, add_image_to_opf,
     write_x_location_manifest, write_crossink_optimizer_manifest,
-    remove_css_files_from_opf, split_long_sections, collapse_reader_empty_spine_items
+    remove_css_files_from_opf, split_long_sections, collapse_reader_empty_spine_items,
+    remove_missing_cover_spine_references,
 )
 
 
@@ -373,6 +374,8 @@ def process_epub(input_path: str, output_path: str,
         _progress(8, "Parsing structure...")
         opf_rel_path = find_opf_path(work_dir)
         opf_path = os.path.join(work_dir, opf_rel_path)
+        opf_tree = etree.parse(opf_path)
+        remove_missing_cover_spine_references(opf_path)
         opf_tree = etree.parse(opf_path)
 
         # Step 4: Extract metadata

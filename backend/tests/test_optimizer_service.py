@@ -13,6 +13,36 @@ from app.schemas import OptimizeRequest
 
 
 class OptimizerServiceTests(unittest.TestCase):
+    def test_optimizer_repairs_missing_optional_cover_reference(self):
+        with tempfile.TemporaryDirectory(prefix="inky_optimizer_service_") as tmp:
+            tmpdir = Path(tmp)
+            epub_path = tmpdir / "source.epub"
+            write_minimal_epub(epub_path, "The Book", "O'Brian", missing_cover_ref=True)
+
+            output_path, _result = optimize_epub(epub_path, tmpdir / "out", OptimizeRequest())
+            with zipfile.ZipFile(output_path) as archive:
+                opf = archive.read("OEBPS/content.opf").decode("utf-8")
+            self.assertNotIn('itemref idref="cover"', opf)
+
+    def test_isolated_optimizer_returns_output_from_child_process(self):
+        with tempfile.TemporaryDirectory(prefix="inky_optimizer_service_") as tmp:
+            tmpdir = Path(tmp)
+            epub_path = tmpdir / "source.epub"
+            write_minimal_epub(epub_path, "The Book", "O'Brian")
+
+            progress_messages: list[str] = []
+            output_path, result = optimize_epub_isolated(
+                epub_path,
+                tmpdir / "out",
+                OptimizeRequest(),
+                lambda _percent, message: progress_messages.append(message),
+            )
+
+            self.assertTrue(output_path.is_file())
+            self.assertGreater(result["optimized_size"], 0)
+            self.assertEqual(progress_messages[0], "Waiting for another conversion to finish")
+            self.assertIn("Optimizing EPUB", progress_messages)
+
     def test_device_filename_does_not_use_local_collision_suffix(self):
         with tempfile.TemporaryDirectory(prefix="inky_optimizer_service_") as tmp:
             tmpdir = Path(tmp)
@@ -175,7 +205,8 @@ class OptimizerServiceTests(unittest.TestCase):
                 self.assertEqual(captured_options.max_height, expected_height)
 
 
-def write_minimal_epub(path: Path, title: str, author: str) -> None:
+def write_minimal_epub(path: Path, title: str, author: str, *, missing_cover_ref: bool = False) -> None:
+    spine_refs = '<itemref idref="cover"/>' if missing_cover_ref else ""
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("mimetype", "application/epub+zip")
         archive.writestr(
@@ -191,7 +222,7 @@ def write_minimal_epub(path: Path, title: str, author: str) -> None:
 <package xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0">
   <metadata><dc:title>{title}</dc:title><dc:creator>{author}</dc:creator></metadata>
   <manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
-  <spine><itemref idref="chapter"/></spine>
+  <spine>{spine_refs}<itemref idref="chapter"/></spine>
 </package>""",
         )
         archive.writestr("OEBPS/chapter.xhtml", "<html><body>Complete</body></html>")

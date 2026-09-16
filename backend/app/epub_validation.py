@@ -48,6 +48,12 @@ def validate_epub_archive(path: Path) -> None:
             for idref in spine_refs:
                 href = manifest.get(idref)
                 if not href:
+                    # Ebook-lib commonly leaves this optional cover entry in the
+                    # spine after omitting the corresponding manifest item.
+                    # The reader can safely skip it, while other dangling spine
+                    # entries still mean the reading order is incomplete.
+                    if idref.lower() == "cover" and idref not in manifest:
+                        continue
                     raise EpubValidationError(f"reading-order item {idref!r} is not in the manifest")
                 content_path = _archive_path(posixpath.join(opf_dir, href))
                 if content_path not in names:
