@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     auth_password: str = ""
     auth_realm: str = "Inky"
     public_read_only: bool = False
+    optimizer_timeout_seconds: int = Field(default=900, ge=60, le=3600)
 
     model_config = SettingsConfigDict(env_prefix="INKY_", env_file=(".env", "../.env"), extra="ignore")
 

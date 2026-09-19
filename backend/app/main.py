@@ -54,7 +54,7 @@ from .library import (
     validate_downloaded_epub,
 )
 from .models import Job, LibraryItem, Source
-from .optimizer.service import optimize_epub
+from .optimizer.isolated import optimize_epub_isolated
 from .schemas import (
     ArticleImportRequest,
     BrowseItem,
@@ -734,7 +734,7 @@ async def optimize_uploaded_epub(
             while chunk := await file.read(1024 * 1024):
                 temp.write(chunk)
         async with PUBLIC_TEMP_OPTIMIZE_SEMAPHORE:
-            output_path, result = await run_in_threadpool(optimize_epub, input_path, temp_dir, request)
+            output_path, result = await run_in_threadpool(optimize_epub_isolated, input_path, temp_dir, request)
     except Exception:
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise
@@ -763,7 +763,7 @@ async def optimize_source_epub(
     try:
         input_path = await source_item_to_temp_epub(source, payload.item, temp_dir)
         async with PUBLIC_TEMP_OPTIMIZE_SEMAPHORE:
-            output_path, result = await run_in_threadpool(optimize_epub, input_path, temp_dir, payload.settings)
+            output_path, result = await run_in_threadpool(optimize_epub_isolated, input_path, temp_dir, payload.settings)
     except Exception:
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise

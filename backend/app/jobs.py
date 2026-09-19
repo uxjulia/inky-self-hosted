@@ -14,9 +14,11 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .db import SessionLocal
 from .dictionary_prep import prepare_dictionary_zip, schedule_prepared_dictionary_cleanup
+from .heavy_work import HEAVY_WORK_LOCK, WAITING_FOR_HEAVY_WORK_MESSAGE
 from .library import send_file_to_device
 from .models import Job, JobStatus, LibraryItem, utc_now
-from .optimizer.service import optimize_epub, preferred_output_filename
+from .optimizer.isolated import optimize_epub_isolated
+from .optimizer.service import preferred_output_filename
 from .schemas import DeviceSendRequest, OptimizeRequest
 
 
@@ -51,15 +53,16 @@ def run_optimize_job(job_id: str, item_id: int, request: OptimizeRequest) -> Non
         item = db.get(LibraryItem, item_id)
         if not job or not item:
             return
-        job.status = JobStatus.running.value
-        job.progress = 2
-        job.message = "Starting optimizer"
+        job.status = JobStatus.queued.value
+        job.progress = 0
+        job.message = WAITING_FOR_HEAVY_WORK_MESSAGE
         db.commit()
 
         def progress(percent: int, message: str) -> None:
-            set_job(job_id, progress=percent, message=message)
+            status = JobStatus.queued.value if message == WAITING_FOR_HEAVY_WORK_MESSAGE else JobStatus.running.value
+            set_job(job_id, status=status, progress=percent, message=message)
 
-        output_path, result = optimize_epub(Path(item.original_path), get_settings().optimized_dir, request, progress)
+        output_path, result = optimize_epub_isolated(Path(item.original_path), get_settings().optimized_dir, request, progress)
         item.optimized_path = str(output_path)
         job.status = JobStatus.succeeded.value
         job.progress = 100
@@ -116,9 +119,9 @@ def run_dictionary_prepare_job(
         job = db.get(Job, job_id)
         if not job:
             return
-        job.status = JobStatus.running.value
-        job.progress = 2
-        job.message = "Preparing dictionary"
+        job.status = JobStatus.queued.value
+        job.progress = 0
+        job.message = WAITING_FOR_HEAVY_WORK_MESSAGE
         db.commit()
 
         source_path = Path(source_zip)
@@ -133,7 +136,9 @@ def run_dictionary_prepare_job(
         def progress(percent: int, message: str) -> None:
             set_job(job_id, progress=max(0, min(100, percent)), message=message)
 
-        result = prepare_dictionary_zip(Path(source_zip), output_dir, progress)
+        with HEAVY_WORK_LOCK:
+            set_job(job_id, status=JobStatus.running.value, progress=2, message="Preparing dictionary")
+            result = prepare_dictionary_zip(Path(source_zip), output_dir, progress)
         result["download_url"] = f"/api/dictionaries/prepared/{job_id}/download"
         set_job(
             job_id,
@@ -202,9 +207,10 @@ def _send_path(
     device_filename = preferred_output_filename(original_path, request) if request.optimize_first and is_epub else None
     if request.optimize_first and is_epub and optimized_path is None:
         def progress(percent: int, message: str) -> None:
-            set_job(job_id, progress=max(5, min(80, int(percent * 0.8))), message=message)
+            status = JobStatus.queued.value if message == WAITING_FOR_HEAVY_WORK_MESSAGE else JobStatus.running.value
+            set_job(job_id, status=status, progress=max(5, min(80, int(percent * 0.8))), message=message)
 
-        output_path, result = optimize_epub(original_path, get_settings().optimized_dir, request, progress)
+        output_path, result = optimize_epub_isolated(original_path, get_settings().optimized_dir, request, progress)
         file_path = output_path
         device_filename = result.get("device_filename") or device_filename
         job.result_json = json.dumps({"optimization": result})

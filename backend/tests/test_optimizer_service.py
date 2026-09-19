@@ -9,6 +9,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.optimizer.service import _unique_path, optimize_epub, preferred_output_filename
+from app.optimizer.isolated import optimize_epub_isolated
 from app.schemas import OptimizeRequest
 
 
