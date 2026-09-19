@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.connectors import _auth, browse_feed
+from app.connectors import browse_feed, source_auth
 from app.models import Source
 
 
@@ -21,12 +21,12 @@ class SourceAuthTests(unittest.TestCase):
             password="",
         )
 
-        self.assertEqual(_auth(source), ("234444593", ""))
+        self.assertEqual(source_auth(source), ("234444593", ""))
 
     def test_omits_auth_when_credentials_are_incomplete(self):
         source = Source(type="opds", name="Catalog", url="https://example.com", username="reader")
 
-        self.assertIsNone(_auth(source))
+        self.assertIsNone(source_auth(source))
 
 
 class FeedBrowseTests(unittest.IsolatedAsyncioTestCase):

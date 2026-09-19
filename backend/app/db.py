@@ -10,7 +10,9 @@ from .models import Base, Source
 def _default_sources() -> list[dict[str, str | None]]:
     settings = get_settings()
     mayberry_username = settings.mayberry_username or None
-    mayberry_password = settings.mayberry_password if mayberry_username else None
+    # Mayberry's public card ID is entered in both Basic-auth fields. Keeping
+    # this fallback also upgrades the earlier username-only configuration.
+    mayberry_password = (settings.mayberry_password or mayberry_username) if mayberry_username else None
 
     return [
         {
@@ -82,9 +84,10 @@ def _seed_default_sources() -> None:
             if existing_source:
                 if (
                     source_data["name"] == "Mayberry"
-                    and existing_source.username is None
-                    and existing_source.password is None
+                    and existing_source.username in {None, source_data["username"]}
+                    and existing_source.password in {None, ""}
                     and source_data["username"] is not None
+                    and source_data["password"] is not None
                 ):
                     existing_source.username = source_data["username"]
                     existing_source.password = source_data["password"]

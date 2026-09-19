@@ -24,7 +24,7 @@ from starlette.concurrency import run_in_threadpool
 from .article_epub import fetch_article_as_epub
 from .auth import require_basic_auth
 from .config import ensure_data_dirs, get_settings
-from .connectors import browse_source, search_source
+from .connectors import browse_source, search_source, source_auth
 from .crossink_firmware import (
     CrossInkFirmwareError,
     LOCAL_DEVELOPMENT_TAG,
@@ -539,8 +539,8 @@ async def import_remote(payload: ImportUrlRequest, db: Session = Depends(get_db)
     auth = None
     if payload.source_id:
         source = db.get(Source, payload.source_id)
-        if source and source.username and source.password:
-            auth = (source.username, source.password)
+        if source:
+            auth = source_auth(source)
     try:
         return await import_url(db, payload.url, payload.source_id, payload.title, payload.author, payload.cover_url, payload.kind.value, auth)
     except httpx.HTTPError as exc:
@@ -787,7 +787,7 @@ async def source_item_to_temp_epub(source: Source, item: BrowseItem, temp_dir: P
     if not url or not is_epub_browse_item(item):
         raise HTTPException(status_code=400, detail="only EPUB files can be optimized")
 
-    auth = (source.username, source.password) if source.username and source.password else None
+    auth = source_auth(source)
     filename = safe_filename(f"{item.title or Path(url).stem}{Path(url).suffix or '.epub'}", "source.epub")
     if not filename.lower().endswith(".epub"):
         filename += ".epub"

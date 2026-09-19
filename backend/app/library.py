@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from .article_epub import fetch_article_as_epub
 from .config import get_settings
+from .connectors import source_auth
 from .epub_validation import EpubValidationError, validate_epub_archive
 from .models import Job, LibraryItem, Source, utc_now
 from .utils import display_title_from_url, extension_from_url, join_remote, normalize_device_url, safe_filename
@@ -117,8 +118,7 @@ async def import_article(
 
 async def import_webdav_file(db: Session, source: Source, path: str, title: str | None = None, cover_url: str | None = None) -> LibraryItem:
     url = join_remote(source.url, path)
-    auth = (source.username, source.password) if source.username and source.password else None
-    return await import_url(db, url, source.id, title or Path(path).name, cover_url=cover_url, kind="file", auth=auth)
+    return await import_url(db, url, source.id, title or Path(path).name, cover_url=cover_url, kind="file", auth=source_auth(source))
 
 
 def copy_uploaded_file(db: Session, source_path: Path, filename: str) -> LibraryItem:

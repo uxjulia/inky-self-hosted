@@ -51,7 +51,7 @@ class DbSeedTests(unittest.TestCase):
 
         self.assertEqual([source.name for source in sources], ["Mayberry", "Standard Ebooks", "Project Gutenberg"])
         self.assertEqual(sources[0].username, "234444593")
-        self.assertEqual(sources[0].password, "")
+        self.assertEqual(sources[0].password, "234444593")
 
     def test_upgrades_an_existing_unauthenticated_mayberry_source(self):
         db_module = self.reload_db_module()
@@ -66,7 +66,30 @@ class DbSeedTests(unittest.TestCase):
             mayberry = db.query(db_module.Source).filter_by(url="https://mayberry.pub").one()
 
         self.assertEqual(mayberry.username, "234444593")
-        self.assertEqual(mayberry.password, "")
+        self.assertEqual(mayberry.password, "234444593")
+
+    def test_upgrades_an_existing_username_only_mayberry_source(self):
+        db_module = self.reload_db_module()
+        db_module.Base.metadata.create_all(bind=db_module.engine)
+        with db_module.Session(db_module.engine) as db:
+            db.add(
+                db_module.Source(
+                    type="opds",
+                    name="Mayberry",
+                    url="https://mayberry.pub",
+                    username="234444593",
+                    password="",
+                    display_order=0,
+                )
+            )
+            db.commit()
+
+        db_module.init_db()
+
+        with db_module.Session(db_module.engine) as db:
+            mayberry = db.query(db_module.Source).filter_by(url="https://mayberry.pub").one()
+
+        self.assertEqual(mayberry.password, "234444593")
 
     def test_does_not_seed_mayberry_credentials_without_configuration(self):
         self.env.stop()

@@ -18,7 +18,9 @@ DAV_NS = "{DAV:}"
 SENDABLE_FILE_EXTENSIONS = {".epub", ".txt", ".xtc", ".xtch", ".bmp", ".png"}
 
 
-def _auth(source: Source) -> tuple[str, str] | None:
+def source_auth(source: Source) -> tuple[str, str] | None:
+    """Return complete Basic credentials, including an intentionally blank password."""
+
     if source.username is not None and source.password is not None:
         return source.username, source.password
     return None
@@ -59,7 +61,7 @@ async def search_source(db: Session, source_id: int, query: str, target: str | N
 async def _fetch_text(url: str, source: Source) -> str:
     started = perf_counter()
     async with httpx.AsyncClient(timeout=get_settings().http_timeout_seconds, follow_redirects=True) as client:
-        response = await client.get(url, auth=_auth(source))
+        response = await client.get(url, auth=source_auth(source))
         response.raise_for_status()
         text = response.text
     elapsed_ms = int((perf_counter() - started) * 1000)
@@ -235,7 +237,7 @@ async def browse_webdav(source: Source, target: str = "/") -> BrowseResult:
             "PROPFIND",
             url,
             content=body,
-            auth=_auth(source),
+            auth=source_auth(source),
             headers={"Depth": "1", "Content-Type": "application/xml; charset=utf-8"},
         )
         response.raise_for_status()
