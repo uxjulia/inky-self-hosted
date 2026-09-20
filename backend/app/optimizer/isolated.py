@@ -62,8 +62,11 @@ def optimize_epub_isolated(
                 raise RuntimeError("EPUB optimization exceeded the server time limit") from exc
 
         if completed.returncode != 0:
-            detail = completed.stderr.strip()[-2000:] or "worker exited without an error message"
-            raise RuntimeError(f"EPUB optimization worker failed: {detail}")
+            stderr = completed.stderr.strip()
+            # Python worker failures end with the actual exception message; avoid
+            # exposing its implementation traceback to the app UI.
+            detail = stderr.splitlines()[-1] if stderr else "worker exited without an error message"
+            raise RuntimeError(detail)
 
         try:
             payload = json.loads(result_path.read_text())
