@@ -88,6 +88,10 @@ function messageFromUnknown(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function webSerialSupported() {
+  return typeof navigator !== "undefined" && typeof navigator.serial?.requestPort === "function";
+}
+
 function withDevelopmentPrerelease(releases: StableReleaseInfo[]) {
   if (!import.meta.env.DEV || releases.some((release) => release.channel === "prerelease")) return releases;
 
@@ -110,7 +114,7 @@ function firmwareDownloadTag(releases: StableReleaseInfo[], selectedTag: string)
 }
 
 export function FlashToolsPanel() {
-  const serialSupported = useMemo(() => typeof navigator !== "undefined" && "serial" in navigator, []);
+  const serialSupported = useMemo(webSerialSupported, []);
   const progressRef = useRef<HTMLDivElement | null>(null);
   const [device, setDevice] = useState<FlashDeviceId | null>(null);
   const [firmwareChoice, setFirmwareChoice] = useState<StableVariantId | null>(null);
@@ -310,6 +314,11 @@ export function FlashToolsPanel() {
   return (
     <section className="flash-tools-page" role="tabpanel" id="flash-tools-panel" aria-labelledby="flash-tools-tab">
       <div className="flash-tools-content">
+        {!serialSupported && !lockedDevice && (
+          <div className="flash-message warning">
+            USB Serial detection is unavailable in this browser. Use a supported desktop browser, such as Chrome, Firefox, or Edge to flash firmware.
+          </div>
+        )}
         <div className="panel flash-tools-intro">
           <div className="heading-line">
             <Zap size={16} />
@@ -349,11 +358,7 @@ export function FlashToolsPanel() {
           </label>
         </div>
 
-        {!serialSupported && !lockedDevice && (
-          <div className="flash-message warning">
-            Web Serial is unavailable. Use Chrome or Edge on a desktop computer to flash firmware.
-          </div>
-        )}
+
 
         <section className="panel flash-step-card">
           <div className="flash-step-heading">
