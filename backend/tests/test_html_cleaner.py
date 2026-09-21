@@ -6,10 +6,63 @@ from pathlib import Path
 PIPELINE_DIR = Path(__file__).resolve().parents[1] / 'app' / 'optimizer' / 'epubkit_pipeline'
 sys.path.insert(0, str(PIPELINE_DIR))
 
-from html_cleaner import strip_unnecessary_attributes  # noqa: E402
+from html_cleaner import remove_oceanofpdf_containers, strip_unnecessary_attributes  # noqa: E402
 
 
 class HtmlCleanerTests(unittest.TestCase):
+    def test_removes_outermost_oceanofpdf_wrapper(self):
+        xhtml = (
+            '<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Chapter text</p>'
+            '<div style="text-align: center"><p><a href="https://oceanofpdf.com">'
+            '<i>OceanofPDF.com</i></a></p></div></body></html>'
+        ).encode('utf-8')
+
+        cleaned, removed = remove_oceanofpdf_containers(xhtml)
+
+        self.assertEqual(removed, 1)
+        self.assertIn(b'Chapter text', cleaned)
+        self.assertNotIn(b'OceanofPDF', cleaned)
+        self.assertNotIn(b'text-align: center', cleaned)
+
+    def test_keeps_oceanofpdf_words_inside_chapter_text(self):
+        xhtml = (
+            '<html xmlns="http://www.w3.org/1999/xhtml"><body>'
+            '<p>The ocean of PDF files was only a metaphor.</p></body></html>'
+        ).encode('utf-8')
+
+        cleaned, removed = remove_oceanofpdf_containers(xhtml)
+
+        self.assertEqual(removed, 0)
+        self.assertIn(b'The ocean of PDF files was only a metaphor.', cleaned)
+
+    def test_removes_footer_without_removing_image_only_cover_page(self):
+        xhtml = (
+            '<html xmlns="http://www.w3.org/1999/xhtml"><body><div id="Cover">'
+            '<img alt="Book cover" src="../images/cover.jpg"/></div>'
+            '<div><p><a href="https://oceanofpdf.com"><i>OceanofPDF.com</i></a></p></div>'
+            '</body></html>'
+        ).encode('utf-8')
+
+        cleaned, removed = remove_oceanofpdf_containers(xhtml)
+
+        self.assertEqual(removed, 1)
+        self.assertIn(b'<img', cleaned)
+        self.assertIn(b'../images/cover.jpg', cleaned)
+        self.assertNotIn(b'OceanofPDF', cleaned)
+
+    def test_keeps_cover_image_wrapped_in_oceanofpdf_link(self):
+        xhtml = (
+            '<html xmlns="http://www.w3.org/1999/xhtml"><body><div>'
+            '<a href="https://oceanofpdf.com"><img src="cover.jpg"/></a>'
+            '</div></body></html>'
+        ).encode('utf-8')
+
+        cleaned, removed = remove_oceanofpdf_containers(xhtml)
+
+        self.assertEqual(removed, 0)
+        self.assertIn(b'<img', cleaned)
+        self.assertIn(b'cover.jpg', cleaned)
+
     def test_pagebreak_keeps_crossink_page_label_attributes(self):
         xhtml = (
             '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">'

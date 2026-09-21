@@ -23,6 +23,10 @@ FONT_MEDIA_TYPES = {
     'application/x-font-otf', 'application/font-sfnt',
 }
 HORIZONTAL_WHITESPACE = frozenset({' ', '\t', '\u00a0'})
+OCEAN_OF_PDF_URL_RE = re.compile(
+    r'(?:^|[/:.@])(?:www\.)?oceanofpdf(?:\.com)?(?:[/:?#]|$)', re.IGNORECASE
+)
+OCEAN_OF_PDF_TEXT_RE = re.compile(r'^oceanofpdf(?:com)?$', re.IGNORECASE)
 
 
 def repair_html(html_bytes: bytes) -> bytes:
@@ -52,6 +56,83 @@ def repair_html(html_bytes: bytes) -> bytes:
     # Re-serialize as XHTML
     result = etree.tostring(tree, encoding='unicode', pretty_print=True, method='html')
     return result.encode('utf-8')
+
+
+def remove_oceanofpdf_containers(xhtml_bytes: bytes) -> tuple[bytes, int]:
+    """Remove standalone Ocean of PDF link/text containers from XHTML."""
+    try:
+        tree = etree.fromstring(xhtml_bytes)
+    except etree.XMLSyntaxError:
+        parser = etree.HTMLParser(recover=True)
+        tree = etree.fromstring(xhtml_bytes, parser)
+        if tree is None:
+            return xhtml_bytes, 0
+
+    def local_name(element) -> str:
+        return element.tag.split('}')[-1] if isinstance(element.tag, str) else ''
+
+    def is_marker_text(element) -> bool:
+        # A cover page can contain an image plus an OceanofPDF footer.  Image
+        # alt text is not part of itertext(), so without this guard its body
+        # looks like it contains only the footer and gets removed wholesale.
+        if any(
+            local_name(child) in {'img', 'image', 'svg', 'video', 'audio'}
+            for child in element.iter()
+        ):
+            return False
+        text = ''.join(element.itertext())
+        normalized = re.sub(r'[^a-z0-9]+', '', text.casefold())
+        return bool(OCEAN_OF_PDF_TEXT_RE.fullmatch(normalized))
+
+    def contains_media(element) -> bool:
+        return any(
+            local_name(child) in {'img', 'image', 'svg', 'video', 'audio'}
+            for child in element.iter()
+        )
+
+    def removable_container(element):
+        closest_block = None
+        outermost_marker_container = element if is_marker_text(element) else None
+        parent = element.getparent()
+        while parent is not None and local_name(parent) not in ('body', 'html'):
+            if closest_block is None and local_name(parent) in {
+                'p', 'div', 'section', 'aside', 'li', 'blockquote', 'figure'
+            }:
+                closest_block = parent
+            if is_marker_text(parent):
+                outermost_marker_container = parent
+            parent = parent.getparent()
+        if outermost_marker_container is not None:
+            return outermost_marker_container
+        return closest_block if closest_block is not None else element
+
+    candidates = set()
+    for element in tree.iter():
+        if not isinstance(element.tag, str):
+            continue
+        href = element.get('href') or ''
+        if OCEAN_OF_PDF_URL_RE.search(href) or is_marker_text(element):
+            candidate = removable_container(element)
+            if not contains_media(candidate):
+                candidates.add(candidate)
+
+    removable = [
+        candidate for candidate in candidates
+        if not any(
+            other is not candidate and candidate in other.iterdescendants()
+            for other in candidates
+        )
+    ]
+    removed = 0
+    for candidate in removable:
+        parent = candidate.getparent()
+        if parent is not None:
+            parent.remove(candidate)
+            removed += 1
+
+    if removed == 0:
+        return xhtml_bytes, 0
+    return etree.tostring(tree, encoding='utf-8', pretty_print=True), removed
 
 
 def remove_unused_css(css_text: str, used_classes: set, used_ids: set, used_elements: set) -> tuple[str, int]:

@@ -427,8 +427,51 @@ function processXhtml(
     rewriteReference(element, "xlink:href", path, imageRenameMap);
   }
 
+  removeOceanOfPdfContainers(doc);
+
   const serialized = new XMLSerializer().serializeToString(doc);
   return settings.text_cleanup ? cleanTextContent(serialized) : serialized;
+}
+
+function removeOceanOfPdfContainers(doc: Document): number {
+  const oceanOfPdfUrl = /(?:^|[/:.@])(?:www\.)?oceanofpdf(?:\.com)?(?:[/:?#]|$)/i;
+  const containsMedia = (element: Element) => Boolean(element.querySelector("img, image, svg, video, audio"));
+  const isMarkerText = (element: Element) => {
+    // Image alt text is not included in textContent. Avoid treating a cover
+    // body with a footer as a standalone OceanofPDF marker container.
+    if (containsMedia(element)) return false;
+    return /^oceanofpdf(?:com)?$/i.test(
+      (element.textContent || "").toLowerCase().replace(/[^a-z0-9]+/g, "")
+    );
+  };
+  const isBlockContainer = (element: Element) =>
+    ["p", "div", "section", "aside", "li", "blockquote", "figure"].includes(
+      element.localName.toLowerCase()
+    );
+  const removableContainer = (element: Element) => {
+    let closestBlock: Element | null = null;
+    let outermostMarker: Element | null = isMarkerText(element) ? element : null;
+    let parent = element.parentElement;
+    while (parent && !["body", "html"].includes(parent.localName.toLowerCase())) {
+      if (!closestBlock && isBlockContainer(parent)) closestBlock = parent;
+      if (isMarkerText(parent)) outermostMarker = parent;
+      parent = parent.parentElement;
+    }
+    return outermostMarker || closestBlock || element;
+  };
+
+  const candidates = new Set<Element>();
+  for (const element of Array.from(doc.getElementsByTagName("*"))) {
+    if (oceanOfPdfUrl.test(element.getAttribute("href") || "") || isMarkerText(element)) {
+      const candidate = removableContainer(element);
+      if (!containsMedia(candidate)) candidates.add(candidate);
+    }
+  }
+  const removable = Array.from(candidates).filter(
+    (candidate) => !Array.from(candidates).some((other) => other !== candidate && other.contains(candidate))
+  );
+  for (const element of removable) element.remove();
+  return removable.length;
 }
 
 function rewriteReference(element: Element, attr: string, basePath: string, imageRenameMap: Map<string, string>) {
