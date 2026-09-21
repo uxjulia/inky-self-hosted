@@ -16,13 +16,13 @@ CROSSINK_RELEASE_PAGE_PREFIX = "https://github.com/uxjulia/CrossInk/releases/"
 RELEASE_CACHE_SECONDS = 300
 STABLE_RELEASE_LIMIT = 3
 PRERELEASE_LIMIT = 3
-SUPPORTED_VARIANTS = ("tiny", "xlarge", "x3-x4", "x4-pro", "sticky")
+SUPPORTED_VARIANTS = ("tiny", "xlarge", "x3-x4", "x4-pro", "x4-classic", "sticky")
 LOCAL_DEVELOPMENT_TAG = "local-x4-pro"
 LOCAL_DEVELOPMENT_FIRMWARE_NAME = "firmware-x4-pro.bin"
 DEV_FIRMWARE_DIR_ENV = "INKY_DEV_FIRMWARE_DIR"
-_FIRMWARE_NAME_PATTERN = re.compile(r"^firmware-(tiny|xlarge|x3-x4|x4-pro|sticky)-[^/]+\.bin$")
+_FIRMWARE_NAME_PATTERN = re.compile(r"^firmware-(x3-x4|x4-pro|x4-classic|sticky)-[^/]+\.bin$")
 _PRERELEASE_FIRMWARE_NAME_PATTERN = re.compile(
-    r"^firmware-(tiny|xlarge|x3-x4|x4-pro|sticky)-v\d+(?:\.\d+){2,3}-[0-9a-f]{7,40}-RC\.bin$"
+    r"^firmware-(x3-x4|x4-pro|x4-classic|sticky)-v\d+(?:\.\d+){2,3}-[0-9a-f]{7,40}-RC\.bin$"
 )
 
 

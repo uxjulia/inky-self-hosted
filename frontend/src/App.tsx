@@ -1407,7 +1407,7 @@ export default function App() {
 
   async function sendLibraryItemViaUsb(item: LibraryItem) {
     if (!serialTransferSupported()) {
-      throw new Error("USB serial is not available in this browser. Use Chrome or Edge.");
+      throw new Error("USB serial is not available in this browser. Use Chrome, Firefox or Edge.");
     }
 
     if (canOptimizeLibraryItem(item)) {

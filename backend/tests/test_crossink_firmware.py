@@ -45,16 +45,6 @@ class CrossInkFirmwareTests(unittest.TestCase):
                 "html_url": "https://github.com/uxjulia/CrossInk/releases/tag/v1.4.0",
                 "assets": [
                     {
-                        "name": "firmware-tiny-v1.4.0.bin",
-                        "size": 5_491_200,
-                        "browser_download_url": "https://github.com/uxjulia/CrossInk/releases/download/v1.4.0/firmware-tiny-v1.4.0.bin",
-                    },
-                    {
-                        "name": "firmware-xlarge-v1.4.0.bin",
-                        "size": 5_354_096,
-                        "browser_download_url": "https://github.com/uxjulia/CrossInk/releases/download/v1.4.0/firmware-xlarge-v1.4.0.bin",
-                    },
-                    {
                         "name": "firmware-sticky-v1.4.0.bin",
                         "size": 5_200_000,
                         "browser_download_url": "https://github.com/uxjulia/CrossInk/releases/download/v1.4.0/firmware-sticky-v1.4.0.bin",
@@ -63,6 +53,11 @@ class CrossInkFirmwareTests(unittest.TestCase):
                         "name": "firmware-x4-pro-v1.4.0.bin",
                         "size": 5_466_576,
                         "browser_download_url": "https://github.com/uxjulia/CrossInk/releases/download/v1.4.0/firmware-x4-pro-v1.4.0.bin",
+                    },
+                    {
+                        "name": "firmware-x4-classic-v1.4.0.bin",
+                        "size": 5_466_576,
+                        "browser_download_url": "https://github.com/uxjulia/CrossInk/releases/download/v1.4.0/firmware-x4-classic-v1.4.0.bin",
                     },
                     {
                         "name": "Bitter.zip",
@@ -74,9 +69,8 @@ class CrossInkFirmwareTests(unittest.TestCase):
         )
 
         self.assertEqual(release.tag, "v1.4.0")
-        self.assertEqual(set(release.assets), {"tiny", "xlarge", "x4-pro", "sticky"})
-        self.assertEqual(release.assets["xlarge"].filename, "firmware-xlarge-v1.4.0.bin")
         self.assertEqual(release.assets["x4-pro"].filename, "firmware-x4-pro-v1.4.0.bin")
+        self.assertEqual(release.assets["x4-classic"].filename, "firmware-x4-classic-v1.4.0.bin")
 
     def test_rejects_untrusted_asset_urls(self):
         with self.assertRaises(CrossInkFirmwareError):
@@ -85,9 +79,9 @@ class CrossInkFirmwareTests(unittest.TestCase):
                     "tag_name": "v1.4.0",
                     "assets": [
                         {
-                            "name": "firmware-tiny-v1.4.0.bin",
+                            "name": "firmware-x4-pro-v1.4.0.bin",
                             "size": 10,
-                            "browser_download_url": "https://example.com/firmware-tiny-v1.4.0.bin",
+                            "browser_download_url": "https://example.com/firmware-x4-pro-v1.4.0.bin",
                         }
                     ],
                 }
@@ -100,9 +94,9 @@ class CrossInkFirmwareTests(unittest.TestCase):
                     "tag_name": "v1.4.0",
                     "assets": [
                         {
-                            "name": "firmware-tiny-v1.4.0.bin.old",
+                            "name": "firmware-x4-pro-v1.4.0.bin.old",
                             "size": 10,
-                            "browser_download_url": "https://github.com/uxjulia/CrossInk/releases/download/v1.4.0/firmware-tiny-v1.4.0.bin.old",
+                            "browser_download_url": "https://github.com/uxjulia/CrossInk/releases/download/v1.4.0/firmware-x4-pro-v1.4.0.bin.old",
                         }
                     ],
                 }
@@ -110,7 +104,7 @@ class CrossInkFirmwareTests(unittest.TestCase):
 
     def test_returns_only_the_three_latest_usable_stable_releases(self):
         def release(tag: str, *, draft: bool = False, prerelease: bool = False, valid: bool = True) -> dict:
-            filename = f"firmware-tiny-{tag}.bin" if valid else "notes.txt"
+            filename = f"firmware-x4-pro-{tag}.bin" if valid else "notes.txt"
             return {
                 "tag_name": tag,
                 "draft": draft,
@@ -144,6 +138,7 @@ class CrossInkFirmwareTests(unittest.TestCase):
                 "firmware-sticky-v1.5.0-c1e63f8-RC.bin",
                 "firmware-x3-x4-v1.5.0-c1e63f8-RC.bin",
                 "firmware-x4-pro-v1.5.0-c1e63f8-RC.bin",
+                "firmware-x4-classic-v1.5.0-c1e63f8-RC.bin",
             ]
             return {
                 "tag_name": tag,
@@ -168,7 +163,7 @@ class CrossInkFirmwareTests(unittest.TestCase):
         )
 
         self.assertEqual([item.tag for item in releases], ["rc-development-a1b2c3d"])
-        self.assertEqual(set(releases[0].assets), {"sticky", "x3-x4", "x4-pro"})
+        self.assertEqual(set(releases[0].assets), {"sticky", "x3-x4", "x4-pro", "x4-classic"})
         self.assertEqual(
             releases[0].assets["sticky"].filename,
             "firmware-sticky-v1.5.0-c1e63f8-RC.bin",
@@ -180,6 +175,10 @@ class CrossInkFirmwareTests(unittest.TestCase):
         self.assertEqual(
             releases[0].assets["x4-pro"].filename,
             "firmware-x4-pro-v1.5.0-c1e63f8-RC.bin",
+        )
+        self.assertEqual(
+            releases[0].assets["x4-classic"].filename,
+            "firmware-x4-classic-v1.5.0-c1e63f8-RC.bin",
         )
 
     def test_ignores_non_release_candidate_filenames_in_prereleases(self):

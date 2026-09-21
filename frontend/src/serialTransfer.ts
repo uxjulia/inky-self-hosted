@@ -343,7 +343,7 @@ class SerialConnection {
 
 async function openSerialConnection() {
   if (!navigator.serial) {
-    throw new Error("USB serial is not available in this browser. Use Chrome or Edge.");
+    throw new Error("USB serial is not available in this browser. Use Chrome, Firefox, or Edge");
   }
 
   if (retainedSerialConnection?.isOpen) {

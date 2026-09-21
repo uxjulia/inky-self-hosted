@@ -9,8 +9,8 @@ import {
 import type { FlashStepState } from "../lib/flasher.js";
 import { crossInkSerialFilters } from "../serialTransfer";
 
-type FlashDeviceId = "xteink" | "x4-pro" | "sticky";
-type StableVariantId = "tiny" | "xlarge" | "x3-x4" | "x4-pro" | "sticky";
+type FlashDeviceId = "xteink" | "x4-pro" | "x4-classic" | "sticky";
+type StableVariantId = "tiny" | "xlarge" | "x3-x4" | "x4-pro" | "x4-classic" | "sticky";
 type FlashStatus = { tone: "success" | "error"; message: string } | null;
 type StableReleaseInfo = {
   tag: string;
@@ -24,12 +24,14 @@ type StableReleaseInfo = {
 const DEVICES: Array<{ id: FlashDeviceId; name: string; detail: string }> = [
   { id: "xteink", name: "Xteink X3 / X4", detail: "Shared ESP32-C3 firmware" },
   { id: "x4-pro", name: "Xteink X4 Pro", detail: "ESP32-S3 firmware" },
+  { id: "x4-classic", name: "Xteink X4 Classic", detail: "ESP32-S3 firmware" },
   { id: "sticky", name: "Seeed Studio Sticky", detail: "ESP32-S3 firmware" }
 ];
 
 const DEVICE_CHIPS: Record<FlashDeviceId, string> = {
   xteink: "ESP32-C3",
   "x4-pro": "ESP32-S3",
+  "x4-classic": "ESP32-S3",
   sticky: "ESP32-S3"
 };
 
@@ -41,6 +43,8 @@ function releaseSupportsDevice(release: StableReleaseInfo, device: FlashDeviceId
       ? variant.id === "sticky"
       : device === "x4-pro"
         ? variant.id === "x4-pro"
+        : device === "x4-classic"
+          ? variant.id === "x4-classic"
         : XTEINK_VARIANT_IDS.includes(variant.id)
   );
 }
@@ -48,6 +52,7 @@ function releaseSupportsDevice(release: StableReleaseInfo, device: FlashDeviceId
 function firmwareVariantLabel(variantId: StableVariantId) {
   if (variantId === "x3-x4") return "X3 / X4";
   if (variantId === "x4-pro") return "X4 Pro";
+  if (variantId === "x4-classic") return "X4 Classic";
   if (variantId === "tiny") return "Tiny";
   if (variantId === "xlarge") return "XLarge";
   return "Sticky";
@@ -56,6 +61,7 @@ function firmwareVariantLabel(variantId: StableVariantId) {
 function firmwareVariantDetail(variantId: StableVariantId) {
   if (variantId === "x3-x4") return "Shared ESP32-C3 firmware";
   if (variantId === "x4-pro") return "ESP32-S3 firmware";
+  if (variantId === "x4-classic") return "ESP32-S3 firmware";
   if (variantId === "tiny") return "10–16 pt font";
   if (variantId === "xlarge") return "16–20 pt font";
   return "ESP32-S3";
@@ -64,7 +70,13 @@ function firmwareVariantDetail(variantId: StableVariantId) {
 function releaseVariantIds(release: StableReleaseInfo | null, device: FlashDeviceId | null) {
   if (!release) return [];
   const expectedIds: StableVariantId[] =
-    device === "sticky" ? ["sticky"] : device === "x4-pro" ? ["x4-pro"] : XTEINK_VARIANT_IDS;
+    device === "sticky"
+      ? ["sticky"]
+      : device === "x4-pro"
+        ? ["x4-pro"]
+        : device === "x4-classic"
+          ? ["x4-classic"]
+          : XTEINK_VARIANT_IDS;
   return expectedIds.filter((variantId) => release.variants.some((variant) => variant.id === variantId));
 }
 
@@ -224,7 +236,11 @@ export function FlashToolsPanel() {
     let serialPort: unknown;
     try {
       serialPort = await BrowserFirmwareFlasher.requestPort(
-        device === "x4-pro" ? [{ usbVendorId: 0x303a }] : device === "sticky" ? crossInkSerialFilters : undefined
+        device === "x4-pro" || device === "x4-classic"
+          ? [{ usbVendorId: 0x303a }]
+          : device === "sticky"
+            ? crossInkSerialFilters
+            : undefined
       );
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "NotFoundError")) {
@@ -506,13 +522,14 @@ export function FlashToolsPanel() {
                 </div>
               </div>
             )}
-            {(device === "sticky" || device === "x4-pro") &&
+            {(device === "sticky" || device === "x4-pro" || device === "x4-classic") &&
               !stableReleaseError &&
               stableReleases.length > 0 &&
               compatibleStableReleases.length === 0 &&
               compatiblePrereleaseReleases.length === 0 && (
                 <div className="flash-message warning">
-                  No {device === "x4-pro" ? "X4 Pro" : "Sticky"} firmware is currently available from GitHub.
+                  No {device === "sticky" ? "Sticky" : device === "x4-classic" ? "X4 Classic" : "X4 Pro"} firmware is
+                  currently available from GitHub.
                 </div>
               )}
             {stableReleaseError && <div className="flash-message error">{stableReleaseError}</div>}
@@ -586,8 +603,8 @@ export function FlashToolsPanel() {
                     </li>
                   </ol>
                 </p>
-              ) : device === "x4-pro" ? (
-                "Keep the X4 Pro awake at its home screen and leave the USB cable connected until flashing completes. If the browser cannot detect it, remove the SD card and try again."
+              ) : device === "x4-pro" || device === "x4-classic" ? (
+                `Keep the ${device === "x4-classic" ? "X4 Classic" : "X4 Pro"} awake at its home screen and leave the USB cable connected until flashing completes. If the browser cannot detect it, remove the SD card and try again.`
               ) : (
                 "Keep the device awake at its home screen and leave the USB cable connected until flashing completes."
               )}
@@ -615,9 +632,10 @@ export function FlashToolsPanel() {
                 </button>
                 <aside className="flash-optional-download" aria-label="Optional firmware download">
                   <strong>Optional: manual SD card download</strong>
-                  {device === "x4-pro" ? (
+                  {device === "x4-pro" || device === "x4-classic" ? (
                     <p>
-                      An X4 Pro already running Cross<span className="serif">I</span>nk can install this{" "}
+                      An {device === "x4-classic" ? "X4 Classic" : "X4 Pro"} already running Cross
+                      <span className="serif">I</span>nk can install this{" "}
                       <code>.bin</code> file from{" "}
                       <code>
                         Settings {`>`} System {`>`} SD Card Firmware Update
@@ -673,7 +691,7 @@ export function FlashToolsPanel() {
           <section className="panel flash-restart-card">
             <h2>After flashing</h2>
             <p>
-              {device === "x4-pro"
+              {device === "x4-pro" || device === "x4-classic"
                 ? "Unplug and reconnect the USB cable, then press and hold the power button to boot."
                 : "Unplug and reconnect the USB cable, then reset the device (tap the reset button and then hold power)"}
             </p>
