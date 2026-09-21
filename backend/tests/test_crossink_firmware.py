@@ -45,6 +45,11 @@ class CrossInkFirmwareTests(unittest.TestCase):
                 "html_url": "https://github.com/uxjulia/CrossInk/releases/tag/v1.4.0",
                 "assets": [
                     {
+                        "name": "firmware-x3-x4-v1.4.0.bin",
+                        "size": 5_491_200,
+                        "browser_download_url": "https://github.com/uxjulia/CrossInk/releases/download/v1.4.0/firmware-x3-x4-v1.4.0.bin",
+                    },
+                    {
                         "name": "firmware-sticky-v1.4.0.bin",
                         "size": 5_200_000,
                         "browser_download_url": "https://github.com/uxjulia/CrossInk/releases/download/v1.4.0/firmware-sticky-v1.4.0.bin",
@@ -69,6 +74,8 @@ class CrossInkFirmwareTests(unittest.TestCase):
         )
 
         self.assertEqual(release.tag, "v1.4.0")
+        self.assertEqual(set(release.assets), {"x3-x4", "x4-pro", "x4-classic", "sticky"})
+        self.assertEqual(release.assets["x3-x4"].filename, "firmware-x3-x4-v1.4.0.bin")
         self.assertEqual(release.assets["x4-pro"].filename, "firmware-x4-pro-v1.4.0.bin")
         self.assertEqual(release.assets["x4-classic"].filename, "firmware-x4-classic-v1.4.0.bin")
 

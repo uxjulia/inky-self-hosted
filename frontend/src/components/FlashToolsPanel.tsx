@@ -10,7 +10,7 @@ import type { FlashStepState } from "../lib/flasher.js";
 import { crossInkSerialFilters } from "../serialTransfer";
 
 type FlashDeviceId = "xteink" | "x4-pro" | "x4-classic" | "sticky";
-type StableVariantId = "tiny" | "xlarge" | "x3-x4" | "x4-pro" | "x4-classic" | "sticky";
+type StableVariantId = "x3-x4" | "x4-pro" | "x4-classic" | "sticky";
 type FlashStatus = { tone: "success" | "error"; message: string } | null;
 type StableReleaseInfo = {
   tag: string;
@@ -35,7 +35,7 @@ const DEVICE_CHIPS: Record<FlashDeviceId, string> = {
   sticky: "ESP32-S3"
 };
 
-const XTEINK_VARIANT_IDS: StableVariantId[] = ["x3-x4", "tiny", "xlarge"];
+const XTEINK_VARIANT_IDS: StableVariantId[] = ["x3-x4"];
 
 function releaseSupportsDevice(release: StableReleaseInfo, device: FlashDeviceId | null) {
   return release.variants.some((variant) =>
@@ -53,8 +53,6 @@ function firmwareVariantLabel(variantId: StableVariantId) {
   if (variantId === "x3-x4") return "X3 / X4";
   if (variantId === "x4-pro") return "X4 Pro";
   if (variantId === "x4-classic") return "X4 Classic";
-  if (variantId === "tiny") return "Tiny";
-  if (variantId === "xlarge") return "XLarge";
   return "Sticky";
 }
 
@@ -62,8 +60,6 @@ function firmwareVariantDetail(variantId: StableVariantId) {
   if (variantId === "x3-x4") return "Shared ESP32-C3 firmware";
   if (variantId === "x4-pro") return "ESP32-S3 firmware";
   if (variantId === "x4-classic") return "ESP32-S3 firmware";
-  if (variantId === "tiny") return "10–16 pt font";
-  if (variantId === "xlarge") return "16–20 pt font";
   return "ESP32-S3";
 }
 
