@@ -14,6 +14,25 @@ from app.schemas import OptimizeRequest
 
 
 class OptimizerServiceTests(unittest.TestCase):
+    def test_optimizer_preserves_book_metadata_by_default(self):
+        with tempfile.TemporaryDirectory(prefix="inky_optimizer_service_") as tmp:
+            tmpdir = Path(tmp)
+            epub_path = tmpdir / "source.epub"
+            extra_metadata = (
+                '<meta name="calibre:series" content="Example Series"/>'
+                '<meta name="calibre:series_index" content="2"/>'
+                '<meta name="calibre:rating" content="8"/>'
+            )
+            write_minimal_epub(epub_path, "The Book", "O'Brian", extra_metadata=extra_metadata)
+
+            output_path, _result = optimize_epub(epub_path, tmpdir / "out", OptimizeRequest())
+
+            with zipfile.ZipFile(output_path) as archive:
+                opf = archive.read("OEBPS/content.opf").decode("utf-8")
+            self.assertIn('<meta name="calibre:series" content="Example Series"/>', opf)
+            self.assertIn('<meta name="calibre:series_index" content="2"/>', opf)
+            self.assertIn('<meta name="calibre:rating" content="8"/>', opf)
+
     def test_optimizer_repairs_missing_optional_cover_reference(self):
         with tempfile.TemporaryDirectory(prefix="inky_optimizer_service_") as tmp:
             tmpdir = Path(tmp)
@@ -206,7 +225,9 @@ class OptimizerServiceTests(unittest.TestCase):
                 self.assertEqual(captured_options.max_height, expected_height)
 
 
-def write_minimal_epub(path: Path, title: str, author: str, *, missing_cover_ref: bool = False) -> None:
+def write_minimal_epub(
+    path: Path, title: str, author: str, *, missing_cover_ref: bool = False, extra_metadata: str = ""
+) -> None:
     spine_refs = '<itemref idref="cover"/>' if missing_cover_ref else ""
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("mimetype", "application/epub+zip")
@@ -221,7 +242,7 @@ def write_minimal_epub(path: Path, title: str, author: str, *, missing_cover_ref
             "OEBPS/content.opf",
             f"""<?xml version="1.0"?>
 <package xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0">
-  <metadata><dc:title>{title}</dc:title><dc:creator>{author}</dc:creator></metadata>
+  <metadata><dc:title>{title}</dc:title><dc:creator>{author}</dc:creator>{extra_metadata}</metadata>
   <manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
   <spine>{spine_refs}<itemref idref="chapter"/></spine>
 </package>""",

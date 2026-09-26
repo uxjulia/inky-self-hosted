@@ -65,7 +65,7 @@ class ProcessingOptions:
     light_novel_mode: bool = False
     light_novel_rotate_left: bool = True
     generate_missing_cover: bool = True
-    clean_metadata: bool = True
+    clean_metadata: bool = False
     text_cleanup: bool = True
     normalize_quotes: bool = True
     characters_per_reference_page: int = 1500
