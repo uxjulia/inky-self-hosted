@@ -1466,6 +1466,27 @@ progress {
   margin-top: 12px;
 }
 
+.flash-device-warning {
+  padding: 20px;
+  border: 2px solid #dc2626;
+  border-radius: 6px;
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5;
+  a {
+    text-decoration: underline;
+    color: var(--color-warning);
+    cursor: pointer;
+  }
+}
+
+.toggle-field.flash-unlock-confirmation {
+  margin-top: 15px;
+  gap: 15px;
+}
+
 .flash-message code {
   color: var(--color-text);
   font-weight: 600;
@@ -1554,6 +1575,7 @@ progress {
 
 .flash-action {
   align-self: flex-start;
+  margin-top: 10px;
 }
 
 .flash-optional-download {
@@ -1866,6 +1888,12 @@ progress {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
   margin-top: 2px;
+}
+
+.what-device {
+  ul {
+    line-height: 1.8;
+  }
 }
 
 @keyframes spin {

@@ -45,7 +45,7 @@ function releaseSupportsDevice(release: StableReleaseInfo, device: FlashDeviceId
         ? variant.id === "x4-pro"
         : device === "x4-classic"
           ? variant.id === "x4-classic"
-        : XTEINK_VARIANT_IDS.includes(variant.id)
+          : XTEINK_VARIANT_IDS.includes(variant.id)
   );
 }
 
@@ -130,6 +130,7 @@ export function FlashToolsPanel() {
   const [selectedReleaseTag, setSelectedReleaseTag] = useState("");
   const [stableReleaseError, setStableReleaseError] = useState("");
   const [lockedDevice, setLockedDevice] = useState(false);
+  const [unlockConfirmed, setUnlockConfirmed] = useState(false);
   const [running, setRunning] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
@@ -137,6 +138,15 @@ export function FlashToolsPanel() {
   const [stepStates, setStepStates] = useState<FlashStepState[]>([]);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState<FlashStatus>(null);
+  const [whatDevice, setWhatDevice] = useState(false)
+
+  const requiresUnlockConfirmationX3X4 = lockedDevice && (device === "xteink");
+  const requiresUnlockConfirmation = lockedDevice && (device === "x4-pro" || device === "x4-classic");
+  const downloadAllowed = !(requiresUnlockConfirmation || requiresUnlockConfirmationX3X4) || unlockConfirmed;
+
+  useEffect(() => {
+    setUnlockConfirmed(false);
+  }, [lockedDevice, device, firmwareChoice, selectedReleaseTag]);
 
   useEffect(() => {
     let cancelled = false;
@@ -195,7 +205,7 @@ export function FlashToolsPanel() {
   }
 
   async function downloadFirmware(downloadFilename: string) {
-    if (!firmwareChoice || !selectedReleaseTag || downloading) return;
+    if (!firmwareChoice || !selectedReleaseTag || downloading || !downloadAllowed) return;
 
     const downloadTag = firmwareDownloadTag(stableReleases, selectedReleaseTag);
     setDownloading(true);
@@ -369,8 +379,24 @@ export function FlashToolsPanel() {
             <span>I have a locked device</span>
           </label>
         </div>
-
-
+        {lockedDevice && (
+          <div className="flash-device-warning" role="alert">
+            <strong>STOP!</strong> Make sure you select the correct device otherwise you risk <u>permanently</u> damaging your
+            device. Do <strong>NOT</strong> attempt to flash anything other than the <code>.bin</code> for your device's model.
+            <p><a className="what-device" role="button" onClick={() => setWhatDevice(!whatDevice)}>What device do I have?</a></p>
+          </div>
+        )}
+        {whatDevice && (<section className="panel what-device">
+          <h4>Unsure what device you have?</h4>
+          <ul>
+            <li><strong>X4</strong>: Up/Down buttons are on the right side and you have a USB-C port.</li>
+            <li><strong>X4 Classic/V2</strong>: Up/Down buttons are on both the left and right side and you have a POGO port. Your power button is on the right side of the device.</li>
+            <li><strong>X4 Pro</strong>: You have a touchscreen with a frontlight.</li>
+            <hr />
+            <li><strong>X3</strong>: Up/Down buttons are on both the left and right side and you have a POGO port. Your power button is on the top of the device.</li>
+            <li><strong>Sticky</strong>: If you don't know if you have one of these then you probably don't.</li>
+          </ul>
+        </section>)}
 
         <section className="panel flash-step-card">
           <div className="flash-step-heading">
@@ -378,7 +404,7 @@ export function FlashToolsPanel() {
             <h2>Select your device</h2>
           </div>
           <div className="flash-device-grid">
-            {DEVICES.filter((option) => !lockedDevice || option.id === "xteink" || option.id === "x4-pro").map(
+            {DEVICES.filter((option) => !lockedDevice || option.id !== "sticky").map(
               (option) => (
                 <button
                   key={option.id}
@@ -540,8 +566,8 @@ export function FlashToolsPanel() {
             </div>
             <div className="flash-message warning">
               {lockedDevice ? (
-                <p>
-                  {device !== "x4-pro" ? (
+                <div>
+                  {!requiresUnlockConfirmation ? (
                     <>
                       <p>
                         <strong>Option 1:</strong>
@@ -566,13 +592,13 @@ export function FlashToolsPanel() {
                     </>
                   ) : (
                     <>
-                      <p style={{ textAlign: "center", fontSize: "18px" }}>
+                      <div style={{ textAlign: "center", fontSize: "18px" }}>
                         <span>
                           Coming from <strong>Stock Xteink Firmware</strong>? You must use the{" "}
                           <a href="https://crosspointreader.com/unlocker">OTA Unlocker</a> first!
                         </span>
                         <hr />
-                      </p>
+                      </div>
                     </>
                   )}
                   Steps when <strong><i>updating</i></strong> from{" "}
@@ -598,7 +624,7 @@ export function FlashToolsPanel() {
                       begin installation.
                     </li>
                   </ol>
-                </p>
+                </div>
               ) : device === "x4-pro" || device === "x4-classic" ? (
                 `Keep the ${device === "x4-classic" ? "X4 Classic" : "X4 Pro"} awake at its home screen and leave the USB cable connected until flashing completes. If the browser cannot detect it, remove the SD card and try again.`
               ) : (
@@ -606,15 +632,43 @@ export function FlashToolsPanel() {
               )}
             </div>
             {lockedDevice ? (
-              <button
-                className="primary icon-text flash-action"
-                type="button"
-                disabled={running || downloading}
-                onClick={() => downloadFirmware("update.bin")}
-              >
-                <Download size={16} />
-                {downloading ? "Downloading…" : "Download update.bin"}
-              </button>
+              <>
+                {requiresUnlockConfirmation && (
+                  <label className="toggle-field flash-unlock-confirmation">
+                    <input
+                      type="checkbox"
+                      checked={unlockConfirmed}
+                      disabled={running || downloading}
+                      onChange={(event) => setUnlockConfirmed(event.target.checked)}
+                    />
+                    <span>
+                      I have already unlocked my {firmwareVariantLabel(device)} using the OTA Unlocker tool and confirm that I will be flashing this only to an <strong><u>{firmwareVariantLabel(device)}</u></strong>.
+                    </span>
+                  </label>
+                )}
+                {requiresUnlockConfirmationX3X4 && (
+                  <label className="toggle-field flash-unlock-confirmation">
+                    <input
+                      type="checkbox"
+                      checked={unlockConfirmed}
+                      disabled={running || downloading}
+                      onChange={(event) => setUnlockConfirmed(event.target.checked)}
+                    />
+                    <span>
+                      I confirm that my device is an <strong>X4 (the one with a USB-C port) or an X3</strong>.
+                    </span>
+                  </label>
+                )}
+                <button
+                  className="primary icon-text flash-action"
+                  type="button"
+                  disabled={running || downloading || !downloadAllowed}
+                  onClick={() => downloadFirmware("update.bin")}
+                >
+                  <Download size={16} />
+                  {downloading ? "Downloading…" : "Download update.bin"}
+                </button>
+              </>
             ) : (
               <>
                 <button
@@ -658,42 +712,47 @@ export function FlashToolsPanel() {
             )}
             {downloadError && <div className="flash-message error">{downloadError}</div>}
           </section>
-        )}
+        )
+        }
 
-        {steps.length > 0 && (
-          <section ref={progressRef} className="panel flash-progress-card">
-            <h2>Flash progress</h2>
-            <ol>
-              {steps.map((step, index) => (
-                <li key={step} className={stepStates[index] || "pending"}>
-                  <span aria-hidden="true">
-                    {stepStates[index] === "done" ? "✓" : stepStates[index] === "error" ? "×" : "•"}
-                  </span>
-                  <div>
-                    <strong>{step}</strong>
-                    {stepStates[index] === "running" &&
-                      (step.toLowerCase().includes("flash") || step.toLowerCase().includes("write")) && (
-                        <progress max="100" value={progress} aria-label={`${progress.toFixed(0)}% flashed`} />
-                      )}
-                  </div>
-                </li>
-              ))}
-            </ol>
-            {status && <div className={`flash-message ${status.tone}`}>{status.message}</div>}
-          </section>
-        )}
+        {
+          steps.length > 0 && (
+            <section ref={progressRef} className="panel flash-progress-card">
+              <h2>Flash progress</h2>
+              <ol>
+                {steps.map((step, index) => (
+                  <li key={step} className={stepStates[index] || "pending"}>
+                    <span aria-hidden="true">
+                      {stepStates[index] === "done" ? "✓" : stepStates[index] === "error" ? "×" : "•"}
+                    </span>
+                    <div>
+                      <strong>{step}</strong>
+                      {stepStates[index] === "running" &&
+                        (step.toLowerCase().includes("flash") || step.toLowerCase().includes("write")) && (
+                          <progress max="100" value={progress} aria-label={`${progress.toFixed(0)}% flashed`} />
+                        )}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              {status && <div className={`flash-message ${status.tone}`}>{status.message}</div>}
+            </section>
+          )
+        }
 
-        {status?.tone === "success" && device && (
-          <section className="panel flash-restart-card">
-            <h2>After flashing</h2>
-            <p>
-              {device === "x4-pro" || device === "x4-classic"
-                ? "Unplug and reconnect the USB cable, then press and hold the power button to boot."
-                : "Unplug and reconnect the USB cable, then reset the device (tap the reset button and then hold power)"}
-            </p>
-          </section>
-        )}
-      </div>
-    </section>
+        {
+          status?.tone === "success" && device && (
+            <section className="panel flash-restart-card">
+              <h2>After flashing</h2>
+              <p>
+                {device === "x4-pro" || device === "x4-classic"
+                  ? "Unplug and reconnect the USB cable, then press and hold the power button to boot."
+                  : "Unplug and reconnect the USB cable, then reset the device (tap the reset button and then hold power)"}
+              </p>
+            </section>
+          )
+        }
+      </div >
+    </section >
   );
 }
