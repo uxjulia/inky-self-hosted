@@ -14,6 +14,19 @@ from app.schemas import OptimizeRequest
 
 
 class OptimizerServiceTests(unittest.TestCase):
+    def test_optimizer_preserves_curly_quotes_by_default(self):
+        text = "“Hello,” she said. ‘It’s fine.’"
+        with tempfile.TemporaryDirectory(prefix="inky_optimizer_service_") as tmp:
+            tmpdir = Path(tmp)
+            epub_path = tmpdir / "source.epub"
+            write_minimal_epub(epub_path, "The Book", "O'Brian", chapter_text=text)
+
+            output_path, _result = optimize_epub(epub_path, tmpdir / "out", OptimizeRequest())
+
+            with zipfile.ZipFile(output_path) as archive:
+                chapter = archive.read("OEBPS/chapter.xhtml").decode("utf-8")
+            self.assertIn(text, chapter)
+
     def test_optimizer_preserves_book_metadata_by_default(self):
         with tempfile.TemporaryDirectory(prefix="inky_optimizer_service_") as tmp:
             tmpdir = Path(tmp)
@@ -226,7 +239,8 @@ class OptimizerServiceTests(unittest.TestCase):
 
 
 def write_minimal_epub(
-    path: Path, title: str, author: str, *, missing_cover_ref: bool = False, extra_metadata: str = ""
+    path: Path, title: str, author: str, *, missing_cover_ref: bool = False, extra_metadata: str = "",
+    chapter_text: str = "Complete"
 ) -> None:
     spine_refs = '<itemref idref="cover"/>' if missing_cover_ref else ""
     with zipfile.ZipFile(path, "w") as archive:
@@ -247,7 +261,7 @@ def write_minimal_epub(
   <spine>{spine_refs}<itemref idref="chapter"/></spine>
 </package>""",
         )
-        archive.writestr("OEBPS/chapter.xhtml", "<html><body>Complete</body></html>")
+        archive.writestr("OEBPS/chapter.xhtml", f"<html><body>{chapter_text}</body></html>")
 
 
 if __name__ == "__main__":

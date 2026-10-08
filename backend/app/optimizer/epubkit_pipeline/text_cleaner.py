@@ -51,7 +51,7 @@ class TextCleanReport:
 class TextCleanOptions:
     fix_whitespace: bool = True
     fix_ocr: bool = True
-    normalize_quotes: bool = True
+    normalize_quotes: bool = False
     fix_encoding: bool = True
     fix_punctuation: bool = True
     normalize_unicode: bool = True
@@ -116,7 +116,7 @@ def _fix_whitespace(text: str) -> tuple[str, int]:
     return result, count
 
 
-def _fix_ocr_artifacts(text: str, normalize_quotes: bool = True) -> tuple[str, int, int]:
+def _fix_ocr_artifacts(text: str, normalize_quotes: bool = False) -> tuple[str, int, int]:
     """Fix OCR ligature artifacts and optionally normalize smart quotes."""
     lig_count = 0
     quote_count = 0

@@ -67,7 +67,7 @@ class ProcessingOptions:
     generate_missing_cover: bool = True
     clean_metadata: bool = False
     text_cleanup: bool = True
-    normalize_quotes: bool = True
+    normalize_quotes: bool = False
     characters_per_reference_page: int = 1500
     split_long_sections: bool = True
     section_split_word_threshold: int = 8000

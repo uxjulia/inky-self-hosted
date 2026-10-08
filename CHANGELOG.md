@@ -17,3 +17,7 @@
 
 - EPUB optimization now tree-shakes unused CSS rules and removes unreachable stylesheet files.
 - EPUB optimization now rasterizes SVG image resources to JPEG so CrossInk can display more dividers and artwork.
+
+### Fixed
+
+- EPUB optimization now preserves curly quotation marks and apostrophes by default.
