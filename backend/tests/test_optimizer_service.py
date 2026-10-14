@@ -27,6 +27,25 @@ class OptimizerServiceTests(unittest.TestCase):
                 chapter = archive.read("OEBPS/chapter.xhtml").decode("utf-8")
             self.assertIn(text, chapter)
 
+    def test_embedded_fonts_are_removed_by_default_and_can_be_kept(self):
+        for remove_fonts in (True, False):
+            with self.subTest(remove_fonts=remove_fonts), tempfile.TemporaryDirectory() as tmp:
+                tmpdir = Path(tmp)
+                epub_path = tmpdir / "source.epub"
+                write_minimal_epub(epub_path, "Font Book", "Author", embedded_font=True)
+                request = OptimizeRequest() if remove_fonts else OptimizeRequest(remove_fonts=False)
+                output_path, _result = optimize_epub(epub_path, tmpdir / "out", request)
+                with zipfile.ZipFile(output_path) as archive:
+                    self.assertEqual("OEBPS/fonts/publisher.ttf" in archive.namelist(), not remove_fonts)
+                    opf = archive.read("OEBPS/content.opf").decode("utf-8")
+                    self.assertEqual("publisher.ttf" in opf, not remove_fonts)
+                    css = "\n".join(
+                        archive.read(name).decode("utf-8")
+                        for name in archive.namelist()
+                        if name.endswith(".css")
+                    )
+                    self.assertEqual("@font-face" in css, not remove_fonts)
+
     def test_optimizer_preserves_book_metadata_by_default(self):
         with tempfile.TemporaryDirectory(prefix="inky_optimizer_service_") as tmp:
             tmpdir = Path(tmp)
@@ -239,9 +258,15 @@ class OptimizerServiceTests(unittest.TestCase):
 
 
 def write_minimal_epub(
-    path: Path, title: str, author: str, *, missing_cover_ref: bool = False, extra_metadata: str = "",
-    chapter_text: str = "Complete"
+    path: Path, title: str, author: str, *, missing_cover_ref: bool = False,
+    extra_metadata: str = "", chapter_text: str = "Complete", embedded_font: bool = False
 ) -> None:
+    font_items = ""
+    if embedded_font:
+        font_items = (
+            '<item id="publisher-font" href="fonts/publisher.ttf" media-type="font/ttf"/>'
+            '<item id="style" href="style.css" media-type="text/css"/>'
+        )
     spine_refs = '<itemref idref="cover"/>' if missing_cover_ref else ""
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("mimetype", "application/epub+zip")
@@ -257,11 +282,23 @@ def write_minimal_epub(
             f"""<?xml version="1.0"?>
 <package xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0">
   <metadata><dc:title>{title}</dc:title><dc:creator>{author}</dc:creator>{extra_metadata}</metadata>
-  <manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
+  <manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>{font_items}</manifest>
   <spine>{spine_refs}<itemref idref="chapter"/></spine>
 </package>""",
         )
-        archive.writestr("OEBPS/chapter.xhtml", f"<html><body>{chapter_text}</body></html>")
+        chapter = (
+            '<html><head><link rel="stylesheet" href="style.css"/></head>'
+            f'<body><p>{chapter_text}</p></body></html>'
+            if embedded_font else f"<html><body>{chapter_text}</body></html>"
+        )
+        archive.writestr("OEBPS/chapter.xhtml", chapter)
+        if embedded_font:
+            archive.writestr("OEBPS/fonts/publisher.ttf", b"publisher font fixture")
+            archive.writestr(
+                "OEBPS/style.css",
+                '@font-face { font-family: Publisher; src: url("fonts/publisher.ttf"); }'
+                'p { font-family: Publisher; }',
+            )
 
 
 if __name__ == "__main__":

@@ -223,6 +223,14 @@ export function OptimizerSettingsModal({
           <label className="toggle-field">
             <input
               type="checkbox"
+              checked={optimizerSettings.remove_fonts}
+              onChange={(event) => onUpdateOptimizerSetting("remove_fonts", event.target.checked)}
+            />
+            <span>Remove Embedded Fonts</span>
+          </label>
+          <label className="toggle-field">
+            <input
+              type="checkbox"
               checked={optimizerSettings.split_long_sections}
               onChange={(event) => onUpdateOptimizerSetting("split_long_sections", event.target.checked)}
             />
